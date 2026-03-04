@@ -172,6 +172,10 @@ function Step5Content() {
     setIsHomeExitModalOpen(true);
   };
   const confirmGoHome = () => {
+    if (isRehabMode) {
+      router.push("/rehab");
+      return;
+    }
     const isTrialMode =
       typeof window !== "undefined" &&
       sessionStorage.getItem("btt.trialMode") === "1";
