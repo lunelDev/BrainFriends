@@ -619,19 +619,24 @@ function Step3Content() {
 
   const handleSkipStep = useCallback(() => {
     try {
+      const randomFloat = (min: number, max: number, digits = 1) =>
+        Number((Math.random() * (max - min) + min).toFixed(digits));
       if (typeof window !== "undefined" && window.speechSynthesis) {
         window.speechSynthesis.cancel();
       }
 
-      const demoResults = protocol.map((item, index) => ({
-        text: item.targetWord,
-        userAnswer: index % 5 === 0 ? "skip" : item.answerId,
-        isCorrect: index % 5 !== 0,
-        dataSource: "demo",
-        consonantAccuracy: 74 + ((index + 1) % 4) * 5,
-        vowelAccuracy: 72 + (index % 4) * 5,
-        timestamp: new Date().toLocaleTimeString(),
-      }));
+      const demoResults = protocol.map((item) => {
+        const isCorrect = Math.random() < 0.72;
+        return {
+          text: item.targetWord,
+          userAnswer: isCorrect ? item.answerId : "skip",
+          isCorrect,
+          dataSource: "demo",
+          consonantAccuracy: randomFloat(58, 96),
+          vowelAccuracy: randomFloat(58, 96),
+          timestamp: new Date().toLocaleTimeString(),
+        };
+      });
 
       localStorage.setItem("step3_data", JSON.stringify(demoResults));
 

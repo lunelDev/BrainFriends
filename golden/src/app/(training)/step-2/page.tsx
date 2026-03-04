@@ -782,17 +782,19 @@ function Step2Content() {
 
   const handleSkipStep = useCallback(() => {
     try {
+      const randomFloat = (min: number, max: number, digits = 1) =>
+        Number((Math.random() * (max - min) + min).toFixed(digits));
       flowTokenRef.current += 1;
       if (typeof window !== "undefined" && window.speechSynthesis) {
         window.speechSynthesis.cancel();
       }
       analyzerRef.current?.cancelAnalysis();
 
-      const demoItems = protocol.slice(0, STEP2_MAX_STORED_AUDIO_ITEMS).map((item, index) => {
-        const speechScore = 78 + (index % 3) * 5;
-        const faceScore = 72 + (index % 4) * 4;
-        const consonantAccuracy = 76 + (index % 4) * 5;
-        const vowelAccuracy = 74 + (index % 4) * 4;
+      const demoItems = protocol.slice(0, STEP2_MAX_STORED_AUDIO_ITEMS).map((item) => {
+        const speechScore = randomFloat(62, 95);
+        const faceScore = randomFloat(60, 94);
+        const consonantAccuracy = randomFloat(58, 96);
+        const vowelAccuracy = randomFloat(58, 96);
         const finalScore = Number((speechScore * 0.6 + faceScore * 0.4).toFixed(1));
         return {
           text: item.text,

@@ -162,6 +162,149 @@ function getTracingGuideFontSize(
   return Math.max(28, Math.min(widthBased, heightBased));
 }
 
+function getInkMaskFromImageData(
+  imageData: ImageData,
+  alphaThreshold = 12,
+  luminanceThreshold = 240,
+) {
+  const { data, width, height } = imageData;
+  const mask = new Uint8Array(width * height);
+  for (let i = 0; i < width * height; i += 1) {
+    const offset = i * 4;
+    const r = data[offset];
+    const g = data[offset + 1];
+    const b = data[offset + 2];
+    const a = data[offset + 3];
+    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    if (a > alphaThreshold && lum < luminanceThreshold) {
+      mask[i] = 1;
+    }
+  }
+  return mask;
+}
+
+function getTextTemplateMask(
+  answer: string,
+  width: number,
+  height: number,
+): Uint8Array {
+  const off = document.createElement("canvas");
+  off.width = width;
+  off.height = height;
+  const ctx = off.getContext("2d");
+  if (!ctx) return new Uint8Array(width * height);
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#000";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `700 ${getTracingGuideFontSize(answer, width, height)}px 'Noto Sans KR', sans-serif`;
+  ctx.fillText(answer, width / 2, height / 2);
+  const image = ctx.getImageData(0, 0, width, height);
+  const mask = new Uint8Array(width * height);
+  for (let i = 0; i < width * height; i += 1) {
+    const a = image.data[i * 4 + 3];
+    if (a > 12) mask[i] = 1;
+  }
+  return mask;
+}
+
+function calculateShapeSimilarityPct(
+  canvas: HTMLCanvasElement,
+  answer: string,
+): number {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return 0;
+  const { width, height } = canvas;
+  if (width <= 0 || height <= 0) return 0;
+
+  const userImage = ctx.getImageData(0, 0, width, height);
+  const userMask = getInkMaskFromImageData(userImage);
+  const templateMask = getTextTemplateMask(answer, width, height);
+
+  let userCount = 0;
+  let templateCount = 0;
+  let intersection = 0;
+  for (let i = 0; i < userMask.length; i += 1) {
+    const u = userMask[i] === 1;
+    const t = templateMask[i] === 1;
+    if (u) userCount += 1;
+    if (t) templateCount += 1;
+    if (u && t) intersection += 1;
+  }
+
+  if (userCount === 0 || templateCount === 0) return 0;
+
+  const recall = intersection / templateCount;
+  const precision = intersection / userCount;
+  const overlapScore = (recall * 0.7 + precision * 0.3) * 100;
+
+  // 위치 오차에 덜 민감한 보조 점수: 종횡비/밀도 유사도
+  const getBox = (mask: Uint8Array) => {
+    let minX = width;
+    let minY = height;
+    let maxX = -1;
+    let maxY = -1;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const idx = y * width + x;
+        if (mask[idx] !== 1) continue;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    if (maxX < 0 || maxY < 0) return null;
+    const w = Math.max(1, maxX - minX + 1);
+    const h = Math.max(1, maxY - minY + 1);
+    return { minX, minY, maxX, maxY, w, h };
+  };
+
+  const userBox = getBox(userMask);
+  const templateBox = getBox(templateMask);
+  if (!userBox || !templateBox) {
+    return Math.max(0, Math.min(100, Number(overlapScore.toFixed(1))));
+  }
+
+  const userAspect = userBox.w / userBox.h;
+  const templateAspect = templateBox.w / templateBox.h;
+  const aspectRatioDelta = Math.abs(Math.log((userAspect + 1e-6) / (templateAspect + 1e-6)));
+  const aspectScore = Math.max(0, 100 - aspectRatioDelta * 65);
+
+  const userDensity = userCount / (userBox.w * userBox.h);
+  const templateDensity = templateCount / (templateBox.w * templateBox.h);
+  const densityDelta = Math.abs(userDensity - templateDensity);
+  const densityScore = Math.max(0, 100 - densityDelta * 260);
+
+  const robustScore = aspectScore * 0.55 + densityScore * 0.45;
+  const finalScore = overlapScore * 0.55 + robustScore * 0.45;
+  return Math.max(0, Math.min(100, Number(finalScore.toFixed(1))));
+}
+
+function isQuotaExceededError(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === "QuotaExceededError" || error.code === 22;
+  }
+  if (typeof error === "object" && error !== null && "name" in error) {
+    return (error as { name?: string }).name === "QuotaExceededError";
+  }
+  return false;
+}
+
+function toCompressedDataUrl(canvas: HTMLCanvasElement): string {
+  const targetW = Math.max(220, Math.floor(canvas.width * 0.38));
+  const targetH = Math.max(140, Math.floor(canvas.height * 0.38));
+  const off = document.createElement("canvas");
+  off.width = targetW;
+  off.height = targetH;
+  const ctx = off.getContext("2d");
+  if (!ctx) return canvas.toDataURL("image/jpeg", 0.6);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, targetW, targetH);
+  ctx.drawImage(canvas, 0, 0, targetW, targetH);
+  return off.toDataURL("image/jpeg", 0.62);
+}
+
 const RESULT_PRAISES = [
   "좋아요, 정답입니다!",
   "정확해요! 잘하셨어요.",
@@ -217,6 +360,11 @@ function Step6Content() {
   const [praiseMessage, setPraiseMessage] = useState<string>(RESULT_PRAISES[0]);
   const [isHomeExitModalOpen, setIsHomeExitModalOpen] = useState(false);
   const [isImageZoomOpen, setIsImageZoomOpen] = useState(false);
+  const [inlineGuideText, setInlineGuideText] = useState(
+    "한획한획 또박또박 쓰세요.",
+  );
+  const [isGuideSparkle, setIsGuideSparkle] = useState(false);
+  const guideSparkleTimerRef = useRef<number | null>(null);
 
   const questions = useMemo(
     () =>
@@ -291,6 +439,14 @@ function Step6Content() {
     localStorage.removeItem("step6_recorded_data");
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (guideSparkleTimerRef.current !== null) {
+        window.clearTimeout(guideSparkleTimerRef.current);
+      }
+    };
+  }, []);
+
   const initCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -359,14 +515,30 @@ function Step6Content() {
 
   const checkAnswer = () => {
     if (!currentWord) return;
-    const isStrokeCorrect = Math.abs(userStrokeCount - expectedStrokes) <= 5;
+    const strokeError = Math.abs(userStrokeCount - expectedStrokes);
+    const isStrokeCorrect = strokeError <= 5;
+    const canvas = canvasRef.current;
+    const shapeSimilarityPct = canvas
+      ? calculateShapeSimilarityPct(canvas, currentWord.answer)
+      : 0;
+    const isShapeCorrect = shapeSimilarityPct >= 36;
+    const isFinalCorrect =
+      userStrokeCount > 0 && isStrokeCorrect && isShapeCorrect;
 
-    if (userStrokeCount > 0 && isStrokeCorrect) {
-      const imageData = canvasRef.current?.toDataURL("image/png") || "";
-      const strokeError = Math.abs(userStrokeCount - expectedStrokes);
-      const writingScore = Math.max(
+    if (isFinalCorrect) {
+      setInlineGuideText("한획한획 또박또박 쓰세요.");
+      setIsGuideSparkle(false);
+      if (guideSparkleTimerRef.current !== null) {
+        window.clearTimeout(guideSparkleTimerRef.current);
+        guideSparkleTimerRef.current = null;
+      }
+      const imageData = canvas ? toCompressedDataUrl(canvas) : "";
+      const strokeScore = Math.max(
         0,
         Math.min(100, 100 - (strokeError / Math.max(1, expectedStrokes)) * 100),
+      );
+      const writingScore = Number(
+        (strokeScore * 0.65 + shapeSimilarityPct * 0.35).toFixed(1),
       );
       const articulationWritingConsistency =
         calculateArticulationWritingConsistency({
@@ -391,16 +563,31 @@ function Step6Content() {
         isCorrect: true,
         expectedStrokes,
         userStrokes: userStrokeCount,
+        shapeSimilarityPct,
+        writingScore,
         articulationWritingConsistency: Number(
           articulationWritingConsistency.toFixed(1),
         ),
         timestamp: new Date().toLocaleTimeString(),
       };
 
-      localStorage.setItem(
-        "step6_recorded_data",
-        JSON.stringify([...existingData, newEntry]),
-      );
+      const maxItems = Math.max(5, questions.length || 5);
+      let candidate = [...existingData, newEntry].slice(-maxItems);
+      let saved = false;
+      while (!saved) {
+        try {
+          localStorage.setItem("step6_recorded_data", JSON.stringify(candidate));
+          saved = true;
+        } catch (saveError) {
+          if (!isQuotaExceededError(saveError)) throw saveError;
+          if (candidate.length <= 1) {
+            // 이미지 제거 후 마지막 메타데이터라도 저장
+            candidate = [{ ...newEntry, userImage: "" }];
+          } else {
+            candidate = candidate.slice(1);
+          }
+        }
+      }
 
       console.log("Step 6 데이터 저장", newEntry);
 
@@ -410,9 +597,17 @@ function Step6Content() {
       );
       setPhase("review");
     } else {
-      alert(
-        `획수를 확인해 주세요. (입력: ${userStrokeCount} / 목표: 약 ${expectedStrokes}획)`,
+      setInlineGuideText(
+        `한획한획 또박또박 쓰세요. (획수 ${userStrokeCount}/${expectedStrokes}, 형태 ${shapeSimilarityPct.toFixed(1)}%)`,
       );
+      setIsGuideSparkle(false);
+      window.requestAnimationFrame(() => setIsGuideSparkle(true));
+      if (guideSparkleTimerRef.current !== null) {
+        window.clearTimeout(guideSparkleTimerRef.current);
+      }
+      guideSparkleTimerRef.current = window.setTimeout(() => {
+        setIsGuideSparkle(false);
+      }, 2200);
       initCanvas();
     }
   };
@@ -424,6 +619,7 @@ function Step6Content() {
       setShowHintText(false);
       setShowTracingGuide(false);
     } else {
+      let step6QualityScore = 0;
       // SessionManager 통합 저장
       try {
         const rawSession = localStorage.getItem("kwab_training_session");
@@ -435,6 +631,10 @@ function Step6Content() {
           localStorage.getItem("step6_recorded_data") || "[]",
         );
         const consistencyByWord = new Map<string, number>();
+        const userStrokesByWord = new Map<string, number>();
+        const correctnessByWord = new Map<string, boolean>();
+        const shapeSimilarityByWord = new Map<string, number>();
+        const writingScoreByWord = new Map<string, number>();
         if (Array.isArray(recordedRows)) {
           recordedRows.forEach((row: any) => {
             if (!row?.text) return;
@@ -442,14 +642,45 @@ function Step6Content() {
               String(row.text),
               Number(row?.articulationWritingConsistency ?? 0),
             );
+            userStrokesByWord.set(String(row.text), Number(row?.userStrokes ?? 0));
+            correctnessByWord.set(String(row.text), Boolean(row?.isCorrect));
+            shapeSimilarityByWord.set(
+              String(row.text),
+              Number(row?.shapeSimilarityPct ?? 0),
+            );
+            writingScoreByWord.set(
+              String(row.text),
+              Number(row?.writingScore ?? 0),
+            );
           });
         }
+
+        const scoreRows = Array.isArray(recordedRows) ? recordedRows : [];
+        const avgWritingScore = scoreRows.length
+          ? scoreRows.reduce(
+              (sum, row) => sum + Number(row?.writingScore ?? 0),
+              0,
+            ) / scoreRows.length
+          : 0;
+        const avgConsistency = scoreRows.length
+          ? scoreRows.reduce(
+              (sum, row) =>
+                sum + Number(row?.articulationWritingConsistency ?? 0),
+              0,
+            ) / scoreRows.length
+          : 0;
+        step6QualityScore = Number(
+          Math.max(
+            0,
+            Math.min(100, avgWritingScore * 0.8 + avgConsistency * 0.2),
+          ).toFixed(1),
+        );
 
         sm.saveStep6Result(
           {
           completedTasks: correctCount,
           totalTasks: questions.length,
-          accuracy: Math.round((correctCount / questions.length) * 100),
+          accuracy: step6QualityScore,
           timestamp: Date.now(),
           items: questions.map((word, idx) => ({
             word: word.answer,
@@ -457,6 +688,10 @@ function Step6Content() {
               answer: word.answer,
               strokes: word.strokes,
             }),
+            userStrokes: userStrokesByWord.get(word.answer) ?? 0,
+            isCorrect: correctnessByWord.get(word.answer) ?? false,
+            shapeSimilarityPct: shapeSimilarityByWord.get(word.answer) ?? 0,
+            writingScore: writingScoreByWord.get(word.answer) ?? 0,
             userImage: writingImages[idx] || "",
             articulationWritingConsistency:
               consistencyByWord.get(word.answer) ?? 0,
@@ -468,14 +703,17 @@ function Step6Content() {
         console.log("Step 6 SessionManager 저장 완료");
       } catch (error) {
         console.error("SessionManager 저장 실패:", error);
+        step6QualityScore = Number(
+          ((correctCount / Math.max(1, questions.length)) * 100).toFixed(1),
+        );
       }
 
       const params = new URLSearchParams({
         place,
         ...stepParams,
         step6: isRehabMode && rehabTargetStep === 6
-          ? Math.round((correctCount / Math.max(1, questions.length)) * 100).toString()
-          : correctCount.toString(),
+          ? step6QualityScore.toString()
+          : step6QualityScore.toString(),
       });
       const isRehabStep6 = isRehabMode && rehabTargetStep === 6;
       if (isRehabStep6) {
@@ -490,28 +728,35 @@ function Step6Content() {
 
   const handleSkipStep = useCallback(() => {
     try {
-      const demoItems = questions.map((word) => ({
-        text: word.answer,
-        userImage: "",
-        isCorrect: true,
-        expectedStrokes: getExpectedStrokeCount({
+      const randomFloat = (min: number, max: number, digits = 1) =>
+        Number((Math.random() * (max - min) + min).toFixed(digits));
+      const demoItems = questions.map((word) => {
+        const expectedStrokes = getExpectedStrokeCount({
           answer: word.answer,
           strokes: word.strokes,
-        }),
-        userStrokes: getExpectedStrokeCount({
-          answer: word.answer,
-          strokes: word.strokes,
-        }),
-        articulationWritingConsistency: Number(
-          calculateArticulationWritingConsistency({
-            targetText: word.answer,
-            consonantAccuracy: articulationBaseline.consonant,
-            vowelAccuracy: articulationBaseline.vowel,
-            writingScore: 100,
-          }).score.toFixed(1),
-        ),
-        timestamp: new Date().toLocaleTimeString(),
-      }));
+        });
+        const strokeOffset = Math.floor(Math.random() * 3) - 1; // -1, 0, +1
+        const userStrokes = Math.max(1, expectedStrokes + strokeOffset);
+        const writingScore = randomFloat(60, 96, 0);
+        return {
+          text: word.answer,
+          userImage: "",
+          isCorrect: Math.random() < 0.72,
+          expectedStrokes,
+          userStrokes,
+          shapeSimilarityPct: randomFloat(55, 95),
+          writingScore,
+          articulationWritingConsistency: Number(
+            calculateArticulationWritingConsistency({
+              targetText: word.answer,
+              consonantAccuracy: articulationBaseline.consonant,
+              vowelAccuracy: articulationBaseline.vowel,
+              writingScore,
+            }).score.toFixed(1),
+          ),
+          timestamp: new Date().toLocaleTimeString(),
+        };
+      });
 
       localStorage.setItem("step6_recorded_data", JSON.stringify(demoItems));
 
@@ -520,26 +765,28 @@ function Step6Content() {
       const patientData = existingSession?.patient ||
         loadPatientProfile() || { name: "user" };
       const sessionManager = new SessionManager(patientData as any, place);
+      const step6Accuracy = Number(
+        (
+          demoItems.reduce((sum, item) => sum + Number(item.writingScore || 0), 0) /
+          Math.max(1, demoItems.length)
+        ).toFixed(1),
+      );
       sessionManager.saveStep6Result(
         {
         completedTasks: demoItems.length,
         totalTasks: questions.length,
-        accuracy: 100,
+        accuracy: step6Accuracy,
         timestamp: Date.now(),
-        items: questions.map((word) => ({
-          word: word.answer,
-          expectedStrokes: getExpectedStrokeCount({
-            answer: word.answer,
-            strokes: word.strokes,
-          }),
-          userImage: "",
+        items: demoItems.map((item) => ({
+          word: item.text,
+          expectedStrokes: Number(item.expectedStrokes || 0),
+          userStrokes: Number(item.userStrokes || 0),
+          isCorrect: Boolean(item.isCorrect),
+          shapeSimilarityPct: Number(item.shapeSimilarityPct || 0),
+          writingScore: Number(item.writingScore || 0),
+          userImage: item.userImage || "",
           articulationWritingConsistency: Number(
-            calculateArticulationWritingConsistency({
-              targetText: word.answer,
-              consonantAccuracy: articulationBaseline.consonant,
-              vowelAccuracy: articulationBaseline.vowel,
-              writingScore: 100,
-            }).score.toFixed(1),
+            item.articulationWritingConsistency || 0,
           ),
         })),
         },
@@ -549,9 +796,7 @@ function Step6Content() {
       const params = new URLSearchParams({
         place,
         ...stepParams,
-        step6: isRehabMode && rehabTargetStep === 6
-          ? "100"
-          : demoItems.length.toString(),
+        step6: String(step6Accuracy),
       });
       const isRehabStep6 = isRehabMode && rehabTargetStep === 6;
       if (isRehabStep6) {
@@ -734,9 +979,6 @@ function Step6Content() {
               </div>
 
               <div className="flex-1 min-h-[300px] lg:min-h-0 relative bg-white border-2 border-orange-100 rounded-[28px] lg:rounded-[36px] shadow-inner overflow-hidden order-2">
-                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 min-w-[320px] sm:min-w-[420px] px-6 py-2 rounded-xl bg-orange-50/95 border border-orange-100 text-orange-700 text-[11px] sm:text-xs font-bold text-center whitespace-nowrap shadow-sm">
-                  화면을 보며 정확하게 작성해 주세요.
-                </div>
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-[0.03]">
                   <div className="w-full h-px bg-slate-900 absolute top-1/2" />
                   <div className="h-full w-px bg-slate-900 absolute left-1/2" />
@@ -759,6 +1001,13 @@ function Step6Content() {
                     </p>
                   </div>
                 )}
+                <div
+                  className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 w-[calc(100%-1.5rem)] sm:w-auto sm:min-w-[420px] px-4 sm:px-6 py-2 rounded-xl bg-orange-50/95 border border-orange-100 text-orange-700 text-[11px] sm:text-xs font-bold text-center shadow-sm ${
+                    isGuideSparkle ? "animate-pulse ring-2 ring-orange-300" : ""
+                  }`}
+                >
+                  {inlineGuideText}
+                </div>
               </div>
             </div>
           ) : (
@@ -798,9 +1047,6 @@ function Step6Content() {
               className="lg:hidden fixed left-4 right-4 z-40 space-y-2 pb-[max(env(safe-area-inset-bottom),0px)]"
               style={{ bottom: "9.25rem" }}
             >
-              <div className="px-3 py-2 rounded-xl bg-orange-50 border border-orange-100 text-orange-700 text-[11px] font-bold text-center">
-                획을 정확하게 작성해 주세요.
-              </div>
               <button
                 onClick={checkAnswer}
                 className={`w-full py-4 rounded-2xl font-black text-base ${trainingButtonStyles.navyPrimary}`}

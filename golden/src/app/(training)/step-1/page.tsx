@@ -183,14 +183,16 @@ function Step1Content() {
 
   const handleSkipStep = useCallback(() => {
     try {
-      const demoResults = trainingData.map((item, index) => {
-        const isCorrect = index % 4 !== 0;
+      const randomInt = (min: number, max: number) =>
+        Math.floor(Math.random() * (max - min + 1)) + min;
+      const demoResults = trainingData.map((item) => {
+        const isCorrect = Math.random() < 0.7;
         return {
           question: item.question,
           correctAnswer: item.answer,
           userAnswer: isCorrect ? item.answer : !item.answer,
           isCorrect,
-          responseTime: 1400 + index * 120,
+          responseTime: randomInt(900, 3200),
         };
       });
 

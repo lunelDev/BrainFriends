@@ -818,29 +818,34 @@ function Step4Content() {
 
   const handleSkipStep = useCallback(() => {
     try {
+      const randomFloat = (min: number, max: number, digits = 1) =>
+        Number((Math.random() * (max - min) + min).toFixed(digits));
       if (timerRef.current) clearInterval(timerRef.current);
       if (typeof window !== "undefined" && window.speechSynthesis) {
         window.speechSynthesis.cancel();
       }
 
-      const demoItems = scenarios.slice(0, 3).map((scenario, index) => ({
-        situation: scenario.situation,
-        prompt: scenario.prompt,
-        transcript: "시연용 더미 응답입니다.",
-        matchedKeywords: scenario.answerKeywords.slice(0, 2),
-        relevantSentenceCount: 1,
-        totalSentenceCount: 1,
-        relevanceScore: 7 + (index % 2),
-        speechDuration: 8 + index,
-        silenceRatio: 0.12,
-        averageAmplitude: 38,
-        peakCount: 3,
-        kwabScore: 7 + (index % 2),
-        rawScore: 79 + index * 3,
-        articulationWritingConsistency: 74 + ((index + 1) % 3) * 6,
-        isCorrect: true,
-        timestamp: new Date().toLocaleTimeString(),
-      }));
+      const demoItems = scenarios.slice(0, 3).map((scenario) => {
+        const kwabScore = randomFloat(5.8, 9.6);
+        return {
+          situation: scenario.situation,
+          prompt: scenario.prompt,
+          transcript: "시연용 더미 응답입니다.",
+          matchedKeywords: scenario.answerKeywords.slice(0, 2),
+          relevantSentenceCount: 1,
+          totalSentenceCount: 1,
+          relevanceScore: randomFloat(5, 10),
+          speechDuration: randomFloat(6, 14, 0),
+          silenceRatio: randomFloat(0.05, 0.35, 2),
+          averageAmplitude: randomFloat(25, 62, 0),
+          peakCount: randomFloat(2, 7, 0),
+          kwabScore,
+          rawScore: randomFloat(58, 96),
+          articulationWritingConsistency: randomFloat(60, 95),
+          isCorrect: kwabScore >= 5,
+          timestamp: new Date().toLocaleTimeString(),
+        };
+      });
 
       localStorage.setItem("step4_recorded_audios", JSON.stringify(demoItems));
 

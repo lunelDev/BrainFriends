@@ -1,252 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { loadPatientProfile } from "@/lib/patientStorage";
 import {
   SessionManager,
   TrainingHistoryEntry,
 } from "@/lib/kwab/SessionManager";
-
-const STEP_LABELS: Record<number, string> = {
-  1: "청각 이해",
-  2: "따라말하기",
-  3: "단어 명명",
-  4: "유창성",
-  5: "읽기",
-  6: "쓰기",
-};
-
-type RehabTrendRow = {
-  historyId: string;
-  completedAt: number;
-  score: number;
-};
-
-type DetailCompareMetric = {
-  key: string;
-  label: string;
-  unit: "%" | "ms" | "dB";
-  higherBetter: boolean;
-  current: number | null;
-  previous: number | null;
-};
-
-type StepResultCard = {
-  index: number;
-  text: string;
-  isCorrect: boolean;
-};
-
-const toNumberOrNull = (value: unknown): number | null => {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null;
-};
-
-const average = (values: Array<number | null>): number | null => {
-  const nums = values.filter((v): v is number => v !== null);
-  if (!nums.length) return null;
-  return nums.reduce((a, b) => a + b, 0) / nums.length;
-};
-
-const ratioToPercent = (value: number | null): number | null => {
-  if (value === null) return null;
-  return value <= 1 ? value * 100 : value;
-};
-
-function extractDetailMetrics(
-  step: number,
-  row: TrainingHistoryEntry | null,
-): DetailCompareMetric[] {
-  if (!row) return [];
-  const stepDetails = row.stepDetails?.[
-    `step${step}` as keyof TrainingHistoryEntry["stepDetails"]
-  ] as any[] | undefined;
-  const details = Array.isArray(stepDetails) ? stepDetails : [];
-
-  if (step === 1) {
-    return [
-      {
-        key: "accuracy",
-        label: "정답률",
-        unit: "%",
-        higherBetter: true,
-        current: toNumberOrNull(row.stepScores?.step1),
-        previous: null,
-      },
-      {
-        key: "reaction",
-        label: "평균 반응시간",
-        unit: "ms",
-        higherBetter: false,
-        current: average(details.map((d) => toNumberOrNull(d?.responseTime))),
-        previous: null,
-      },
-    ];
-  }
-
-  if (step === 2) {
-    return [
-      {
-        key: "consonant",
-        label: "자음 정확도",
-        unit: "%",
-        higherBetter: true,
-        current: toNumberOrNull(
-          row.articulationScores?.step2?.averageConsonantAccuracy,
-        ),
-        previous: null,
-      },
-      {
-        key: "vowel",
-        label: "모음 정확도",
-        unit: "%",
-        higherBetter: true,
-        current: toNumberOrNull(
-          row.articulationScores?.step2?.averageVowelAccuracy,
-        ),
-        previous: null,
-      },
-      {
-        key: "symmetry",
-        label: "안면 대칭",
-        unit: "%",
-        higherBetter: true,
-        current: average(details.map((d) => toNumberOrNull(d?.symmetryScore))),
-        previous: null,
-      },
-      {
-        key: "audio",
-        label: "평균 음성 레벨",
-        unit: "dB",
-        higherBetter: true,
-        current: average(details.map((d) => toNumberOrNull(d?.audioLevel))),
-        previous: null,
-      },
-    ];
-  }
-
-  if (step === 3) {
-    return [
-      {
-        key: "accuracy",
-        label: "정답률",
-        unit: "%",
-        higherBetter: true,
-        current: toNumberOrNull(row.stepScores?.step3),
-        previous: null,
-      },
-      {
-        key: "consonant",
-        label: "자음 정확도",
-        unit: "%",
-        higherBetter: true,
-        current: toNumberOrNull(
-          row.articulationScores?.step3?.averageConsonantAccuracy,
-        ),
-        previous: null,
-      },
-      {
-        key: "vowel",
-        label: "모음 정확도",
-        unit: "%",
-        higherBetter: true,
-        current: toNumberOrNull(
-          row.articulationScores?.step3?.averageVowelAccuracy,
-        ),
-        previous: null,
-      },
-    ];
-  }
-
-  if (step === 4) {
-    return [
-      {
-        key: "score",
-        label: "유창성 점수",
-        unit: "%",
-        higherBetter: true,
-        current: toNumberOrNull(row.stepScores?.step4),
-        previous: null,
-      },
-      {
-        key: "silence",
-        label: "침묵 비율",
-        unit: "%",
-        higherBetter: false,
-        current: average(
-          details.map((d) => ratioToPercent(toNumberOrNull(d?.silenceRatio))),
-        ),
-        previous: null,
-      },
-      {
-        key: "duration",
-        label: "평균 발화시간",
-        unit: "ms",
-        higherBetter: false,
-        current: average(details.map((d) => toNumberOrNull(d?.speechDuration))),
-        previous: null,
-      },
-    ];
-  }
-
-  if (step === 5) {
-    return [
-      {
-        key: "score",
-        label: "읽기 점수",
-        unit: "%",
-        higherBetter: true,
-        current: toNumberOrNull(row.stepScores?.step5),
-        previous: null,
-      },
-      {
-        key: "consonant",
-        label: "자음 정확도",
-        unit: "%",
-        higherBetter: true,
-        current: toNumberOrNull(
-          row.articulationScores?.step5?.averageConsonantAccuracy,
-        ),
-        previous: null,
-      },
-      {
-        key: "vowel",
-        label: "모음 정확도",
-        unit: "%",
-        higherBetter: true,
-        current: toNumberOrNull(
-          row.articulationScores?.step5?.averageVowelAccuracy,
-        ),
-        previous: null,
-      },
-      {
-        key: "readingTime",
-        label: "평균 읽기시간",
-        unit: "ms",
-        higherBetter: false,
-        current: average(details.map((d) => toNumberOrNull(d?.totalTime))),
-        previous: null,
-      },
-    ];
-  }
-
-  return [
-    {
-      key: "score",
-      label: "쓰기 점수",
-      unit: "%",
-      higherBetter: true,
-      current: toNumberOrNull(row.stepScores?.step6),
-      previous: null,
-    },
-  ];
-}
+import { REHAB_STEP_LABELS } from "@/lib/results/rehab/constants";
+import {
+  buildDetailComparisons,
+  buildFacialReport,
+  buildStepResultCards,
+  buildTrendChart,
+  buildTrendRows,
+  countImprovedMetrics,
+} from "@/lib/results/rehab/adapters";
 
 function ResultRehabPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [historyRows, setHistoryRows] = useState<TrainingHistoryEntry[]>([]);
+  const [playingIndex, setPlayingIndex] = useState<string | null>(null);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   const place = (searchParams.get("place") || "home").toLowerCase();
   const targetStep = Number(searchParams.get("targetStep") || "1");
@@ -294,158 +70,74 @@ function ResultRehabPage() {
       ? null
       : Number((currentScore - previousScore).toFixed(1));
 
-  const trendRows = useMemo<RehabTrendRow[]>(() => {
-    return [...stepRows]
-      .reverse()
-      .slice(-8)
-      .map((row) => ({
-        historyId: row.historyId,
-        completedAt: row.completedAt,
-        score: Number(row.stepScores?.[stepKey] ?? 0),
-      }));
-  }, [stepKey, stepRows]);
+  const trendRows = useMemo(
+    () => buildTrendRows(stepRows, stepKey),
+    [stepKey, stepRows],
+  );
 
-  const trendChart = useMemo(() => {
-    if (!trendRows.length) return null;
-    const width = 640;
-    const height = 200;
-    const padLeft = 24;
-    const padRight = 12;
-    const padTop = 16;
-    const padBottom = 34;
-    const plotW = width - padLeft - padRight;
-    const plotH = height - padTop - padBottom;
-    const xGap = trendRows.length > 1 ? plotW / (trendRows.length - 1) : 0;
-    const toY = (score: number) => padTop + ((100 - score) / 100) * plotH;
-    const points = trendRows.map((row, idx) => ({
-      x: padLeft + idx * xGap,
-      y: toY(Math.max(0, Math.min(100, row.score))),
-      score: row.score,
-      label: new Date(row.completedAt).toLocaleDateString("ko-KR", {
-        month: "2-digit",
-        day: "2-digit",
-      }),
-    }));
-    const polyline = points.map((p) => `${p.x},${p.y}`).join(" ");
-    return { width, height, padLeft, padRight, padTop, padBottom, points, polyline };
-  }, [trendRows]);
+  const trendChart = useMemo(() => buildTrendChart(trendRows), [trendRows]);
 
   const latestSessionRow = historyRows.length ? historyRows[0] : null;
   const previousSessionRow = historyRows.length > 1 ? historyRows[1] : null;
 
-  const facialReport = useMemo(() => {
-    if (!latestSessionRow) return null;
-    const snap = latestSessionRow.facialAnalysisSnapshot;
-    const asymmetryRisk = Number(snap?.asymmetryRisk ?? 0);
-    const consonant = Number(
-      snap?.overallConsonant ??
-        average([
-          toNumberOrNull(
-            latestSessionRow.articulationScores?.step2
-              ?.averageConsonantAccuracy,
-          ),
-          toNumberOrNull(
-            latestSessionRow.articulationScores?.step4
-              ?.averageConsonantAccuracy,
-          ),
-          toNumberOrNull(
-            latestSessionRow.articulationScores?.step5
-              ?.averageConsonantAccuracy,
-          ),
-        ]) ??
-        0,
-    );
-    const vowel = Number(
-      snap?.overallVowel ??
-        average([
-          toNumberOrNull(
-            latestSessionRow.articulationScores?.step2?.averageVowelAccuracy,
-          ),
-          toNumberOrNull(
-            latestSessionRow.articulationScores?.step4?.averageVowelAccuracy,
-          ),
-          toNumberOrNull(
-            latestSessionRow.articulationScores?.step5?.averageVowelAccuracy,
-          ),
-        ]) ??
-        0,
-    );
-    const prevRisk = toNumberOrNull(
-      previousSessionRow?.facialAnalysisSnapshot?.asymmetryRisk,
-    );
-    const riskDelta =
-      prevRisk === null ? null : Number((asymmetryRisk - prevRisk).toFixed(1));
-    const riskLabel =
-      asymmetryRisk >= 45 ? "고위험" : asymmetryRisk >= 30 ? "주의" : "저위험";
-    const hasCameraData = consonant > 0 || vowel > 0 || asymmetryRisk > 0;
-    if (!hasCameraData) return null;
-    return {
-      asymmetryRisk,
-      consonant,
-      vowel,
-      riskLabel,
-      riskDelta,
-      summary:
-        snap?.articulationFaceMatchSummary ||
-        "음성-안면 매칭 데이터가 충분하지 않습니다.",
-    };
-  }, [latestSessionRow, previousSessionRow]);
+  const facialReport = useMemo(
+    () => buildFacialReport(latestSessionRow, previousSessionRow),
+    [latestSessionRow, previousSessionRow],
+  );
 
-  const detailComparisons = useMemo(() => {
-    const currentMetrics = extractDetailMetrics(safeStep, latestStepRow);
-    const previousMetrics = extractDetailMetrics(safeStep, previousStepRow);
-    const prevByKey = new Map(previousMetrics.map((m) => [m.key, m]));
-    return currentMetrics
-      .map((metric) => ({
-        ...metric,
-        previous: prevByKey.get(metric.key)?.current ?? null,
-      }))
-      .filter((metric) => metric.current !== null);
-  }, [latestStepRow, previousStepRow, safeStep]);
+  const detailComparisons = useMemo(
+    () => buildDetailComparisons(safeStep, latestStepRow, previousStepRow),
+    [latestStepRow, previousStepRow, safeStep],
+  );
 
-  const improvedCount = useMemo(() => {
-    return detailComparisons.filter((m) => {
-      if (m.current === null || m.previous === null) return false;
-      return m.higherBetter ? m.current > m.previous : m.current < m.previous;
-    }).length;
-  }, [detailComparisons]);
+  const improvedCount = useMemo(
+    () => countImprovedMetrics(detailComparisons),
+    [detailComparisons],
+  );
 
-  const stepResultCards = useMemo<StepResultCard[]>(() => {
-    if (!latestStepRow) return [];
-    const raw = latestStepRow.stepDetails?.[detailKey];
-    const items = Array.isArray(raw) ? raw : [];
-    return items.map((it: any, idx: number) => {
-      const recordedText = String(
-        it?.transcript || it?.recognizedText || it?.sttText || "",
-      ).trim();
-      const targetText = String(
-        it?.text ||
-          it?.targetText ||
-          it?.targetWord ||
-          it?.word ||
-          it?.prompt ||
-          it?.answer ||
-          "...",
-      );
-      const text =
-        safeStep === 2 || safeStep === 4 || safeStep === 5
-          ? recordedText || `${targetText} (인식 텍스트 없음)`
-          : targetText;
-      const fallbackCorrect =
-        safeStep === 4
-          ? Number(it?.kwabScore ?? 0) >= 5
-          : safeStep === 5
-            ? Number(it?.readingScore ?? 0) >= 60
-            : false;
-      const isCorrect =
-        typeof it?.isCorrect === "boolean" ? it.isCorrect : fallbackCorrect;
-      return {
-        index: idx + 1,
-        text,
-        isCorrect,
-      };
-    });
-  }, [detailKey, latestStepRow, safeStep]);
+  const stepResultCards = useMemo(
+    () => buildStepResultCards(safeStep, latestStepRow, detailKey),
+    [detailKey, latestStepRow, safeStep],
+  );
+
+  const stopPlayback = () => {
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current.currentTime = 0;
+      audioPlayerRef.current.onended = null;
+      audioPlayerRef.current = null;
+    }
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    setPlayingIndex(null);
+  };
+
+  const playSpeechFallback = (text: string, id: string) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    stopPlayback();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "ko-KR";
+    utterance.rate = 0.95;
+    utterance.onend = () => setPlayingIndex(null);
+    utterance.onerror = () => setPlayingIndex(null);
+    setPlayingIndex(id);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const playAudio = (audioUrl: string, id: string) => {
+    stopPlayback();
+    const audio = new Audio(audioUrl);
+    audioPlayerRef.current = audio;
+    setPlayingIndex(id);
+    audio.onended = () => setPlayingIndex(null);
+    audio.onerror = () => setPlayingIndex(null);
+    audio.play().catch(() => setPlayingIndex(null));
+  };
+
+  useEffect(() => {
+    return () => stopPlayback();
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 overflow-x-hidden">
@@ -503,10 +195,10 @@ function ResultRehabPage() {
       <main className="max-w-4xl mx-auto px-3 sm:px-6 py-5 sm:py-8 pb-10 sm:pb-8 space-y-4 sm:space-y-5">
         <section className="rounded-2xl bg-gradient-to-r from-sky-600 to-sky-500 text-white p-5 sm:p-6 shadow-sm">
           <p className="text-xs sm:text-sm font-black opacity-90">
-            Step {safeStep} · {STEP_LABELS[safeStep]}
+            Step {safeStep} · {REHAB_STEP_LABELS[safeStep]}
           </p>
           <h2 className="text-xl sm:text-2xl font-black mt-1">
-            이번 점수 {currentScore.toFixed(1)}%
+            이번 점수 {currentScore.toFixed(1)}점
           </h2>
           <p className="text-xs sm:text-sm opacity-90 mt-2">
             이전 동일 훈련 기록과 비교해 변화량을 확인하세요.
@@ -517,7 +209,7 @@ function ResultRehabPage() {
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
             <p className="text-sm font-black text-slate-500">현재 점수</p>
             <p className="text-2xl font-black text-slate-900 mt-1">
-              {currentScore.toFixed(1)}%
+              {currentScore.toFixed(1)}점
             </p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
@@ -525,7 +217,7 @@ function ResultRehabPage() {
             <p className="text-2xl font-black text-slate-900 mt-1">
               {previousScore === null
                 ? "기록 없음"
-                : `${previousScore.toFixed(1)}%`}
+                : `${previousScore.toFixed(1)}점`}
             </p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
@@ -541,7 +233,7 @@ function ResultRehabPage() {
             >
               {delta === null
                 ? "-"
-                : `${delta > 0 ? "+" : ""}${delta.toFixed(1)}%p`}
+                : `${delta > 0 ? "+" : ""}${delta.toFixed(1)}점`}
             </p>
           </div>
         </section>
@@ -549,7 +241,7 @@ function ResultRehabPage() {
         <section className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm sm:text-base font-black text-slate-900">
-              이번 훈련 세부 항목 비교
+              {safeStep === 6 ? "이번 쓰기 결과 요약" : "이번 훈련 세부 항목 비교"}
             </h3>
             <span className="text-[11px] font-bold text-slate-500">
               개선 항목 {improvedCount}개
@@ -596,8 +288,9 @@ function ResultRehabPage() {
                     <i className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
                     <span className="font-semibold">{metric.label}</span>
                     <b className="text-slate-900">
-                      {metric.current?.toFixed(1)}
-                      {metric.unit}
+                      {metric.current === null
+                        ? "측정 없음"
+                        : `${metric.current.toFixed(1)}${metric.unit}`}
                     </b>
                     <span className="text-slate-400">/</span>
                     <span className="font-semibold text-slate-500">
@@ -670,6 +363,61 @@ function ResultRehabPage() {
                   <p className="text-xs font-bold text-slate-700 leading-snug">
                     "{item.text}"
                   </p>
+                  {safeStep === 6 && item.userImage && (
+                    <div className="aspect-video bg-slate-50 rounded-md mt-2 overflow-hidden border border-slate-100 flex items-center justify-center">
+                      <img
+                        src={item.userImage}
+                        className="max-h-full max-w-full object-contain p-2"
+                        alt="rehab-writing-result"
+                      />
+                    </div>
+                  )}
+                  {(item.feedbackGood || item.feedbackImprove) && (
+                    <div className="mt-2 pt-2 border-t border-slate-100 space-y-1">
+                      {item.feedbackGood && (
+                        <p className="text-[11px] font-semibold text-slate-600 leading-relaxed">
+                          <span className="text-sky-600">좋았던 점:</span> {item.feedbackGood}
+                        </p>
+                      )}
+                      {item.feedbackImprove && (
+                        <p className="text-[11px] font-semibold text-slate-500 leading-relaxed">
+                          <span className="text-slate-700">개선점:</span> {item.feedbackImprove}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {safeStep === 2 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const id = `step2-${item.index}`;
+                        if (playingIndex === id) {
+                          stopPlayback();
+                          return;
+                        }
+                        if (item.audioUrl) {
+                          playAudio(item.audioUrl, id);
+                          return;
+                        }
+                        playSpeechFallback(item.text, id);
+                      }}
+                      className={`mt-2 w-full py-1.5 rounded-md text-xs font-black flex items-center justify-center gap-2 transition-all ${
+                        playingIndex === `step2-${item.index}`
+                          ? "bg-slate-900 text-white"
+                          : "bg-slate-50 text-slate-600 group-hover:bg-sky-50 group-hover:text-slate-900"
+                      }`}
+                    >
+                      {playingIndex === `step2-${item.index}` ? (
+                        <>
+                          <span>■</span> STOP SOUND
+                        </>
+                      ) : (
+                        <>
+                          <span>▶</span> PLAY SOUND
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -786,7 +534,7 @@ function ResultRehabPage() {
                       fill="#0F172A"
                       className="hidden sm:block"
                     >
-                      {p.score.toFixed(1)}
+                      {p.score.toFixed(1)}점
                     </text>
                     <text
                       x={p.x}
@@ -808,4 +556,16 @@ function ResultRehabPage() {
   );
 }
 
-export default ResultRehabPage;
+export default function ResultRehabPageWithSuspense() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-100 flex items-center justify-center text-slate-500 font-black">
+          결과 데이터를 불러오는 중...
+        </div>
+      }
+    >
+      <ResultRehabPage />
+    </Suspense>
+  );
+}

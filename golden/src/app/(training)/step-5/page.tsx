@@ -720,18 +720,17 @@ function Step5Content() {
 
   const handleSkipStep = useCallback(() => {
     try {
+      const randomFloat = (min: number, max: number, digits = 1) =>
+        Number((Math.random() * (max - min) + min).toFixed(digits));
       if (highlightTimerRef.current) clearInterval(highlightTimerRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
       analyzerRef.current?.cancelAnalysis();
       resetRuntimeStatus();
 
-      const demoResults: ReadingMetrics[] = texts.map((item, idx) => {
-        const totalTime = Math.max(8, Math.round(item.wordCount / 2));
-        const wordsPerMinute = Math.max(
-          40,
-          Math.round((item.wordCount / totalTime) * 60),
-        );
-        const readingScore = Math.min(100, 74 + ((idx % 4) * 6));
+      const demoResults: ReadingMetrics[] = texts.map((item) => {
+        const totalTime = randomFloat(7, 16, 0);
+        const wordsPerMinute = randomFloat(45, 130, 0);
+        const readingScore = randomFloat(58, 96, 0);
 
         return {
           place,
@@ -741,11 +740,11 @@ function Step5Content() {
           audioUrl: "",
           totalTime,
           wordsPerMinute,
-          pauseCount: 0,
+          pauseCount: randomFloat(0, 4, 0),
           readingScore,
-          consonantAccuracy: 75 + ((idx + 1) % 4) * 5,
-          vowelAccuracy: 73 + (idx % 4) * 5,
-          articulationWritingConsistency: 74 + ((idx + 2) % 3) * 6,
+          consonantAccuracy: randomFloat(58, 96),
+          vowelAccuracy: randomFloat(58, 96),
+          articulationWritingConsistency: randomFloat(60, 95),
           dataSource: "demo",
         };
       });

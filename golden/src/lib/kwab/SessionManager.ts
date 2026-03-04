@@ -161,6 +161,10 @@ export interface Step6Result {
   items: Array<{
     word: string;
     expectedStrokes: number;
+    userStrokes?: number;
+    isCorrect?: boolean;
+    shapeSimilarityPct?: number;
+    writingScore?: number;
     userImage: string;
     articulationWritingConsistency?: number;
   }>;
