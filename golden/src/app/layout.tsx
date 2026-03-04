@@ -1,6 +1,14 @@
 import type { Metadata } from "next";
+import { Noto_Sans_KR } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
+
+const notoSansKr = Noto_Sans_KR({
+  subsets: ["latin"],
+  weight: ["400", "500", "700", "900"],
+  display: "swap",
+  variable: "--font-noto-sans-kr",
+});
 
 export const metadata: Metadata = {
   title: "브레인프렌즈 GOLDEN",
@@ -30,7 +38,10 @@ export default function RootLayout({
           strategy="beforeInteractive"
         />
       </head>
-      <body suppressHydrationWarning className="antialiased">
+      <body
+        suppressHydrationWarning
+        className={`${notoSansKr.variable} antialiased`}
+      >
         {children}
       </body>
     </html>

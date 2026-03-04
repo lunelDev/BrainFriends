@@ -1,6 +1,7 @@
 // src/constants/writingData.ts
 import { PlaceType } from "./trainingData";
 import { VISUAL_MATCHING_PROTOCOLS } from "./visualTrainingData";
+import { calculateHangulStrokeCount } from "@/lib/text/hangulStroke";
 
 export interface WritingWord {
   id: number;
@@ -123,6 +124,7 @@ const buildWritingWords = (place: PlaceType): WritingWord[] => {
       question.options.find((opt) => opt.label === question.targetWord) ||
       question.options[0];
     const meta = getWordMeta(question.targetWord);
+    const computedStrokes = calculateHangulStrokeCount(question.targetWord);
 
     return {
       id: index + 1,
@@ -130,7 +132,7 @@ const buildWritingWords = (place: PlaceType): WritingWord[] => {
       emoji: answerOption?.emoji || "🖼️",
       answer: question.targetWord,
       category: meta.category,
-      strokes: meta.strokes,
+      strokes: computedStrokes > 0 ? computedStrokes : meta.strokes,
     };
   });
 };

@@ -23,6 +23,8 @@ function Step1Content() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const placeParam = (searchParams.get("place") as PlaceType) || "home";
+  const isRehabMode = searchParams.get("trainMode") === "rehab";
+  const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
 
   const [isMounted, setIsMounted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -35,6 +37,24 @@ function Step1Content() {
   const [questionStartTime, setQuestionStartTime] = useState<number>(0);
   const [questionResults, setQuestionResults] = useState<any[]>([]);
   const [isHomeExitModalOpen, setIsHomeExitModalOpen] = useState(false);
+
+  const pushRehabResult = useCallback(
+    (step1ScorePercent: number) => {
+      const params = new URLSearchParams({
+        place: placeParam,
+        trainMode: "rehab",
+        targetStep: String(rehabTargetStep || 1),
+        step1: String(step1ScorePercent),
+        step2: "0",
+        step3: "0",
+        step4: "0",
+        step5: "0",
+        step6: "0",
+      });
+      router.push(`/result-rehab?${params.toString()}`);
+    },
+    [placeParam, rehabTargetStep, router],
+  );
 
   useEffect(() => {
     setIsMounted(true);
@@ -66,6 +86,13 @@ function Step1Content() {
     setIsHomeExitModalOpen(true);
   };
   const confirmGoHome = () => {
+    const isTrialMode =
+      typeof window !== "undefined" &&
+      sessionStorage.getItem("btt.trialMode") === "1";
+    if (isTrialMode) {
+      router.push("/");
+      return;
+    }
     saveTrainingExitProgress(placeParam, 1);
     router.push("/select");
   };
@@ -185,7 +212,14 @@ function Step1Content() {
         items: demoResults,
       });
 
-      router.push(`/step-2?step1=${finalScore}&place=${placeParam}`);
+      if (isRehabMode && rehabTargetStep === 1) {
+        const scorePercent = Math.round(
+          (finalScore / Math.max(1, demoResults.length)) * 100,
+        );
+        pushRehabResult(scorePercent);
+      } else {
+        router.push(`/step-2?step1=${finalScore}&place=${placeParam}`);
+      }
     } catch (error) {
       console.error("Step1 skip failed:", error);
     }
@@ -254,7 +288,14 @@ function Step1Content() {
           console.log(
             `🚀 Step 2로 이동 (step1=${finalScore}, place=${placeParam})`,
           );
-          router.push(`/step-2?step1=${finalScore}&place=${placeParam}`);
+          if (isRehabMode && rehabTargetStep === 1) {
+            const scorePercent = Math.round(
+              (finalScore / Math.max(1, trainingData.length)) * 100,
+            );
+            pushRehabResult(scorePercent);
+          } else {
+            router.push(`/step-2?step1=${finalScore}&place=${placeParam}`);
+          }
         }
       }, 800);
     },
@@ -269,6 +310,9 @@ function Step1Content() {
       questionStartTime,
       questionResults,
       saveStep1Results,
+      isRehabMode,
+      rehabTargetStep,
+      pushRehabResult,
     ],
   );
 
@@ -455,3 +499,4 @@ export default function Step1Page() {
     </Suspense>
   );
 }
+

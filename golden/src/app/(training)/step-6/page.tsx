@@ -17,6 +17,8 @@ import { loadPatientProfile } from "@/lib/patientStorage";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
+import { calculateHangulStrokeCount } from "@/lib/text/hangulStroke";
+import { calculateArticulationWritingConsistency } from "@/lib/analysis/articulationAnalyzer";
 
 export const dynamic = "force-dynamic";
 
@@ -25,14 +27,9 @@ const STEP3_IMAGE_BASE_URL = (
   "https://cdn.jsdelivr.net/gh/BUGISU/braintalktalk-assets@main/step3"
 ).replace(/\/$/, "");
 
-const STEP6_IMAGE_LABEL_OVERRIDES: Partial<Record<PlaceType, Record<string, string>>> = {
-  mart: {
-    계란: "달걀",
-  },
-  park: {
-    분수대: "분수",
-  },
-};
+const STEP6_IMAGE_LABEL_OVERRIDES: Partial<
+  Record<PlaceType, Record<string, string>>
+> = {};
 
 const buildNameVariants = (baseName: string) => {
   const variants = new Set<string>();
@@ -123,7 +120,9 @@ function Step6WordImage({
           }}
         />
       ) : (
-        <div className="text-slate-400 font-black text-lg">{answer.slice(0, 1)}</div>
+        <div className="text-slate-400 font-black text-lg">
+          {answer.slice(0, 1)}
+        </div>
       )}
     </>
   );
@@ -134,7 +133,7 @@ function Step6WordImage({
         type="button"
         onClick={onClick}
         className={`${className} cursor-zoom-in`}
-        aria-label={zoomLabel || `${answer} 확대 보기`}
+        aria-label={zoomLabel || `${answer} 이미지 보기`}
       >
         {content}
       </button>
@@ -164,11 +163,11 @@ function getTracingGuideFontSize(
 }
 
 const RESULT_PRAISES = [
-  "좋아요! 정답입니다",
-  "정확해요! 잘 쓰셨어요",
-  "완벽해요! 아주 좋습니다",
-  "잘했어요, 정답입니다",
-  "좋습니다. 정확하게 작성했어요",
+  "좋아요, 정답입니다!",
+  "정확해요! 잘하셨어요.",
+  "아주 좋아요!",
+  "훌륭해요, 정답입니다.",
+  "좋습니다. 정확하게 작성했어요.",
 ] as const;
 
 function Step6Content() {
@@ -176,10 +175,19 @@ function Step6Content() {
   const searchParams = useSearchParams();
 
   const place = (searchParams.get("place") as PlaceType) || "home";
+  const isRehabMode = searchParams.get("trainMode") === "rehab";
+  const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
   const handleGoHome = () => {
     setIsHomeExitModalOpen(true);
   };
   const confirmGoHome = () => {
+    const isTrialMode =
+      typeof window !== "undefined" &&
+      sessionStorage.getItem("btt.trialMode") === "1";
+    if (isTrialMode) {
+      router.push("/");
+      return;
+    }
     saveTrainingExitProgress(place, 6);
     router.push("/select");
   };
@@ -206,9 +214,7 @@ function Step6Content() {
   const [userStrokeCount, setUserStrokeCount] = useState(0);
   const [writingImages, setWritingImages] = useState<string[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [praiseMessage, setPraiseMessage] = useState<string>(
-    RESULT_PRAISES[0],
-  );
+  const [praiseMessage, setPraiseMessage] = useState<string>(RESULT_PRAISES[0]);
   const [isHomeExitModalOpen, setIsHomeExitModalOpen] = useState(false);
   const [isImageZoomOpen, setIsImageZoomOpen] = useState(false);
 
@@ -220,10 +226,69 @@ function Step6Content() {
     [place],
   );
   const currentWord = questions[currentIndex];
+  const getExpectedStrokeCount = useCallback(
+    (word: { answer: string; strokes: number }) => {
+      const calculated = calculateHangulStrokeCount(word.answer);
+      return calculated > 0 ? calculated : word.strokes;
+    },
+    [],
+  );
+  const expectedStrokes = useMemo(
+    () =>
+      currentWord
+        ? getExpectedStrokeCount({
+            answer: currentWord.answer,
+            strokes: currentWord.strokes,
+          })
+        : 0,
+    [currentWord, getExpectedStrokeCount],
+  );
+  const articulationBaseline = useMemo(() => {
+    if (typeof window === "undefined") {
+      return { consonant: 0, vowel: 0 };
+    }
+    try {
+      const rawSession = localStorage.getItem("kwab_training_session");
+      const existingSession = rawSession ? JSON.parse(rawSession) : null;
+      const patientData = existingSession?.patient ||
+        loadPatientProfile() || { name: "user" };
+      const sm = new SessionManager(patientData as any, place);
+      const session = sm.getSession();
+      const consonant =
+        Number(session.step5?.averageConsonantAccuracy) ||
+        Number(
+          session.step4?.items?.length
+            ? session.step4.items.reduce(
+                (sum, row) =>
+                  sum + Number((row as any)?.consonantAccuracy ?? 0),
+                0,
+              ) / session.step4.items.length
+            : 0,
+        ) ||
+        0;
+      const vowel =
+        Number(session.step5?.averageVowelAccuracy) ||
+        Number(
+          session.step4?.items?.length
+            ? session.step4.items.reduce(
+                (sum, row) => sum + Number((row as any)?.vowelAccuracy ?? 0),
+                0,
+              ) / session.step4.items.length
+            : 0,
+        ) ||
+        0;
+      return {
+        consonant: Math.max(0, Math.min(100, consonant)),
+        vowel: Math.max(0, Math.min(100, vowel)),
+      };
+    } catch {
+      return { consonant: 0, vowel: 0 };
+    }
+  }, [place]);
 
   useEffect(() => {
     setIsMounted(true);
-    localStorage.removeItem("step6_recorded_data"); // ✅ 초기화
+    localStorage.removeItem("step6_recorded_data");
   }, []);
 
   const initCanvas = useCallback(() => {
@@ -294,27 +359,41 @@ function Step6Content() {
 
   const checkAnswer = () => {
     if (!currentWord) return;
-    const isStrokeCorrect =
-      Math.abs(userStrokeCount - currentWord.strokes) <= 5;
+    const isStrokeCorrect = Math.abs(userStrokeCount - expectedStrokes) <= 5;
 
     if (userStrokeCount > 0 && isStrokeCorrect) {
       const imageData = canvasRef.current?.toDataURL("image/png") || "";
+      const strokeError = Math.abs(userStrokeCount - expectedStrokes);
+      const writingScore = Math.max(
+        0,
+        Math.min(100, 100 - (strokeError / Math.max(1, expectedStrokes)) * 100),
+      );
+      const articulationWritingConsistency =
+        calculateArticulationWritingConsistency({
+          targetText: currentWord.answer,
+          consonantAccuracy: articulationBaseline.consonant,
+          vowelAccuracy: articulationBaseline.vowel,
+          writingScore,
+        }).score;
 
-      // ✅ 1. 누적 이미지 업데이트
+      // 1) 누적 이미지 업데이트
       const updatedImages = [...writingImages, imageData];
       setWritingImages(updatedImages);
 
-      // ✅ 2. Result 페이지용 localStorage 저장
+      // 2) Result 페이지 localStorage 저장
       const existingData = JSON.parse(
         localStorage.getItem("step6_recorded_data") || "[]",
       );
 
       const newEntry = {
-        text: currentWord.answer, // 쓴 단어
-        userImage: imageData, // Base64 이미지
+        text: currentWord.answer,
+        userImage: imageData,
         isCorrect: true,
-        expectedStrokes: currentWord.strokes,
+        expectedStrokes,
         userStrokes: userStrokeCount,
+        articulationWritingConsistency: Number(
+          articulationWritingConsistency.toFixed(1),
+        ),
         timestamp: new Date().toLocaleTimeString(),
       };
 
@@ -323,7 +402,7 @@ function Step6Content() {
         JSON.stringify([...existingData, newEntry]),
       );
 
-      console.log("✅ Step 6 데이터 저장:", newEntry);
+      console.log("Step 6 데이터 저장", newEntry);
 
       setCorrectCount((prev) => prev + 1);
       setPraiseMessage(
@@ -332,7 +411,7 @@ function Step6Content() {
       setPhase("review");
     } else {
       alert(
-        `획수를 확인해 주세요! (입력: ${userStrokeCount} / 목표: 약 ${currentWord.strokes}획)`,
+        `획수를 확인해 주세요. (입력: ${userStrokeCount} / 목표: 약 ${expectedStrokes}획)`,
       );
       initCanvas();
     }
@@ -345,37 +424,67 @@ function Step6Content() {
       setShowHintText(false);
       setShowTracingGuide(false);
     } else {
-      // ✅ SessionManager 통합 저장
+      // SessionManager 통합 저장
       try {
         const rawSession = localStorage.getItem("kwab_training_session");
         const existingSession = rawSession ? JSON.parse(rawSession) : null;
         const patientData = existingSession?.patient ||
-          loadPatientProfile() || { name: "사용자" };
+          loadPatientProfile() || { name: "user" };
         const sm = new SessionManager(patientData as any, place);
+        const recordedRows = JSON.parse(
+          localStorage.getItem("step6_recorded_data") || "[]",
+        );
+        const consistencyByWord = new Map<string, number>();
+        if (Array.isArray(recordedRows)) {
+          recordedRows.forEach((row: any) => {
+            if (!row?.text) return;
+            consistencyByWord.set(
+              String(row.text),
+              Number(row?.articulationWritingConsistency ?? 0),
+            );
+          });
+        }
 
-        sm.saveStep6Result({
+        sm.saveStep6Result(
+          {
           completedTasks: correctCount,
           totalTasks: questions.length,
           accuracy: Math.round((correctCount / questions.length) * 100),
           timestamp: Date.now(),
           items: questions.map((word, idx) => ({
             word: word.answer,
-            expectedStrokes: word.strokes,
+            expectedStrokes: getExpectedStrokeCount({
+              answer: word.answer,
+              strokes: word.strokes,
+            }),
             userImage: writingImages[idx] || "",
+            articulationWritingConsistency:
+              consistencyByWord.get(word.answer) ?? 0,
           })),
-        });
+          },
+          isRehabMode && rehabTargetStep === 6 ? "rehab" : "self",
+        );
 
-        console.log("✅ Step 6 SessionManager 저장 완료");
+        console.log("Step 6 SessionManager 저장 완료");
       } catch (error) {
-        console.error("❌ SessionManager 저장 실패:", error);
+        console.error("SessionManager 저장 실패:", error);
       }
 
       const params = new URLSearchParams({
         place,
         ...stepParams,
-        step6: correctCount.toString(),
+        step6: isRehabMode && rehabTargetStep === 6
+          ? Math.round((correctCount / Math.max(1, questions.length)) * 100).toString()
+          : correctCount.toString(),
       });
-      router.push(`/result?${params.toString()}`);
+      const isRehabStep6 = isRehabMode && rehabTargetStep === 6;
+      if (isRehabStep6) {
+        params.set("trainMode", "rehab");
+        params.set("targetStep", "6");
+      }
+      router.push(
+        `${isRehabStep6 ? "/result-rehab" : "/result"}?${params.toString()}`,
+      );
     }
   };
 
@@ -385,8 +494,22 @@ function Step6Content() {
         text: word.answer,
         userImage: "",
         isCorrect: true,
-        expectedStrokes: word.strokes,
-        userStrokes: word.strokes,
+        expectedStrokes: getExpectedStrokeCount({
+          answer: word.answer,
+          strokes: word.strokes,
+        }),
+        userStrokes: getExpectedStrokeCount({
+          answer: word.answer,
+          strokes: word.strokes,
+        }),
+        articulationWritingConsistency: Number(
+          calculateArticulationWritingConsistency({
+            targetText: word.answer,
+            consonantAccuracy: articulationBaseline.consonant,
+            vowelAccuracy: articulationBaseline.vowel,
+            writingScore: 100,
+          }).score.toFixed(1),
+        ),
         timestamp: new Date().toLocaleTimeString(),
       }));
 
@@ -395,36 +518,69 @@ function Step6Content() {
       const rawSession = localStorage.getItem("kwab_training_session");
       const existingSession = rawSession ? JSON.parse(rawSession) : null;
       const patientData = existingSession?.patient ||
-        loadPatientProfile() || { name: "사용자" };
+        loadPatientProfile() || { name: "user" };
       const sessionManager = new SessionManager(patientData as any, place);
-      sessionManager.saveStep6Result({
+      sessionManager.saveStep6Result(
+        {
         completedTasks: demoItems.length,
         totalTasks: questions.length,
         accuracy: 100,
         timestamp: Date.now(),
         items: questions.map((word) => ({
           word: word.answer,
-          expectedStrokes: word.strokes,
+          expectedStrokes: getExpectedStrokeCount({
+            answer: word.answer,
+            strokes: word.strokes,
+          }),
           userImage: "",
+          articulationWritingConsistency: Number(
+            calculateArticulationWritingConsistency({
+              targetText: word.answer,
+              consonantAccuracy: articulationBaseline.consonant,
+              vowelAccuracy: articulationBaseline.vowel,
+              writingScore: 100,
+            }).score.toFixed(1),
+          ),
         })),
-      });
+        },
+        isRehabMode && rehabTargetStep === 6 ? "rehab" : "self",
+      );
 
       const params = new URLSearchParams({
         place,
         ...stepParams,
-        step6: demoItems.length.toString(),
+        step6: isRehabMode && rehabTargetStep === 6
+          ? "100"
+          : demoItems.length.toString(),
       });
-      router.push(`/result?${params.toString()}`);
+      const isRehabStep6 = isRehabMode && rehabTargetStep === 6;
+      if (isRehabStep6) {
+        params.set("trainMode", "rehab");
+        params.set("targetStep", "6");
+      }
+      router.push(
+        `${isRehabStep6 ? "/result-rehab" : "/result"}?${params.toString()}`,
+      );
     } catch (error) {
       console.error("Step6 skip failed:", error);
     }
-  }, [place, questions, router, stepParams]);
+  }, [
+    articulationBaseline.consonant,
+    articulationBaseline.vowel,
+    getExpectedStrokeCount,
+    place,
+    questions,
+    router,
+    stepParams,
+    isRehabMode,
+    rehabTargetStep,
+  ]);
 
   if (!isMounted || !currentWord) return null;
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 overflow-y-auto lg:overflow-hidden text-slate-900 font-sans">
-      {/* 상단 진행 프로그레스 바 */}
+      {/* 상단 진행 바 */}
       <div className="fixed top-0 left-0 w-full h-1 z-[60] bg-slate-100">
         <div
           className="h-full bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.45)]"
@@ -440,10 +596,10 @@ function Step6Content() {
           />
           <div>
             <span className="text-orange-500 font-black text-[10px] uppercase tracking-widest leading-none block">
-              Step 06 • Writing
+              Step 06 · Writing
             </span>
             <h2 className="text-lg font-black text-slate-900 tracking-tight">
-              단어 쓰기 학습
+              단어 쓰기 훈련
             </h2>
           </div>
         </div>
@@ -465,10 +621,28 @@ function Step6Content() {
             title="홈"
             className={`w-9 h-9 ${trainingButtonStyles.homeIcon}`}
           >
-            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 10.5 12 3l9 7.5" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5.5 9.5V21h13V9.5" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10 21v-5h4v5" />
+            <svg
+              viewBox="0 0 24 24"
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M3 10.5 12 3l9 7.5"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M5.5 9.5V21h13V9.5"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M10 21v-5h4v5"
+              />
             </svg>
           </button>
         </div>
@@ -491,7 +665,7 @@ function Step6Content() {
                         zoomLabel="물건 이미지 크게 보기"
                       />
                       <p className="text-xs sm:text-sm font-black text-slate-800 leading-snug break-keep">
-                        {showHintText ? currentWord.hint : "이것은 무엇인가요?"}
+                        {showHintText ? currentWord.hint : "이것은 무엇일까요?"}
                       </p>
                     </div>
                     <div className="grid grid-cols-3 gap-2 shrink-0">
@@ -528,9 +702,8 @@ function Step6Content() {
                     Target Object
                   </p>
                   <h3 className="hidden lg:block text-2xl font-black text-slate-800 break-keep">
-                    {showHintText ? currentWord.hint : "이것은 무엇인가요?"}
+                    {showHintText ? currentWord.hint : "이것은 무엇일까요?"}
                   </h3>
-
                 </div>
                 <div className="hidden lg:grid grid-cols-1 gap-2">
                   <button
@@ -562,7 +735,7 @@ function Step6Content() {
 
               <div className="flex-1 min-h-[300px] lg:min-h-0 relative bg-white border-2 border-orange-100 rounded-[28px] lg:rounded-[36px] shadow-inner overflow-hidden order-2">
                 <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 min-w-[320px] sm:min-w-[420px] px-6 py-2 rounded-xl bg-orange-50/95 border border-orange-100 text-orange-700 text-[11px] sm:text-xs font-bold text-center whitespace-nowrap shadow-sm">
-                  한 획 한 획 또렷하고 정확하게 작성해 주세요.
+                  화면을 보며 정확하게 작성해 주세요.
                 </div>
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-[0.03]">
                   <div className="w-full h-px bg-slate-900 absolute top-1/2" />
@@ -587,7 +760,6 @@ function Step6Content() {
                   </div>
                 )}
               </div>
-
             </div>
           ) : (
             <div className="h-full flex flex-col items-center justify-center animate-in zoom-in duration-300">
@@ -599,7 +771,7 @@ function Step6Content() {
                   className="w-24 h-24 sm:w-28 sm:h-28 lg:w-32 lg:h-32 mx-auto mb-4 lg:mb-6 rounded-3xl bg-slate-50 border border-orange-100 flex items-center justify-center overflow-hidden"
                   imgClassName="w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 object-contain"
                   onClick={() => setIsImageZoomOpen(true)}
-                  zoomLabel="물건 이미지 크게 보기"
+                  zoomLabel="臾쇨굔 ?대?吏 ?ш쾶 蹂닿린"
                 />
                 <h4
                   className={`${getResultWordSizeClass(currentWord.answer)} font-black text-slate-800 tracking-tight mb-3 lg:mb-4 whitespace-nowrap overflow-hidden text-ellipsis`}
@@ -622,9 +794,12 @@ function Step6Content() {
           )}
 
           {phase === "writing" && (
-            <div className="lg:hidden fixed left-4 right-4 z-40 space-y-2 pb-[max(env(safe-area-inset-bottom),0px)]" style={{ bottom: "9.25rem" }}>
+            <div
+              className="lg:hidden fixed left-4 right-4 z-40 space-y-2 pb-[max(env(safe-area-inset-bottom),0px)]"
+              style={{ bottom: "9.25rem" }}
+            >
               <div className="px-3 py-2 rounded-xl bg-orange-50 border border-orange-100 text-orange-700 text-[11px] font-bold text-center">
-                한 획씩 정확하게 작성해 주세요.
+                획을 정확하게 작성해 주세요.
               </div>
               <button
                 onClick={checkAnswer}
@@ -650,7 +825,7 @@ function Step6Content() {
             className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/90 text-slate-700 font-black"
             aria-label="확대 이미지 닫기"
           >
-            ×
+            X
           </button>
           <div onClick={(e) => e.stopPropagation()}>
             <Step6WordImage

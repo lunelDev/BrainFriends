@@ -1,4 +1,4 @@
-﻿// src/app/api/proxy/stt/route.ts
+// src/app/api/proxy/stt/route.ts
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -35,16 +35,21 @@ export async function POST(req: Request) {
 
     if (!apiKey) {
       console.error("[STT Proxy] OPENAI_API_KEY 누락 -> fallback");
-      return NextResponse.json(makeFallback("missing_api_key"));
+      return NextResponse.json(makeFallback("missing_api_key"), {
+        status: 500,
+      });
     }
 
-    const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
+    const response = await fetch(
+      "https://api.openai.com/v1/audio/transcriptions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: formData,
       },
-      body: formData,
-    });
+    );
 
     const raw = await response.text();
     let data: any = null;
@@ -55,16 +60,24 @@ export async function POST(req: Request) {
     }
 
     if (!response.ok) {
+      const upstreamCode =
+        String(data?.error?.code || data?.error?.type || "").trim() ||
+        "unknown";
       console.error("[STT Proxy] upstream error", {
         status: response.status,
         body: data,
       });
-      return NextResponse.json(makeFallback(`upstream_${response.status}`));
+      return NextResponse.json(
+        makeFallback(`upstream_${response.status}_${upstreamCode}`),
+        {
+          status: 502,
+        },
+      );
     }
 
     return NextResponse.json(data ?? { text: "", segments: [] });
   } catch (error: any) {
     console.error("[STT Proxy] unexpected error", error);
-    return NextResponse.json(makeFallback("internal_error"));
+    return NextResponse.json(makeFallback("internal_error"), { status: 500 });
   }
 }

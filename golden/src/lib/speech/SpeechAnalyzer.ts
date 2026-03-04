@@ -9,6 +9,7 @@ export interface SpeechAnalysisResult {
   duration: number;
   audioLevel: number;
   audioBlob?: Blob;
+  errorReason?: string;
   // ✅ 상세 점수 추가
   details?: {
     consonantAccuracy: number;
@@ -173,6 +174,20 @@ export class WhisperTranscriber {
       body: formData,
     });
     const data = await response.json();
+
+    if (!response.ok) {
+      const reason =
+        typeof data?.reason === "string"
+          ? data.reason
+          : `http_${response.status}`;
+      throw new Error(`stt_proxy_error:${reason}`);
+    }
+    if (data?.fallback) {
+      const reason =
+        typeof data?.reason === "string" ? data.reason : "unknown_fallback";
+      throw new Error(`stt_fallback:${reason}`);
+    }
+
     const confidence =
       data.segments?.reduce(
         (sum: number, seg: any) => sum + (seg.no_speech_prob || 0),
@@ -391,6 +406,8 @@ export class SpeechAnalyzer {
         duration,
         audioLevel: 0,
         audioBlob,
+        errorReason:
+          error instanceof Error ? error.message : "stt_unknown_error",
         details: {
           consonantAccuracy: 0,
           vowelAccuracy: 0,

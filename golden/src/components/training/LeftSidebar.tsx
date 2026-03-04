@@ -31,7 +31,7 @@ export default function FaceTracker({
   const lastTickRef = useRef<number>(0);
   const lastFaceDetectedRef = useRef<boolean>(false);
 
-  // 내부 fallback video (부모가 videoRef를 안 넘길 때만 사용)
+  // 내부 fallback video (부모가 videoRef를 넘겨주지 않을 때만 사용)
   const internalVideoRef = useRef<HTMLVideoElement>(null);
   const getVideoEl = () => videoRef?.current ?? internalVideoRef.current;
 
@@ -83,12 +83,12 @@ export default function FaceTracker({
         video.muted = true;
         video.autoplay = true;
 
-        // iOS Safari 대응: play() 호출
+        // iOS Safari 대응 play() 호출
         const tryPlay = async () => {
           try {
             await video.play();
           } catch {
-            // 사용자 제스처 필요할 수 있음 (페이지 내에서 버튼 클릭 후 정상화)
+            // 사용자 제스처가 필요할 수 있음 (페이지 내 버튼 클릭 시 정상)
           }
         };
 
@@ -117,7 +117,7 @@ export default function FaceTracker({
         streamRef.current = null;
       }
 
-      // landmarker는 destroy API가 버전에 따라 다름 → 그냥 참조 해제
+      // landmarker destroy API는 버전마다 다를 수 있어 참조만 해제
       landmarkerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -131,7 +131,7 @@ export default function FaceTracker({
     const vw = video.videoWidth || 640;
     const vh = video.videoHeight || 480;
 
-    // 캔버스는 CSS로 크기 잡고, 내부 해상도는 실제 video 비율로 맞춤
+    // 캔버스는 CSS로 크기 조절, 실제 해상도는 video 비율에 맞춤
     canvas.width = vw;
     canvas.height = vh;
   };
@@ -154,6 +154,43 @@ export default function FaceTracker({
       x: landmarks[idx].x * w,
       y: landmarks[idx].y * h,
     });
+
+    const drawLipOutline = () => {
+      const outer = [
+        61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 308, 324, 318, 402,
+        317, 14, 87, 178, 88, 95, 78,
+      ];
+      const inner = [78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308];
+
+      const hasAllOuter = outer.every((idx) => landmarks[idx]);
+      const hasAllInner = inner.every((idx) => landmarks[idx]);
+
+      ctx.strokeStyle = "rgba(120, 255, 150, 0.95)";
+      ctx.lineWidth = 1.25;
+      ctx.setLineDash([]);
+
+      if (hasAllOuter) {
+        ctx.beginPath();
+        outer.forEach((idx, i) => {
+          const p = toPoint(idx);
+          if (i === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
+        ctx.closePath();
+        ctx.stroke();
+      }
+
+      if (hasAllInner) {
+        ctx.beginPath();
+        inner.forEach((idx, i) => {
+          const p = toPoint(idx);
+          if (i === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
+        ctx.closePath();
+        ctx.stroke();
+      }
+    };
     // 안면 비대칭 가이드: 세로 실선 1개 + 가로 점선 3개 (얼굴 각도 추종)
     const leftCheek = landmarks[234];
     const rightCheek = landmarks[454];
@@ -197,7 +234,7 @@ export default function FaceTracker({
       const mouthY = mouthCenter.y;
       const jawMinY = mouthY + (c.y - mouthY) * 0.72;
 
-      // 턱선이 입선에 붙지 않도록 하부 높이 보정
+      // 턱선이 입선보다 올라오지 않도록 높이 보정
       if (lJ.y < jawMinY) lJ = { ...lJ, y: jawMinY };
       if (rJ.y < jawMinY) rJ = { ...rJ, y: jawMinY };
 
@@ -208,7 +245,7 @@ export default function FaceTracker({
       ctx.strokeStyle = "rgba(255,255,255,0.95)";
       ctx.lineWidth = 0.65;
 
-      // 세로 점선(정중선)
+      // 세로 실선(정중선)
       ctx.setLineDash([2, 2]);
       ctx.beginPath();
       ctx.moveTo(midX, eyeY - 14);
@@ -229,13 +266,15 @@ export default function FaceTracker({
       ctx.lineTo(endX, mouthY);
       ctx.stroke();
 
-      // 턱 기준선(하악선)
+      // 턱라인 기준선
       ctx.setLineDash([2, 2]);
       ctx.beginPath();
       ctx.moveTo(lJ.x, lJ.y);
       ctx.lineTo(rJ.x, rJ.y);
       ctx.stroke();
     }
+
+    drawLipOutline();
   };
 
   const tick = () => {
@@ -278,7 +317,7 @@ export default function FaceTracker({
           if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
       } catch (e) {
-        // detect 오류는 종종 발생 가능(프레임/권한/성능) → 조용히 루프 지속
+        // detect 오류는 종종 발생 가능(권한/성능). 조용히 루프 지속
       }
     }
 
@@ -288,7 +327,7 @@ export default function FaceTracker({
     rafRef.current = requestAnimationFrame(tick);
   };
 
-  // FaceTracker는 UI가 목적이 아님 → 부모가 videoRef를 안 주면 내부 hidden video 사용
+  // FaceTracker는 UI가 목적이 아님. 부모가 videoRef를 주면 내부 hidden video 사용
   return (
     <video
       ref={internalVideoRef}

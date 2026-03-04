@@ -11,12 +11,19 @@ import React, {
 import { useSearchParams, useRouter } from "next/navigation";
 import { PlaceType } from "@/constants/trainingData";
 import { READING_TEXTS } from "@/constants/readingData";
+import { SpeechAnalyzer } from "@/lib/speech/SpeechAnalyzer";
 import { useTraining } from "../TrainingContext";
 import { AnalysisSidebar } from "@/components/training/AnalysisSidebar";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { loadPatientProfile } from "@/lib/patientStorage";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
+import {
+  analyzeArticulation,
+  calculateArticulationWritingConsistency,
+  createInitialArticulationAnalyzerState,
+} from "@/lib/analysis/articulationAnalyzer";
+import { estimateLipSymmetryFromLandmarks } from "@/lib/analysis/lipMetrics";
 import { addSentenceLineBreaks } from "@/lib/text/displayText";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 
@@ -25,11 +32,29 @@ export const dynamic = "force-dynamic";
 interface ReadingMetrics {
   place: string;
   text: string;
+  transcript?: string;
+  isCorrect?: boolean;
   audioUrl: string;
   totalTime: number;
   wordsPerMinute: number;
   pauseCount: number;
   readingScore: number;
+  consonantAccuracy: number;
+  vowelAccuracy: number;
+  articulationWritingConsistency?: number;
+  consonantDetail?: {
+    closureRatePct: number;
+    closureHoldMs: number;
+    lipSymmetryPct: number;
+    openingSpeedMs: number;
+  };
+  vowelDetail?: {
+    mouthOpeningPct: number;
+    mouthWidthPct: number;
+    roundingPct: number;
+    patternMatchPct: number;
+  };
+  dataSource?: "measured" | "demo";
 }
 
 function getStep5TextSizeClass(text: string): string {
@@ -41,20 +66,56 @@ function getStep5TextSizeClass(text: string): string {
   return "text-xl md:text-2xl lg:text-3xl";
 }
 
+function blendArticulationAccuracy(
+  visualAccuracy: number,
+  speechAccuracy?: number,
+): number {
+  if (!Number.isFinite(speechAccuracy) || Number(speechAccuracy) <= 0) {
+    return Math.min(100, Math.max(0, visualAccuracy));
+  }
+  return Math.min(
+    100,
+    Math.max(0, visualAccuracy * 0.2 + Number(speechAccuracy) * 0.8),
+  );
+}
+
 function Step5Content() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const { sidebarMetrics } = useTraining();
+  const { sidebarMetrics, updateSidebar, updateRuntimeStatus, resetRuntimeStatus } =
+    useTraining();
 
   const place = (searchParams.get("place") as PlaceType) || "home";
   const step4Score = searchParams.get("step4") || "0";
+  const isRehabMode = searchParams.get("trainMode") === "rehab";
+  const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
+  const pushStep6OrRehabResult = useCallback(
+    (step5Value: number) => {
+      if (isRehabMode && rehabTargetStep === 5) {
+        const params = new URLSearchParams({
+          place,
+          trainMode: "rehab",
+          targetStep: "5",
+          step1: searchParams.get("step1") || "0",
+          step2: searchParams.get("step2") || "0",
+          step3: searchParams.get("step3") || "0",
+          step4: step4Score || "0",
+          step5: String(step5Value),
+          step6: "0",
+        });
+        router.push(`/result-rehab?${params.toString()}`);
+        return;
+      }
+      router.push(`/step-6?place=${place}&step4=${step4Score}&step5=${step5Value}`);
+    },
+    [isRehabMode, place, rehabTargetStep, router, searchParams, step4Score],
+  );
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const analyzerRef = useRef<SpeechAnalyzer | null>(null);
   const readingStartAtRef = useRef<number | null>(null);
   const readingSecondsRef = useRef(0);
   const highlightTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -70,12 +131,54 @@ function Step5Content() {
     null,
   );
   const [results, setResults] = useState<ReadingMetrics[]>([]);
+  const [showTracking, setShowTracking] = useState(true);
   const [isHomeExitModalOpen, setIsHomeExitModalOpen] = useState(false);
+  const articulationStateRef = useRef(createInitialArticulationAnalyzerState());
+  const liveArticulationRef = useRef({
+    consonant: 0,
+    vowel: 0,
+    consonantDetails: {
+      closureRatePct: 0,
+      closureHoldMs: 0,
+      lipSymmetryPct: 0,
+      openingSpeedMs: 0,
+      closureHoldScore: 0,
+      openingSpeedScore: 0,
+      finalScore: 0,
+    },
+    vowelDetails: {
+      mouthOpeningPct: 0,
+      mouthWidthPct: 0,
+      roundingPct: 0,
+      patternMatchPct: 0,
+      finalScore: 0,
+    },
+  });
+  const articulationAggregateRef = useRef({
+    consonantSum: 0,
+    vowelSum: 0,
+    closureRateSum: 0,
+    closureHoldMsSum: 0,
+    lipSymmetrySum: 0,
+    openingSpeedMsSum: 0,
+    mouthOpeningSum: 0,
+    mouthWidthSum: 0,
+    roundingSum: 0,
+    patternMatchSum: 0,
+    count: 0,
+  });
 
   const handleGoHome = () => {
     setIsHomeExitModalOpen(true);
   };
   const confirmGoHome = () => {
+    const isTrialMode =
+      typeof window !== "undefined" &&
+      sessionStorage.getItem("btt.trialMode") === "1";
+    if (isTrialMode) {
+      router.push("/");
+      return;
+    }
     saveTrainingExitProgress(place, 5);
     router.push("/select");
   };
@@ -111,8 +214,134 @@ function Step5Content() {
   );
 
   useEffect(() => {
+    articulationStateRef.current = createInitialArticulationAnalyzerState();
+    articulationAggregateRef.current = {
+      consonantSum: 0,
+      vowelSum: 0,
+      closureRateSum: 0,
+      closureHoldMsSum: 0,
+      lipSymmetrySum: 0,
+      openingSpeedMsSum: 0,
+      mouthOpeningSum: 0,
+      mouthWidthSum: 0,
+      roundingSum: 0,
+      patternMatchSum: 0,
+      count: 0,
+    };
+    liveArticulationRef.current = {
+      consonant: 0,
+      vowel: 0,
+      consonantDetails: {
+        closureRatePct: 0,
+        closureHoldMs: 0,
+        lipSymmetryPct: 0,
+        openingSpeedMs: 0,
+        closureHoldScore: 0,
+        openingSpeedScore: 0,
+        finalScore: 0,
+      },
+      vowelDetails: {
+        mouthOpeningPct: 0,
+        mouthWidthPct: 0,
+        roundingPct: 0,
+        patternMatchPct: 0,
+        finalScore: 0,
+      },
+    };
+    updateSidebar({
+      consonantAccuracy: 0,
+      vowelAccuracy: 0,
+      consonantClosureRate: 0,
+      consonantClosureHoldScore: 0,
+      consonantLipSymmetry: 0,
+      consonantOpeningSpeedScore: 0,
+      consonantClosureHoldMs: 0,
+      consonantOpeningSpeedMs: 0,
+      vowelMouthOpening: 0,
+      vowelMouthWidth: 0,
+      vowelRounding: 0,
+      vowelPatternMatch: 0,
+    });
+  }, [currentIndex, currentItem?.text, updateSidebar]);
+
+  useEffect(() => {
+    if (!currentItem?.text) return;
+
+    const lipSymmetry = estimateLipSymmetryFromLandmarks(sidebarMetrics.landmarks);
+    const {
+      consonantAccuracy,
+      vowelAccuracy,
+      consonantDetails,
+      vowelDetails,
+      nextState,
+    } = analyzeArticulation({
+      targetText: currentItem.text,
+      mouthOpening: sidebarMetrics.mouthOpening || 0,
+      mouthWidth: sidebarMetrics.mouthWidth || 0,
+      lipSymmetry,
+      timestampMs:
+        typeof window !== "undefined" ? window.performance.now() : Date.now(),
+      previousState: articulationStateRef.current,
+    });
+
+    articulationStateRef.current = nextState;
+    liveArticulationRef.current = {
+      consonant: consonantAccuracy,
+      vowel: vowelAccuracy,
+      consonantDetails,
+      vowelDetails,
+    };
+
+    updateSidebar({
+      consonantAccuracy: consonantAccuracy / 100,
+      vowelAccuracy: vowelAccuracy / 100,
+      consonantClosureRate: consonantDetails.closureRatePct / 100,
+      consonantClosureHoldScore: consonantDetails.closureHoldScore / 100,
+      consonantLipSymmetry: consonantDetails.lipSymmetryPct / 100,
+      consonantOpeningSpeedScore: consonantDetails.openingSpeedScore / 100,
+      consonantClosureHoldMs: consonantDetails.closureHoldMs,
+      consonantOpeningSpeedMs: consonantDetails.openingSpeedMs,
+      vowelMouthOpening:
+        (vowelDetails.mouthOpeningScore ?? vowelDetails.mouthOpeningPct) / 100,
+      vowelMouthWidth:
+        (vowelDetails.mouthWidthScore ?? vowelDetails.mouthWidthPct) / 100,
+      vowelRounding: vowelDetails.roundingPct / 100,
+      vowelPatternMatch: vowelDetails.patternMatchPct / 100,
+    });
+
+    if (phase === "reading") {
+      articulationAggregateRef.current.consonantSum += consonantAccuracy;
+      articulationAggregateRef.current.vowelSum += vowelAccuracy;
+      articulationAggregateRef.current.closureRateSum +=
+        consonantDetails.closureRatePct;
+      articulationAggregateRef.current.closureHoldMsSum +=
+        consonantDetails.closureHoldMs;
+      articulationAggregateRef.current.lipSymmetrySum +=
+        consonantDetails.lipSymmetryPct;
+      articulationAggregateRef.current.openingSpeedMsSum +=
+        consonantDetails.openingSpeedMs;
+      articulationAggregateRef.current.mouthOpeningSum +=
+        vowelDetails.mouthOpeningPct;
+      articulationAggregateRef.current.mouthWidthSum +=
+        vowelDetails.mouthWidthPct;
+      articulationAggregateRef.current.roundingSum += vowelDetails.roundingPct;
+      articulationAggregateRef.current.patternMatchSum +=
+        vowelDetails.patternMatchPct;
+      articulationAggregateRef.current.count += 1;
+    }
+  }, [
+    currentItem?.text,
+    phase,
+    sidebarMetrics.mouthOpening,
+    sidebarMetrics.mouthWidth,
+    updateSidebar,
+  ]);
+
+  useEffect(() => {
     setIsMounted(true);
     localStorage.removeItem("step5_recorded_data");
+    analyzerRef.current = new SpeechAnalyzer();
+    resetRuntimeStatus();
 
     async function setupCamera() {
       try {
@@ -131,12 +360,14 @@ function Step5Content() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (highlightTimerRef.current) clearInterval(highlightTimerRef.current);
+      analyzerRef.current?.cancelAnalysis();
       if (audioPlayerRef.current) {
         audioPlayerRef.current.pause();
         audioPlayerRef.current = null;
       }
+      resetRuntimeStatus();
     };
-  }, []);
+  }, [resetRuntimeStatus]);
 
   const getPhaseMessage = () => {
     switch (phase) {
@@ -183,68 +414,34 @@ function Step5Content() {
   }, []);
 
   const startReading = async () => {
+    articulationAggregateRef.current = {
+      consonantSum: 0,
+      vowelSum: 0,
+      closureRateSum: 0,
+      closureHoldMsSum: 0,
+      lipSymmetrySum: 0,
+      openingSpeedMsSum: 0,
+      mouthOpeningSum: 0,
+      mouthWidthSum: 0,
+      roundingSum: 0,
+      patternMatchSum: 0,
+      count: 0,
+    };
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      audioChunksRef.current = [];
-
-      mediaRecorderRef.current.ondataavailable = (e) =>
-        audioChunksRef.current.push(e.data);
-
-      mediaRecorderRef.current.onstop = () => {
-        stream.getTracks().forEach((track) => track.stop());
-        const audioBlob = new Blob(audioChunksRef.current, {
-          type: "audio/webm",
-        });
-        const finalReadingTime = Math.max(1, readingSecondsRef.current);
-        const wpm = Math.round((currentItem.wordCount / finalReadingTime) * 60);
-
-        const res: ReadingMetrics = {
-          place,
-          text: currentItem.text,
-          audioUrl: URL.createObjectURL(audioBlob),
-          totalTime: finalReadingTime,
-          wordsPerMinute: wpm,
-          pauseCount: 0,
-          readingScore: Math.min(100, Math.round((wpm / 100) * 100)),
-        };
-
-        setCurrentResult(res);
-
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          try {
-            const existing = JSON.parse(
-              localStorage.getItem("step5_recorded_data") || "[]",
-            );
-            const next = [
-              ...existing,
-              {
-                ...res,
-                audioUrl: reader.result as string,
-                timestamp: new Date().toLocaleTimeString(),
-              },
-            ];
-            localStorage.setItem("step5_recorded_data", JSON.stringify(next));
-          } catch (saveError) {
-            console.error(saveError);
-          }
-        };
-        reader.readAsDataURL(audioBlob);
-      };
-
       setPhase("reading");
       setReadingTime(0);
       readingSecondsRef.current = 0;
       setHighlightIndex(0);
       await playStartBeep();
-      mediaRecorderRef.current.start();
+      if (!analyzerRef.current) analyzerRef.current = new SpeechAnalyzer();
+      await analyzerRef.current.startAnalysis();
+      updateRuntimeStatus({
+        recording: true,
+        saving: false,
+        pageError: false,
+        needsRetry: false,
+        message: "녹음 진행 중",
+      });
 
       timerRef.current = setInterval(() => {
         readingSecondsRef.current += 1;
@@ -260,15 +457,196 @@ function Step5Content() {
       }, 900);
     } catch (err) {
       console.error(err);
+      updateRuntimeStatus({
+        recording: false,
+        pageError: true,
+        needsRetry: true,
+        message: "녹음 시작 실패: 마이크 권한을 확인해 주세요.",
+      });
     }
   };
 
-  const stopReading = () => {
+  const stopReading = async () => {
     if (highlightTimerRef.current) clearInterval(highlightTimerRef.current);
     if (timerRef.current) clearInterval(timerRef.current);
-    if (mediaRecorderRef.current?.state !== "inactive")
-      mediaRecorderRef.current?.stop();
-    setPhase("review");
+    updateRuntimeStatus({
+      recording: false,
+      message: "음성 분석 중",
+    });
+    try {
+      if (!analyzerRef.current) analyzerRef.current = new SpeechAnalyzer();
+      const analysis = await analyzerRef.current.stopAnalysis(currentItem.text);
+      if (analysis.errorReason) {
+        updateRuntimeStatus({
+          pageError: true,
+          needsRetry: true,
+          message: `음성 인식 실패(${analysis.errorReason})`,
+        });
+        return;
+      }
+      const audioBlob = analysis.audioBlob;
+      const finalReadingTime = Math.max(1, readingSecondsRef.current);
+      const wpm = Math.round((currentItem.wordCount / finalReadingTime) * 60);
+      const aggregate = articulationAggregateRef.current;
+      const visualConsonantAccuracy =
+        aggregate.count > 0
+          ? aggregate.consonantSum / aggregate.count
+          : liveArticulationRef.current.consonant;
+      const visualVowelAccuracy =
+        aggregate.count > 0
+          ? aggregate.vowelSum / aggregate.count
+          : liveArticulationRef.current.vowel;
+      const consonantDetail =
+        aggregate.count > 0
+          ? {
+              closureRatePct: aggregate.closureRateSum / aggregate.count,
+              closureHoldMs: aggregate.closureHoldMsSum / aggregate.count,
+              lipSymmetryPct: aggregate.lipSymmetrySum / aggregate.count,
+              openingSpeedMs: aggregate.openingSpeedMsSum / aggregate.count,
+            }
+          : {
+              closureRatePct:
+                liveArticulationRef.current.consonantDetails.closureRatePct,
+              closureHoldMs:
+                liveArticulationRef.current.consonantDetails.closureHoldMs,
+              lipSymmetryPct:
+                liveArticulationRef.current.consonantDetails.lipSymmetryPct,
+              openingSpeedMs:
+                liveArticulationRef.current.consonantDetails.openingSpeedMs,
+            };
+      const vowelDetail =
+        aggregate.count > 0
+          ? {
+              mouthOpeningPct: aggregate.mouthOpeningSum / aggregate.count,
+              mouthWidthPct: aggregate.mouthWidthSum / aggregate.count,
+              roundingPct: aggregate.roundingSum / aggregate.count,
+              patternMatchPct: aggregate.patternMatchSum / aggregate.count,
+            }
+          : {
+              mouthOpeningPct:
+                liveArticulationRef.current.vowelDetails.mouthOpeningPct,
+              mouthWidthPct: liveArticulationRef.current.vowelDetails.mouthWidthPct,
+              roundingPct: liveArticulationRef.current.vowelDetails.roundingPct,
+              patternMatchPct:
+                liveArticulationRef.current.vowelDetails.patternMatchPct,
+            };
+      const consonantAccuracy = blendArticulationAccuracy(
+        visualConsonantAccuracy,
+        analysis.details?.consonantAccuracy,
+      );
+      const vowelAccuracy = blendArticulationAccuracy(
+        visualVowelAccuracy,
+        analysis.details?.vowelAccuracy,
+      );
+      const articulationWritingConsistency = calculateArticulationWritingConsistency({
+        targetText: currentItem.text,
+        consonantAccuracy,
+        vowelAccuracy,
+      }).score;
+      const readingScore = Math.min(100, Math.round((wpm / 100) * 100));
+
+      updateSidebar({
+        consonantAccuracy: consonantAccuracy / 100,
+        vowelAccuracy: vowelAccuracy / 100,
+      });
+
+      const res: ReadingMetrics = {
+        place,
+        text: currentItem.text,
+        transcript: String(analysis.transcript || "").trim(),
+        isCorrect: readingScore >= 60,
+        audioUrl: audioBlob ? URL.createObjectURL(audioBlob) : "",
+        totalTime: finalReadingTime,
+        wordsPerMinute: wpm,
+        pauseCount: 0,
+        readingScore,
+        consonantAccuracy: Number(consonantAccuracy.toFixed(1)),
+        vowelAccuracy: Number(vowelAccuracy.toFixed(1)),
+        articulationWritingConsistency: Number(
+          articulationWritingConsistency.toFixed(1),
+        ),
+        consonantDetail: {
+          closureRatePct: Number(consonantDetail.closureRatePct.toFixed(1)),
+          closureHoldMs: Number(consonantDetail.closureHoldMs.toFixed(1)),
+          lipSymmetryPct: Number(consonantDetail.lipSymmetryPct.toFixed(1)),
+          openingSpeedMs: Number(consonantDetail.openingSpeedMs.toFixed(1)),
+        },
+        vowelDetail: {
+          mouthOpeningPct: Number(vowelDetail.mouthOpeningPct.toFixed(1)),
+          mouthWidthPct: Number(vowelDetail.mouthWidthPct.toFixed(1)),
+          roundingPct: Number(vowelDetail.roundingPct.toFixed(1)),
+          patternMatchPct: Number(vowelDetail.patternMatchPct.toFixed(1)),
+        },
+        dataSource: "measured",
+      };
+
+      setCurrentResult(res);
+      articulationAggregateRef.current = {
+        consonantSum: 0,
+        vowelSum: 0,
+        closureRateSum: 0,
+        closureHoldMsSum: 0,
+        lipSymmetrySum: 0,
+        openingSpeedMsSum: 0,
+        mouthOpeningSum: 0,
+        mouthWidthSum: 0,
+        roundingSum: 0,
+        patternMatchSum: 0,
+        count: 0,
+      };
+
+      if (audioBlob) {
+        updateRuntimeStatus({
+          saving: true,
+          message: "결과 저장 중",
+        });
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          try {
+            const existing = JSON.parse(
+              localStorage.getItem("step5_recorded_data") || "[]",
+            );
+            const next = [
+              ...existing,
+              {
+                ...res,
+                audioUrl: reader.result as string,
+                timestamp: new Date().toLocaleTimeString(),
+              },
+            ];
+            localStorage.setItem("step5_recorded_data", JSON.stringify(next));
+            updateRuntimeStatus({
+              pageError: false,
+              needsRetry: false,
+              message: "저장 완료",
+            });
+          } catch (saveError) {
+            console.error(saveError);
+            updateRuntimeStatus({
+              pageError: true,
+              needsRetry: true,
+              message: "저장 실패: 브라우저 저장소 상태를 확인해 주세요.",
+            });
+          } finally {
+            updateRuntimeStatus({
+              saving: false,
+            });
+          }
+        };
+        reader.readAsDataURL(audioBlob);
+      }
+    } catch (error) {
+      console.error(error);
+      updateRuntimeStatus({
+        recording: false,
+        saving: false,
+        pageError: true,
+        needsRetry: true,
+        message: "분석 중 오류가 발생했습니다.",
+      });
+    } finally {
+      setPhase("review");
+    }
   };
 
   const playRecordedAudio = () => {
@@ -309,10 +687,24 @@ function Step5Content() {
           (patient || { age: 70, educationYears: 12 }) as any,
           place,
         );
+        const averageConsonantAccuracy =
+          updatedResults.reduce((s, r) => s + (r.consonantAccuracy || 0), 0) /
+          Math.max(1, updatedResults.length);
+        const averageVowelAccuracy =
+          updatedResults.reduce((s, r) => s + (r.vowelAccuracy || 0), 0) /
+          Math.max(1, updatedResults.length);
+        const averageArticulationWritingConsistency =
+          updatedResults.reduce(
+            (sum, row) => sum + Number(row.articulationWritingConsistency || 0),
+            0,
+          ) / Math.max(1, updatedResults.length);
         sm.saveStep5Result({
           correctAnswers: updatedResults.length,
           totalQuestions: texts.length,
           timestamp: Date.now(),
+          averageConsonantAccuracy,
+          averageVowelAccuracy,
+          averageArticulationWritingConsistency,
           items: updatedResults as any,
         });
       } catch (error) {
@@ -322,7 +714,7 @@ function Step5Content() {
         updatedResults.reduce((s, r) => s + r.readingScore, 0) /
           updatedResults.length,
       );
-      router.push(`/step-6?place=${place}&step4=${step4Score}&step5=${avg}`);
+      pushStep6OrRehabResult(avg);
     }
   };
 
@@ -330,19 +722,8 @@ function Step5Content() {
     try {
       if (highlightTimerRef.current) clearInterval(highlightTimerRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
-
-      const recorder = mediaRecorderRef.current;
-      if (recorder) {
-        // SKIP 시 onstop 비동기 저장이 추가로 실행되지 않게 차단
-        recorder.ondataavailable = null;
-        recorder.onstop = null;
-        if (recorder.state !== "inactive") {
-          recorder.stop();
-        }
-        recorder.stream?.getTracks().forEach((track) => track.stop());
-        mediaRecorderRef.current = null;
-      }
-      audioChunksRef.current = [];
+      analyzerRef.current?.cancelAnalysis();
+      resetRuntimeStatus();
 
       const demoResults: ReadingMetrics[] = texts.map((item, idx) => {
         const totalTime = Math.max(8, Math.round(item.wordCount / 2));
@@ -355,11 +736,17 @@ function Step5Content() {
         return {
           place,
           text: item.text,
+          transcript: item.text,
+          isCorrect: readingScore >= 60,
           audioUrl: "",
           totalTime,
           wordsPerMinute,
           pauseCount: 0,
           readingScore,
+          consonantAccuracy: 75 + ((idx + 1) % 4) * 5,
+          vowelAccuracy: 73 + (idx % 4) * 5,
+          articulationWritingConsistency: 74 + ((idx + 2) % 3) * 6,
+          dataSource: "demo",
         };
       });
 
@@ -378,6 +765,17 @@ function Step5Content() {
         correctAnswers: demoResults.length,
         totalQuestions: texts.length,
         timestamp: Date.now(),
+        averageConsonantAccuracy:
+          demoResults.reduce((sum, row) => sum + row.consonantAccuracy, 0) /
+          Math.max(1, demoResults.length),
+        averageVowelAccuracy:
+          demoResults.reduce((sum, row) => sum + row.vowelAccuracy, 0) /
+          Math.max(1, demoResults.length),
+        averageArticulationWritingConsistency:
+          demoResults.reduce(
+            (sum, row) => sum + Number(row.articulationWritingConsistency || 0),
+            0,
+          ) / Math.max(1, demoResults.length),
         items: demoResults as any,
       });
 
@@ -385,12 +783,12 @@ function Step5Content() {
         demoResults.reduce((sum, row) => sum + row.readingScore, 0) /
           Math.max(1, demoResults.length),
       );
-      router.push(`/step-6?place=${place}&step4=${step4Score}&step5=${avg}`);
+      pushStep6OrRehabResult(avg);
     } catch (error) {
       console.error("Step5 skip failed:", error);
-      router.push(`/step-6?place=${place}&step4=${step4Score}&step5=80`);
+      pushStep6OrRehabResult(80);
     }
-  }, [place, router, step4Score, texts]);
+  }, [pushStep6OrRehabResult, resetRuntimeStatus, texts]);
 
   if (!isMounted || !currentItem) return null;
 
@@ -606,9 +1004,26 @@ function Step5Content() {
             metrics={{
               symmetryScore: (sidebarMetrics.facialSymmetry || 0) * 100,
               openingRatio: (sidebarMetrics.mouthOpening || 0) * 100,
+              consonantAcc: (sidebarMetrics.consonantAccuracy || 0) * 100,
+              vowelAcc: (sidebarMetrics.vowelAccuracy || 0) * 100,
+              consonantClosureRate:
+                (sidebarMetrics.consonantClosureRate || 0) * 100,
+              consonantClosureHold:
+                (sidebarMetrics.consonantClosureHoldScore || 0) * 100,
+              consonantLipSymmetry:
+                (sidebarMetrics.consonantLipSymmetry || 0) * 100,
+              consonantOpeningSpeed:
+                (sidebarMetrics.consonantOpeningSpeedScore || 0) * 100,
+              consonantClosureHoldMs: sidebarMetrics.consonantClosureHoldMs || 0,
+              consonantOpeningSpeedMs: sidebarMetrics.consonantOpeningSpeedMs || 0,
+              vowelMouthOpening: (sidebarMetrics.vowelMouthOpening || 0) * 100,
+              vowelMouthWidth: (sidebarMetrics.vowelMouthWidth || 0) * 100,
+              vowelRounding: (sidebarMetrics.vowelRounding || 0) * 100,
+              vowelPatternMatch: (sidebarMetrics.vowelPatternMatch || 0) * 100,
               audioLevel: phase === "reading" ? 40 : 0,
             }}
-            showTracking={false}
+            showTracking={showTracking}
+            onToggleTracking={() => setShowTracking((prev) => !prev)}
             scoreLabel="현재 상태"
             scoreValue={currentResult ? `${currentResult.readingScore}%` : "-"}
           />
@@ -636,3 +1051,5 @@ export default function Step5Page() {
     </Suspense>
   );
 }
+
+

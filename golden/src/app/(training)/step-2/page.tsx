@@ -19,6 +19,11 @@ import { SessionManager } from "@/lib/kwab/SessionManager";
 import { loadPatientProfile } from "@/lib/patientStorage";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
 import {
+  analyzeArticulation,
+  createInitialArticulationAnalyzerState,
+} from "@/lib/analysis/articulationAnalyzer";
+import { estimateLipSymmetryFromLandmarks } from "@/lib/analysis/lipMetrics";
+import {
   addSentenceLineBreaks,
   getResponsiveSentenceSizeClass,
 } from "@/lib/text/displayText";
@@ -47,12 +52,68 @@ function getResultSentenceSizeClass(text: string): string {
   return "text-lg md:text-xl";
 }
 
+function blendArticulationAccuracy(
+  visualAccuracy: number,
+  speechAccuracy?: number,
+): number {
+  if (!Number.isFinite(speechAccuracy) || Number(speechAccuracy) <= 0) {
+    return Math.min(100, Math.max(0, visualAccuracy));
+  }
+  return Math.min(
+    100,
+    Math.max(0, visualAccuracy * 0.2 + Number(speechAccuracy) * 0.8),
+  );
+}
+
+function getSttErrorMessage(reason?: string): string {
+  const raw = String(reason || "").trim();
+  if (!raw) return "음성 인식에 실패했습니다. 잠시 후 다시 시도해 주세요.";
+  if (raw.includes("upstream_429")) {
+    return "음성 인식 API 한도(429)로 실패했습니다. 결제/쿼터/요금제를 확인해 주세요.";
+  }
+  if (raw.includes("missing_api_key")) {
+    return "서버 API 키가 설정되지 않았습니다. 관리자에게 문의해 주세요.";
+  }
+  if (raw.includes("upstream_401")) {
+    return "API 인증에 실패했습니다(401). 서버 키를 확인해 주세요.";
+  }
+  if (raw.includes("upstream_403")) {
+    return "API 권한 오류(403)입니다. 계정 권한을 확인해 주세요.";
+  }
+  return `음성 인식 실패(${raw}). 네트워크/마이크 권한을 확인해 주세요.`;
+}
+
 function Step2Content() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const { sidebarMetrics } = useTraining();
+  const { sidebarMetrics, updateSidebar, updateRuntimeStatus, resetRuntimeStatus } =
+    useTraining();
   const place = (searchParams?.get("place") as PlaceType) || "home";
+  const isRehabMode = searchParams.get("trainMode") === "rehab";
+  const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
+  const pushStep3OrRehabResult = useCallback(
+    (step2Score: number) => {
+      const step1Score = searchParams.get("step1") || "0";
+      if (isRehabMode && rehabTargetStep === 2) {
+        const params = new URLSearchParams({
+          place,
+          trainMode: "rehab",
+          targetStep: "2",
+          step1: step1Score,
+          step2: String(step2Score),
+          step3: "0",
+          step4: "0",
+          step5: "0",
+          step6: "0",
+        });
+        router.push(`/result-rehab?${params.toString()}`);
+        return;
+      }
+      router.push(`/step-3?place=${place}&step1=${step1Score}&step2=${step2Score}`);
+    },
+    [isRehabMode, place, rehabTargetStep, router, searchParams],
+  );
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -80,9 +141,43 @@ function Step2Content() {
   const [isSttExpanded, setIsSttExpanded] = useState(false);
   const [reviewAudioUrl, setReviewAudioUrl] = useState<string | null>(null);
   const [analysisResults, setAnalysisResults] = useState<any[]>([]);
-  const [showTracking, setShowTracking] = useState(false);
+  const [showTracking, setShowTracking] = useState(true);
   const [isHomeExitModalOpen, setIsHomeExitModalOpen] = useState(false);
   const flowTokenRef = useRef(0);
+  const articulationStateRef = useRef(createInitialArticulationAnalyzerState());
+  const liveArticulationRef = useRef({
+    consonant: 0,
+    vowel: 0,
+    consonantDetails: {
+      closureRatePct: 0,
+      closureHoldMs: 0,
+      lipSymmetryPct: 0,
+      openingSpeedMs: 0,
+      closureHoldScore: 0,
+      openingSpeedScore: 0,
+      finalScore: 0,
+    },
+    vowelDetails: {
+      mouthOpeningPct: 0,
+      mouthWidthPct: 0,
+      roundingPct: 0,
+      patternMatchPct: 0,
+      finalScore: 0,
+    },
+  });
+  const articulationAggregateRef = useRef({
+    consonantSum: 0,
+    vowelSum: 0,
+    closureRateSum: 0,
+    closureHoldMsSum: 0,
+    lipSymmetrySum: 0,
+    openingSpeedMsSum: 0,
+    mouthOpeningSum: 0,
+    mouthWidthSum: 0,
+    roundingSum: 0,
+    patternMatchSum: 0,
+    count: 0,
+  });
 
   const protocol = useMemo(() => {
     const questions =
@@ -101,10 +196,142 @@ function Step2Content() {
   }, [place]);
 
   const currentItem = protocol[currentIndex];
+
+  useEffect(() => {
+    articulationStateRef.current = createInitialArticulationAnalyzerState();
+    articulationAggregateRef.current = {
+      consonantSum: 0,
+      vowelSum: 0,
+      closureRateSum: 0,
+      closureHoldMsSum: 0,
+      lipSymmetrySum: 0,
+      openingSpeedMsSum: 0,
+      mouthOpeningSum: 0,
+      mouthWidthSum: 0,
+      roundingSum: 0,
+      patternMatchSum: 0,
+      count: 0,
+    };
+    liveArticulationRef.current = {
+      consonant: 0,
+      vowel: 0,
+      consonantDetails: {
+        closureRatePct: 0,
+        closureHoldMs: 0,
+        lipSymmetryPct: 0,
+        openingSpeedMs: 0,
+        closureHoldScore: 0,
+        openingSpeedScore: 0,
+        finalScore: 0,
+      },
+      vowelDetails: {
+        mouthOpeningPct: 0,
+        mouthWidthPct: 0,
+        roundingPct: 0,
+        patternMatchPct: 0,
+        finalScore: 0,
+      },
+    };
+    updateSidebar({
+      consonantAccuracy: 0,
+      vowelAccuracy: 0,
+      consonantClosureRate: 0,
+      consonantClosureHoldScore: 0,
+      consonantLipSymmetry: 0,
+      consonantOpeningSpeedScore: 0,
+      consonantClosureHoldMs: 0,
+      consonantOpeningSpeedMs: 0,
+      vowelMouthOpening: 0,
+      vowelMouthWidth: 0,
+      vowelRounding: 0,
+      vowelPatternMatch: 0,
+    });
+  }, [currentIndex, currentItem?.text, updateSidebar]);
+
+  useEffect(() => {
+    if (!currentItem?.text) return;
+
+    const lipSymmetry = estimateLipSymmetryFromLandmarks(sidebarMetrics.landmarks);
+    const {
+      consonantAccuracy,
+      vowelAccuracy,
+      consonantDetails,
+      vowelDetails,
+      nextState,
+    } = analyzeArticulation({
+      targetText: currentItem.text,
+      mouthOpening: sidebarMetrics.mouthOpening || 0,
+      mouthWidth: sidebarMetrics.mouthWidth || 0,
+      lipSymmetry,
+      timestampMs:
+        typeof window !== "undefined" ? window.performance.now() : Date.now(),
+      previousState: articulationStateRef.current,
+    });
+
+    articulationStateRef.current = nextState;
+    liveArticulationRef.current = {
+      consonant: consonantAccuracy,
+      vowel: vowelAccuracy,
+      consonantDetails,
+      vowelDetails,
+    };
+
+    updateSidebar({
+      consonantAccuracy: consonantAccuracy / 100,
+      vowelAccuracy: vowelAccuracy / 100,
+      consonantClosureRate: consonantDetails.closureRatePct / 100,
+      consonantClosureHoldScore: consonantDetails.closureHoldScore / 100,
+      consonantLipSymmetry: consonantDetails.lipSymmetryPct / 100,
+      consonantOpeningSpeedScore: consonantDetails.openingSpeedScore / 100,
+      consonantClosureHoldMs: consonantDetails.closureHoldMs,
+      consonantOpeningSpeedMs: consonantDetails.openingSpeedMs,
+      vowelMouthOpening:
+        (vowelDetails.mouthOpeningScore ?? vowelDetails.mouthOpeningPct) / 100,
+      vowelMouthWidth:
+        (vowelDetails.mouthWidthScore ?? vowelDetails.mouthWidthPct) / 100,
+      vowelRounding: vowelDetails.roundingPct / 100,
+      vowelPatternMatch: vowelDetails.patternMatchPct / 100,
+    });
+
+    if (isRecording) {
+      articulationAggregateRef.current.consonantSum += consonantAccuracy;
+      articulationAggregateRef.current.vowelSum += vowelAccuracy;
+      articulationAggregateRef.current.closureRateSum +=
+        consonantDetails.closureRatePct;
+      articulationAggregateRef.current.closureHoldMsSum +=
+        consonantDetails.closureHoldMs;
+      articulationAggregateRef.current.lipSymmetrySum +=
+        consonantDetails.lipSymmetryPct;
+      articulationAggregateRef.current.openingSpeedMsSum +=
+        consonantDetails.openingSpeedMs;
+      articulationAggregateRef.current.mouthOpeningSum +=
+        vowelDetails.mouthOpeningPct;
+      articulationAggregateRef.current.mouthWidthSum +=
+        vowelDetails.mouthWidthPct;
+      articulationAggregateRef.current.roundingSum += vowelDetails.roundingPct;
+      articulationAggregateRef.current.patternMatchSum +=
+        vowelDetails.patternMatchPct;
+      articulationAggregateRef.current.count += 1;
+    }
+  }, [
+    currentItem?.text,
+    isRecording,
+    sidebarMetrics.mouthOpening,
+    sidebarMetrics.mouthWidth,
+    updateSidebar,
+  ]);
+
   const handleGoHome = () => {
     setIsHomeExitModalOpen(true);
   };
   const confirmGoHome = () => {
+    const isTrialMode =
+      typeof window !== "undefined" &&
+      sessionStorage.getItem("btt.trialMode") === "1";
+    if (isTrialMode) {
+      router.push("/");
+      return;
+    }
     saveTrainingExitProgress(place, 2);
     router.push("/select");
   };
@@ -123,19 +350,79 @@ function Step2Content() {
         resolve();
         return;
       }
+
+      const normalized = String(text || "").trim();
+      if (!normalized) {
+        resolve();
+        return;
+      }
+
       const synth = window.speechSynthesis;
-      synth.cancel();
-      synth.resume();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = "ko-KR";
-      utterance.rate = 0.9;
-      const koVoice = synth
-        .getVoices()
-        .find((v) => v.lang?.toLowerCase().startsWith("ko"));
-      if (koVoice) utterance.voice = koVoice;
-      utterance.onend = () => resolve();
-      utterance.onerror = () => resolve();
-      synth.speak(utterance);
+      const estimateMs = Math.min(
+        12000,
+        Math.max(2200, normalized.replace(/\s+/g, "").length * 180),
+      );
+      let settled = false;
+
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+
+      const timeoutId = window.setTimeout(() => {
+        try {
+          synth.cancel();
+        } catch {
+          // noop
+        }
+        finish();
+      }, estimateMs);
+
+      const speakNow = () => {
+        try {
+          synth.cancel();
+          synth.resume();
+
+          const utterance = new SpeechSynthesisUtterance(normalized);
+          utterance.lang = "ko-KR";
+          utterance.rate = 0.9;
+          const koVoice = synth
+            .getVoices()
+            .find((v) => v.lang?.toLowerCase().startsWith("ko"));
+          if (koVoice) utterance.voice = koVoice;
+
+          utterance.onend = () => {
+            window.clearTimeout(timeoutId);
+            finish();
+          };
+          utterance.onerror = () => {
+            window.clearTimeout(timeoutId);
+            finish();
+          };
+          synth.speak(utterance);
+        } catch {
+          window.clearTimeout(timeoutId);
+          finish();
+        }
+      };
+
+      const voices = synth.getVoices();
+      if (voices.length > 0) {
+        speakNow();
+        return;
+      }
+
+      const handleVoicesChanged = () => {
+        synth.removeEventListener("voiceschanged", handleVoicesChanged);
+        speakNow();
+      };
+
+      synth.addEventListener("voiceschanged", handleVoicesChanged);
+      window.setTimeout(() => {
+        synth.removeEventListener("voiceschanged", handleVoicesChanged);
+        if (!settled) speakNow();
+      }, 700);
     });
   }, []);
 
@@ -206,6 +493,19 @@ function Step2Content() {
   }, []);
 
   const startRecording = useCallback(async () => {
+    articulationAggregateRef.current = {
+      consonantSum: 0,
+      vowelSum: 0,
+      closureRateSum: 0,
+      closureHoldMsSum: 0,
+      lipSymmetrySum: 0,
+      openingSpeedMsSum: 0,
+      mouthOpeningSum: 0,
+      mouthWidthSum: 0,
+      roundingSum: 0,
+      patternMatchSum: 0,
+      count: 0,
+    };
     setResultScore(null);
     setTranscript("");
     setIsSttExpanded(false);
@@ -216,6 +516,13 @@ function Step2Content() {
     setReviewAudioUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return null;
+    });
+    updateRuntimeStatus({
+      recording: true,
+      saving: false,
+      pageError: false,
+      needsRetry: false,
+      message: "녹음 진행 중",
     });
     try {
       if (!analyzerRef.current) analyzerRef.current = new SpeechAnalyzer();
@@ -229,8 +536,14 @@ function Step2Content() {
       setIsRecording(false);
       setIsRecorderReady(false);
       setStatusText("마이크 준비에 실패했습니다. 다시 시도해 주세요.");
+      updateRuntimeStatus({
+        recording: false,
+        pageError: true,
+        needsRetry: true,
+        message: "녹음 시작 실패: 마이크 권한/장치를 확인해 주세요.",
+      });
     }
-  }, []);
+  }, [updateRuntimeStatus]);
 
   const runPromptSequence = useCallback(
     async ({
@@ -351,8 +664,9 @@ function Step2Content() {
       }
       if (typeof window !== "undefined" && window.speechSynthesis)
         window.speechSynthesis.cancel();
+      resetRuntimeStatus();
     };
-  }, []);
+  }, [resetRuntimeStatus]);
 
   useEffect(() => {
     if (!isMounted || !currentItem) return;
@@ -399,10 +713,50 @@ function Step2Content() {
             ? analysisResults.reduce((a, b) => a + b.speechScore, 0) /
               analysisResults.length
             : 0;
+        const avgConsonantAccuracy =
+          analysisResults.length > 0
+            ? analysisResults.reduce((a, b) => a + (b.consonantAccuracy || 0), 0) /
+              analysisResults.length
+            : 0;
+        const avgVowelAccuracy =
+          analysisResults.length > 0
+            ? analysisResults.reduce((a, b) => a + (b.vowelAccuracy || 0), 0) /
+              analysisResults.length
+            : 0;
         sm.saveStep2Result({
-          items: analysisResults,
+          items: analysisResults.map((row) => ({
+            text: row.text,
+            transcript: String(row.transcript || ""),
+            isCorrect: Boolean(row.isCorrect),
+            symmetryScore: Number(row.symmetryScore ?? row.faceScore ?? 0),
+            pronunciationScore: Number(
+              row.pronunciationScore ?? row.speechScore ?? 0,
+            ),
+            consonantAccuracy: Number(row.consonantAccuracy ?? 0),
+            vowelAccuracy: Number(row.vowelAccuracy ?? 0),
+            consonantDetail: row.consonantDetail
+              ? {
+                  closureRatePct: Number(row.consonantDetail.closureRatePct ?? 0),
+                  closureHoldMs: Number(row.consonantDetail.closureHoldMs ?? 0),
+                  lipSymmetryPct: Number(row.consonantDetail.lipSymmetryPct ?? 0),
+                  openingSpeedMs: Number(row.consonantDetail.openingSpeedMs ?? 0),
+                }
+              : undefined,
+            vowelDetail: row.vowelDetail
+              ? {
+                  mouthOpeningPct: Number(row.vowelDetail.mouthOpeningPct ?? 0),
+                  mouthWidthPct: Number(row.vowelDetail.mouthWidthPct ?? 0),
+                  roundingPct: Number(row.vowelDetail.roundingPct ?? 0),
+                  patternMatchPct: Number(row.vowelDetail.patternMatchPct ?? 0),
+                }
+              : undefined,
+            dataSource: row.dataSource === "demo" ? "demo" : "measured",
+            audioLevel: Number(row.audioLevel ?? 0),
+          })),
           averageSymmetry: avgSymmetry,
           averagePronunciation: avgPronunciation,
+          averageConsonantAccuracy: avgConsonantAccuracy,
+          averageVowelAccuracy: avgVowelAccuracy,
           timestamp: Date.now(),
         });
       } catch (error) {
@@ -414,9 +768,7 @@ function Step2Content() {
           ? analysisResults.reduce((a, b) => a + b.finalScore, 0) /
             analysisResults.length
           : 0;
-      router.push(
-        `/step-3?place=${place}&step1=${searchParams.get("step1")}&step2=${avgScore.toFixed(0)}`,
-      );
+      pushStep3OrRehabResult(Number(avgScore.toFixed(0)));
     }
   }, [
     currentIndex,
@@ -439,12 +791,17 @@ function Step2Content() {
       const demoItems = protocol.slice(0, STEP2_MAX_STORED_AUDIO_ITEMS).map((item, index) => {
         const speechScore = 78 + (index % 3) * 5;
         const faceScore = 72 + (index % 4) * 4;
+        const consonantAccuracy = 76 + (index % 4) * 5;
+        const vowelAccuracy = 74 + (index % 4) * 4;
         const finalScore = Number((speechScore * 0.6 + faceScore * 0.4).toFixed(1));
         return {
           text: item.text,
           finalScore,
           speechScore,
           faceScore,
+          consonantAccuracy,
+          vowelAccuracy,
+          dataSource: "demo",
           isCorrect: finalScore >= 60,
           timestamp: new Date().toLocaleTimeString(),
         };
@@ -463,16 +820,29 @@ function Step2Content() {
       const averagePronunciation =
         demoItems.reduce((acc, curr) => acc + curr.speechScore, 0) /
         Math.max(1, demoItems.length);
+      const averageConsonantAccuracy =
+        demoItems.reduce((acc, curr) => acc + curr.consonantAccuracy, 0) /
+        Math.max(1, demoItems.length);
+      const averageVowelAccuracy =
+        demoItems.reduce((acc, curr) => acc + curr.vowelAccuracy, 0) /
+        Math.max(1, demoItems.length);
 
       sessionManager.saveStep2Result({
         items: demoItems.map((item) => ({
           text: item.text,
+          transcript: item.text,
+          isCorrect: Boolean(item.isCorrect),
           symmetryScore: item.faceScore,
           pronunciationScore: item.speechScore,
+          consonantAccuracy: item.consonantAccuracy,
+          vowelAccuracy: item.vowelAccuracy,
+          dataSource: "demo",
           audioLevel: 35,
         })),
         averageSymmetry,
         averagePronunciation,
+        averageConsonantAccuracy,
+        averageVowelAccuracy,
         timestamp: Date.now(),
       });
 
@@ -481,13 +851,11 @@ function Step2Content() {
           Math.max(1, demoItems.length),
       );
 
-      router.push(
-        `/step-3?place=${place}&step1=${searchParams.get("step1") || 0}&step2=${step2Score}`,
-      );
+      pushStep3OrRehabResult(step2Score);
     } catch (error) {
       console.error("Step2 skip failed:", error);
     }
-  }, [place, protocol, router, searchParams]);
+  }, [place, protocol, pushStep3OrRehabResult, resetRuntimeStatus]);
 
   const handleToggleRecording = async () => {
     if (!isRecording && (!canRecord || isPromptPlaying)) return;
@@ -502,33 +870,150 @@ function Step2Content() {
       setIsRecorderReady(false);
       setIsAnalyzing(true);
       setStatusText("목소리 인식이 완료되었습니다.");
+      updateRuntimeStatus({
+        recording: false,
+        message: "음성 분석 중",
+      });
 
       try {
         const result = await analyzerRef.current!.stopAnalysis(
           currentItem.text,
         );
+        if (result.errorReason) {
+          setTranscript("");
+          setResultScore(null);
+          setStatusText(getSttErrorMessage(result.errorReason));
+          setCanRecord(true);
+          setIsSaving(false);
+          updateRuntimeStatus({
+            recording: false,
+            saving: false,
+            pageError: true,
+            needsRetry: true,
+            message: getSttErrorMessage(result.errorReason),
+          });
+          return;
+        }
         const speechScore = result.pronunciationScore;
         const faceScore = (sidebarMetrics.facialSymmetry || 0) * 100;
+        const aggregate = articulationAggregateRef.current;
+        const visualConsonantAccuracy =
+          aggregate.count > 0
+            ? aggregate.consonantSum / aggregate.count
+            : liveArticulationRef.current.consonant;
+        const visualVowelAccuracy =
+          aggregate.count > 0
+            ? aggregate.vowelSum / aggregate.count
+            : liveArticulationRef.current.vowel;
+        const consonantDetail =
+          aggregate.count > 0
+            ? {
+                closureRatePct: aggregate.closureRateSum / aggregate.count,
+                closureHoldMs: aggregate.closureHoldMsSum / aggregate.count,
+                lipSymmetryPct: aggregate.lipSymmetrySum / aggregate.count,
+                openingSpeedMs: aggregate.openingSpeedMsSum / aggregate.count,
+              }
+            : {
+                closureRatePct:
+                  liveArticulationRef.current.consonantDetails.closureRatePct,
+                closureHoldMs:
+                  liveArticulationRef.current.consonantDetails.closureHoldMs,
+                lipSymmetryPct:
+                  liveArticulationRef.current.consonantDetails.lipSymmetryPct,
+                openingSpeedMs:
+                  liveArticulationRef.current.consonantDetails.openingSpeedMs,
+              };
+        const vowelDetail =
+          aggregate.count > 0
+            ? {
+                mouthOpeningPct: aggregate.mouthOpeningSum / aggregate.count,
+                mouthWidthPct: aggregate.mouthWidthSum / aggregate.count,
+                roundingPct: aggregate.roundingSum / aggregate.count,
+                patternMatchPct: aggregate.patternMatchSum / aggregate.count,
+              }
+            : {
+                mouthOpeningPct:
+                  liveArticulationRef.current.vowelDetails.mouthOpeningPct,
+                mouthWidthPct:
+                  liveArticulationRef.current.vowelDetails.mouthWidthPct,
+                roundingPct: liveArticulationRef.current.vowelDetails.roundingPct,
+                patternMatchPct:
+                  liveArticulationRef.current.vowelDetails.patternMatchPct,
+              };
+        const consonantAccuracy = blendArticulationAccuracy(
+          visualConsonantAccuracy,
+          result.details?.consonantAccuracy,
+        );
+        const vowelAccuracy = blendArticulationAccuracy(
+          visualVowelAccuracy,
+          result.details?.vowelAccuracy,
+        );
         let finalScore =
           speechScore >= 85 || faceScore >= 85
             ? Math.max(speechScore, faceScore)
             : speechScore * 0.6 + faceScore * 0.4;
 
+        updateSidebar({
+          consonantAccuracy: consonantAccuracy / 100,
+          vowelAccuracy: vowelAccuracy / 100,
+        });
+        updateRuntimeStatus({
+          pageError: false,
+          needsRetry: false,
+          message: "분석 완료",
+        });
         setTranscript(result.transcript || "");
         setResultScore(Number(finalScore.toFixed(1)));
         setAnalysisResults((prev) => [
           ...prev,
           {
             text: currentItem.text,
+            transcript: result.transcript || "",
+            isCorrect: finalScore >= 60,
             finalScore: Number(finalScore.toFixed(1)),
             speechScore,
             faceScore,
+            symmetryScore: faceScore,
+            pronunciationScore: speechScore,
+            consonantAccuracy: Number(consonantAccuracy.toFixed(1)),
+            vowelAccuracy: Number(vowelAccuracy.toFixed(1)),
+            consonantDetail: {
+              closureRatePct: Number(consonantDetail.closureRatePct.toFixed(1)),
+              closureHoldMs: Number(consonantDetail.closureHoldMs.toFixed(1)),
+              lipSymmetryPct: Number(consonantDetail.lipSymmetryPct.toFixed(1)),
+              openingSpeedMs: Number(consonantDetail.openingSpeedMs.toFixed(1)),
+            },
+            vowelDetail: {
+              mouthOpeningPct: Number(vowelDetail.mouthOpeningPct.toFixed(1)),
+              mouthWidthPct: Number(vowelDetail.mouthWidthPct.toFixed(1)),
+              roundingPct: Number(vowelDetail.roundingPct.toFixed(1)),
+              patternMatchPct: Number(vowelDetail.patternMatchPct.toFixed(1)),
+            },
+            dataSource: "measured",
+            audioLevel: audioLevel,
           },
         ]);
+        articulationAggregateRef.current = {
+          consonantSum: 0,
+          vowelSum: 0,
+          closureRateSum: 0,
+          closureHoldMsSum: 0,
+          lipSymmetrySum: 0,
+          openingSpeedMsSum: 0,
+          mouthOpeningSum: 0,
+          mouthWidthSum: 0,
+          roundingSum: 0,
+          patternMatchSum: 0,
+          count: 0,
+        };
 
         const audioBlob = result.audioBlob;
         if (audioBlob) {
           setIsSaving(true);
+          updateRuntimeStatus({
+            saving: true,
+            message: "결과 저장 중",
+          });
           console.debug("[Step2] save:start", {
             index: currentIndex,
             text: currentItem.text,
@@ -556,6 +1041,21 @@ function Step2Content() {
                 finalScore: Number(finalScore.toFixed(1)),
                 speechScore,
                 faceScore,
+                consonantAccuracy: Number(consonantAccuracy.toFixed(1)),
+                vowelAccuracy: Number(vowelAccuracy.toFixed(1)),
+                consonantDetail: {
+                  closureRatePct: Number(consonantDetail.closureRatePct.toFixed(1)),
+                  closureHoldMs: Number(consonantDetail.closureHoldMs.toFixed(1)),
+                  lipSymmetryPct: Number(consonantDetail.lipSymmetryPct.toFixed(1)),
+                  openingSpeedMs: Number(consonantDetail.openingSpeedMs.toFixed(1)),
+                },
+                vowelDetail: {
+                  mouthOpeningPct: Number(vowelDetail.mouthOpeningPct.toFixed(1)),
+                  mouthWidthPct: Number(vowelDetail.mouthWidthPct.toFixed(1)),
+                  roundingPct: Number(vowelDetail.roundingPct.toFixed(1)),
+                  patternMatchPct: Number(vowelDetail.patternMatchPct.toFixed(1)),
+                },
+                dataSource: "measured",
                 timestamp: new Date().toLocaleTimeString(),
               };
 
@@ -617,17 +1117,36 @@ function Step2Content() {
                 score: Number(finalScore.toFixed(1)),
               });
               setReviewAudioUrl(URL.createObjectURL(audioBlob));
+              updateRuntimeStatus({
+                pageError: false,
+                needsRetry: false,
+                message: "저장 완료",
+              });
             } catch (saveErr) {
               console.error("Step2 localStorage 저장 실패:", saveErr);
               setStatusText("녹음 저장 중 오류가 발생했습니다.");
+              updateRuntimeStatus({
+                pageError: true,
+                needsRetry: true,
+                message: "저장 실패: 브라우저 저장소 상태를 확인해 주세요.",
+              });
             } finally {
               setIsSaving(false);
+              updateRuntimeStatus({
+                saving: false,
+              });
             }
           };
           reader.onerror = () => {
             console.error("Step2 FileReader 오류");
             setStatusText("녹음 파일 처리 중 오류가 발생했습니다.");
             setIsSaving(false);
+            updateRuntimeStatus({
+              saving: false,
+              pageError: true,
+              needsRetry: true,
+              message: "오디오 파일 처리 오류가 발생했습니다.",
+            });
           };
           reader.readAsDataURL(audioBlob);
         } else {
@@ -636,10 +1155,23 @@ function Step2Content() {
             text: currentItem.text,
           });
           setIsSaving(false);
+          updateRuntimeStatus({
+            saving: false,
+            pageError: true,
+            needsRetry: true,
+            message: "오디오 저장 데이터가 생성되지 않았습니다.",
+          });
         }
       } catch (err) {
         console.error("Analysis Error:", err);
         setStatusText("분석 중 오류가 발생했습니다.");
+        updateRuntimeStatus({
+          recording: false,
+          saving: false,
+          pageError: true,
+          needsRetry: true,
+          message: "분석 오류: 다시 실행해 주세요.",
+        });
       } finally {
         setIsAnalyzing(false);
       }
@@ -755,13 +1287,15 @@ function Step2Content() {
                       인식된 결과
                     </p>
                     <p
-                      className={`${getResultSentenceSizeClass(transcript || "")} font-bold text-slate-700 italic leading-relaxed ${
+                      className={`${getResultSentenceSizeClass((transcript || "").trim() || "인식 실패")} font-bold text-slate-700 italic leading-relaxed ${
                         isSttExpanded
                           ? "break-words whitespace-normal"
                           : "whitespace-nowrap overflow-hidden text-ellipsis"
                       }`}
                     >
-                      "{transcript || "..."}"
+                      {(transcript || "").trim()
+                        ? `"${transcript}"`
+                        : "인식 결과가 없습니다. 마이크 권한/주변 소음을 확인 후 다시 시도해 주세요."}
                     </p>
                     {(transcript || "").length > 26 && (
                       <button
@@ -914,6 +1448,22 @@ function Step2Content() {
             metrics={{
               symmetryScore: (sidebarMetrics.facialSymmetry || 0) * 100,
               openingRatio: (sidebarMetrics.mouthOpening || 0) * 100,
+              consonantAcc: (sidebarMetrics.consonantAccuracy || 0) * 100,
+              vowelAcc: (sidebarMetrics.vowelAccuracy || 0) * 100,
+              consonantClosureRate:
+                (sidebarMetrics.consonantClosureRate || 0) * 100,
+              consonantClosureHold:
+                (sidebarMetrics.consonantClosureHoldScore || 0) * 100,
+              consonantLipSymmetry:
+                (sidebarMetrics.consonantLipSymmetry || 0) * 100,
+              consonantOpeningSpeed:
+                (sidebarMetrics.consonantOpeningSpeedScore || 0) * 100,
+              consonantClosureHoldMs: sidebarMetrics.consonantClosureHoldMs || 0,
+              consonantOpeningSpeedMs: sidebarMetrics.consonantOpeningSpeedMs || 0,
+              vowelMouthOpening: (sidebarMetrics.vowelMouthOpening || 0) * 100,
+              vowelMouthWidth: (sidebarMetrics.vowelMouthWidth || 0) * 100,
+              vowelRounding: (sidebarMetrics.vowelRounding || 0) * 100,
+              vowelPatternMatch: (sidebarMetrics.vowelPatternMatch || 0) * 100,
               audioLevel: audioLevel,
             }}
             showTracking={showTracking}
@@ -945,3 +1495,4 @@ export default function Step2Page() {
     </Suspense>
   );
 }
+

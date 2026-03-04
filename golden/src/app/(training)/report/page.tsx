@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useEffect, useRef, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { SessionManager, TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
@@ -33,6 +33,7 @@ function ReportContent() {
   const { patient } = useTrainingSession();
   const [history, setHistory] = useState<TrainingHistoryEntry[]>([]);
   const [selected, setSelected] = useState<TrainingHistoryEntry | null>(null);
+  const [modeFilter, setModeFilter] = useState<"self" | "rehab">("self");
   const [playingId, setPlayingId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -46,8 +47,34 @@ function ReportContent() {
       (a, b) => b.completedAt - a.completedAt,
     );
     setHistory(rows);
-    setSelected(rows[0] || null);
+    const selfRows = rows.filter((r) => r.trainingMode !== "rehab");
+    setSelected(selfRows[0] || rows[0] || null);
   }, [patient]);
+
+  const filteredHistory = useMemo(
+    () =>
+      history.filter((row) =>
+        modeFilter === "rehab"
+          ? row.trainingMode === "rehab"
+          : row.trainingMode !== "rehab",
+      ),
+    [history, modeFilter],
+  );
+
+  useEffect(() => {
+    if (!filteredHistory.length) {
+      setSelected(null);
+      return;
+    }
+    if (!selected) {
+      setSelected(filteredHistory[0]);
+      return;
+    }
+    const exists = filteredHistory.some((row) => row.historyId === selected.historyId);
+    if (!exists) {
+      setSelected(filteredHistory[0]);
+    }
+  }, [filteredHistory, selected]);
 
   const stopPlayback = () => {
     if (audioRef.current) {
@@ -99,6 +126,8 @@ function ReportContent() {
       })).filter((s) => s.items.length > 0)
     : [];
 
+  const isRehabContext = modeFilter === "rehab";
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="h-16 px-6 border-b border-orange-100 flex items-center justify-between bg-white sticky top-0 z-40">
@@ -131,9 +160,17 @@ function ReportContent() {
       </header>
 
       <main className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8 grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-4 lg:gap-6">
-        <section className="bg-white border border-orange-100 rounded-2xl p-4">
+        <section
+          className={`bg-white rounded-2xl p-4 border ${
+            isRehabContext ? "border-sky-100" : "border-orange-100"
+          }`}
+        >
           <div className="mb-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">
+            <p
+              className={`text-[10px] font-black uppercase tracking-widest ${
+                isRehabContext ? "text-sky-500" : "text-orange-500"
+              }`}
+            >
               Patient
             </p>
             <p className="text-sm font-bold text-slate-700">
@@ -141,36 +178,82 @@ function ReportContent() {
             </p>
           </div>
 
-          {history.length === 0 ? (
+          <div className="mb-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setModeFilter("self")}
+              className={`h-9 rounded-lg border text-sm font-black transition-colors ${
+                modeFilter === "self"
+                  ? "bg-orange-50 border-orange-300 text-orange-700"
+                  : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              자가진단
+            </button>
+            <button
+              type="button"
+              onClick={() => setModeFilter("rehab")}
+              className={`h-9 rounded-lg border text-sm font-black transition-colors ${
+                modeFilter === "rehab"
+                  ? "bg-sky-50 border-sky-300 text-sky-700"
+                  : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              언어재활
+            </button>
+          </div>
+
+          {filteredHistory.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-200 p-4 text-sm font-bold text-slate-500">
-              저장된 리포트가 없습니다.
+              {modeFilter === "rehab"
+                ? "저장된 언어재활 리포트가 없습니다."
+                : "저장된 자가진단 리포트가 없습니다."}
             </div>
           ) : (
             <div className="space-y-2 max-h-[70vh] overflow-auto pr-1">
-              {history.map((row) => (
+              {filteredHistory.map((row) => (
                 <button
                   key={row.historyId}
                   type="button"
                   onClick={() => setSelected(row)}
                   className={`w-full text-left p-3 rounded-xl border transition-colors ${
                     selected?.historyId === row.historyId
-                      ? "border-orange-300 bg-orange-50"
+                      ? row.trainingMode === "rehab"
+                        ? "border-sky-300 bg-sky-50"
+                        : "border-orange-300 bg-orange-50"
                       : "border-slate-200 bg-white hover:bg-slate-50"
                   }`}
                 >
                   <p className="text-xs font-black text-slate-800">
                     {new Date(row.completedAt).toLocaleString("ko-KR")}
                   </p>
-                  <p className="text-[11px] font-bold text-slate-600 mt-1">
-                    장소: {row.place} · AQ {row.aq}
-                  </p>
+                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                    <span
+                      className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                        row.trainingMode === "rehab"
+                          ? "bg-sky-100 text-sky-700"
+                          : "bg-orange-100 text-orange-700"
+                      }`}
+                    >
+                      {row.trainingMode === "rehab" ? "언어재활" : "자가진단"}
+                    </span>
+                    <p className="text-[11px] font-bold text-slate-600">
+                      장소: {row.place} · AQ {row.aq}
+                    </p>
+                  </div>
                 </button>
               ))}
             </div>
           )}
         </section>
 
-        <section className="bg-white border border-orange-100 rounded-2xl p-4 md:p-5">
+        <section
+          className={`bg-white rounded-2xl p-4 md:p-5 border ${
+            selected?.trainingMode === "rehab"
+              ? "border-sky-100"
+              : "border-orange-100"
+          }`}
+        >
           {!selected ? (
             <div className="rounded-xl border border-dashed border-slate-200 p-6 text-sm font-bold text-slate-500">
               선택된 리포트가 없습니다.
@@ -181,12 +264,19 @@ function ReportContent() {
             </div>
           ) : (
             <div className="space-y-4 max-h-[calc(100vh-7rem)] overflow-y-auto pr-2 pb-24">
-              <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
+              <div
+                className={`rounded-xl border p-4 ${
+                  selected.trainingMode === "rehab"
+                    ? "bg-sky-50 border-sky-200"
+                    : "bg-orange-50 border-orange-200"
+                }`}
+              >
                 <p className="text-xs font-black text-slate-700">
                   {new Date(selected.completedAt).toLocaleString("ko-KR")}
                 </p>
                 <p className="text-sm font-bold text-slate-600 mt-1">
-                  환자: {selected.patientName} · 장소: {selected.place} · AQ {selected.aq}
+                  {selected.trainingMode === "rehab" ? "언어재활" : "자가진단"} · 환자:{" "}
+                  {selected.patientName} · 장소: {selected.place} · AQ {selected.aq}
                 </p>
               </div>
 
@@ -194,7 +284,11 @@ function ReportContent() {
                 {availableSteps.map((s) => (
                   <div
                     key={s.key}
-                    className="rounded-xl border border-slate-200 bg-white p-3"
+                    className={`rounded-xl border p-3 ${
+                      selected.trainingMode === "rehab"
+                        ? "border-sky-200 bg-sky-50/40"
+                        : "border-orange-200 bg-orange-50/30"
+                    }`}
                   >
                     <p className="text-[10px] font-black text-slate-500">{s.label}</p>
                     <p className="text-lg font-black text-slate-800 mt-1">

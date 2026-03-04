@@ -39,15 +39,34 @@ export interface Step1Result {
 }
 
 export interface Step2Result {
-  // 따라말하기
+  // 복창 훈련
   items: Array<{
     text: string;
+    transcript?: string;
+    isCorrect?: boolean;
     symmetryScore: number; // 0-100
     pronunciationScore: number; // 0-100
+    consonantAccuracy?: number; // 0-100
+    vowelAccuracy?: number; // 0-100
+    consonantDetail?: {
+      closureRatePct: number; // 폐쇄율 (%): 녹음 구간에서 mouthOpening이 임계값 이하였던 프레임 비율
+      closureHoldMs: number; // 폐쇄 유지시간 (ms)
+      lipSymmetryPct: number; // 좌우 대칭 (%)
+      openingSpeedMs: number; // 개방 속도 (ms)
+    };
+    vowelDetail?: {
+      mouthOpeningPct: number; // 입벌림 (%)
+      mouthWidthPct: number; // 입술 너비 (%)
+      roundingPct: number; // 둥글림 (%)
+      patternMatchPct: number; // 목표 패턴 일치도 (%)
+    };
+    dataSource?: "measured" | "demo";
     audioLevel: number; // dB
   }>;
   averageSymmetry: number;
   averagePronunciation: number;
+  averageConsonantAccuracy?: number;
+  averageVowelAccuracy?: number;
   timestamp: number;
 }
 
@@ -56,6 +75,8 @@ export interface Step3Result {
   score: number; // 0-100 점수
   correctCount: number; // 맞은 개수 (기존 correctAnswers 대신 사용)
   totalCount: number; // 전체 개수 (기존 totalQuestions 대신 사용)
+  averageConsonantAccuracy?: number;
+  averageVowelAccuracy?: number;
   timestamp: number;
 }
 
@@ -64,30 +85,69 @@ export interface Step4Result {
   items: Array<{
     situation: string;
     prompt: string;
+    transcript?: string;
+    isCorrect?: boolean;
     speechDuration: number;
     silenceRatio: number;
     averageAmplitude: number;
     peakCount: number;
     kwabScore: number; // 0~10점
     rawScore: number; // 원점수 0~100
+    consonantAccuracy?: number;
+    vowelAccuracy?: number;
+    articulationWritingConsistency?: number;
+    consonantDetail?: {
+      closureRatePct: number; // 폐쇄율 (%): 녹음 구간에서 mouthOpening이 임계값 이하였던 프레임 비율
+      closureHoldMs: number; // 폐쇄 유지시간 (ms)
+      lipSymmetryPct: number; // 좌우 대칭 (%)
+      openingSpeedMs: number; // 개방 속도 (ms)
+    };
+    vowelDetail?: {
+      mouthOpeningPct: number; // 입벌림 (%)
+      mouthWidthPct: number; // 입술 너비 (%)
+      roundingPct: number; // 둥글림 (%)
+      patternMatchPct: number; // 목표 패턴 일치도 (%)
+    };
   }>;
   averageKwabScore: number;
   totalScenarios: number;
   score: number; // Result 페이지용
   correctCount: number; // 5점 이상 통과 개수
   totalCount: number;
+  averageArticulationWritingConsistency?: number;
   timestamp: number;
 }
 
 export interface Step5Result {
-  // 읽기 학습
+  // 읽기 훈련
   correctAnswers: number;
   totalQuestions: number;
+  averageConsonantAccuracy?: number;
+  averageVowelAccuracy?: number;
+  averageArticulationWritingConsistency?: number;
   timestamp: number;
   items: Array<{
     text: string;
+    transcript?: string;
+    isCorrect?: boolean;
     audioUrl?: string;
     readingScore?: number;
+    consonantAccuracy?: number;
+    vowelAccuracy?: number;
+    articulationWritingConsistency?: number;
+    consonantDetail?: {
+      closureRatePct: number; // 폐쇄율 (%): 녹음 구간에서 mouthOpening이 임계값 이하였던 프레임 비율
+      closureHoldMs: number; // 폐쇄 유지시간 (ms)
+      lipSymmetryPct: number; // 좌우 대칭 (%)
+      openingSpeedMs: number; // 개방 속도 (ms)
+    };
+    vowelDetail?: {
+      mouthOpeningPct: number; // 입벌림 (%)
+      mouthWidthPct: number; // 입술 너비 (%)
+      roundingPct: number; // 둥글림 (%)
+      patternMatchPct: number; // 목표 패턴 일치도 (%)
+    };
+    dataSource?: "measured" | "demo";
     totalTime?: number;
     wordsPerMinute?: number;
   }>;
@@ -102,6 +162,7 @@ export interface Step6Result {
     word: string;
     expectedStrokes: number;
     userImage: string;
+    articulationWritingConsistency?: number;
   }>;
 }
 
@@ -135,6 +196,7 @@ export interface TrainingSession {
 
 const SESSION_STORAGE_PREFIX = "kwab_training_session";
 const HISTORY_STORAGE_PREFIX = "kwab_training_history";
+export type TrainingMode = "self" | "rehab";
 
 export interface TrainingHistoryEntry {
   historyId: string;
@@ -145,6 +207,7 @@ export interface TrainingHistoryEntry {
   age: number;
   educationYears: number;
   place: string;
+  trainingMode?: TrainingMode;
   completedAt: number;
   aq: number;
   stepScores: {
@@ -162,6 +225,37 @@ export interface TrainingHistoryEntry {
     step4: any[];
     step5: any[];
     step6: any[];
+  };
+  articulationScores?: {
+    step2: {
+      averageConsonantAccuracy: number;
+      averageVowelAccuracy: number;
+    };
+    step3: {
+      averageConsonantAccuracy: number;
+      averageVowelAccuracy: number;
+    };
+    step4?: {
+      averageConsonantAccuracy: number;
+      averageVowelAccuracy: number;
+    };
+    step5: {
+      averageConsonantAccuracy: number;
+      averageVowelAccuracy: number;
+    };
+    articulationWritingConsistency?: {
+      step4: number;
+      step5: number;
+      step6: number;
+    };
+  };
+  facialAnalysisSnapshot?: {
+    asymmetryRisk: number;
+    articulationGap: number;
+    overallConsonant: number;
+    overallVowel: number;
+    articulationFaceMatchSummary: string;
+    timelineCurrentAsymmetry: number;
   };
 }
 
@@ -222,12 +316,21 @@ export class SessionManager {
     this.saveSession();
   }
 
-  saveStep6Result(result: Step6Result) {
+  saveStep6Result(result: Step6Result, mode: TrainingMode = "self") {
     this.session.step6 = result;
     this.session.completedAt = Date.now();
     this.updateKWABScores();
     this.saveSession();
-    this.saveHistoryEntry();
+    this.saveHistoryEntry(mode);
+  }
+
+  finalizeSessionAndSaveHistory(mode: TrainingMode = "self") {
+    if (!this.session.completedAt) {
+      this.session.completedAt = Date.now();
+    }
+    this.updateKWABScores();
+    this.saveSession();
+    this.saveHistoryEntry(mode);
   }
 
   // ========================================================================
@@ -434,7 +537,7 @@ export class SessionManager {
     return { step1, step2, step3, step4, step5, step6 };
   }
 
-  private saveHistoryEntry() {
+  private saveHistoryEntry(mode: TrainingMode = "self") {
     if (typeof window === "undefined") return;
     const aq = this.session.kwabScores?.aq;
     if (aq === undefined || aq === null) return;
@@ -459,6 +562,59 @@ export class SessionManager {
       }
     };
 
+    const step1Rows = readArray("step1_data");
+    const step2Rows = readArray("step2_recorded_audios");
+    const step3Rows = readArray("step3_data");
+    const step4Rows = readArray("step4_recorded_audios");
+    const step5Rows = readArray("step5_recorded_data");
+    const step6Rows = readArray("step6_recorded_data");
+
+    const avg = (arr: number[]) =>
+      arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+    const avgByKey = (rows: any[], key: string) => {
+      const vals = rows
+        .map((r) => Number((r as any)?.[key]))
+        .filter((v) => Number.isFinite(v) && v > 0);
+      return avg(vals);
+    };
+    const toNums = (rows: any[], key: string) =>
+      rows
+        .map((r) => Number((r as any)?.[key]))
+        .filter((v) => Number.isFinite(v));
+
+    // 카메라 기반 단계만 집계 (Step2, Step4, Step5)
+    const step4Consonant = Number(this.session.step4?.items?.length
+      ? avgByKey(this.session.step4.items as any[], "consonantAccuracy")
+      : 0);
+    const step4Vowel = Number(this.session.step4?.items?.length
+      ? avgByKey(this.session.step4.items as any[], "vowelAccuracy")
+      : 0);
+
+    const overallConsonant = avg([
+      Number(this.session.step2?.averageConsonantAccuracy ?? 0),
+      step4Consonant,
+      Number(this.session.step5?.averageConsonantAccuracy ?? 0),
+    ].filter((v) => v > 0));
+    const overallVowel = avg([
+      Number(this.session.step2?.averageVowelAccuracy ?? 0),
+      step4Vowel,
+      Number(this.session.step5?.averageVowelAccuracy ?? 0),
+    ].filter((v) => v > 0));
+    const asymmetryRisk = avg(
+      toNums(step2Rows, "symmetryScore").map((v) =>
+        Math.max(0, Math.min(100, 100 - v)),
+      ),
+    );
+    const articulationGap = Math.abs(overallConsonant - overallVowel);
+    const articulationFaceMatchSummary =
+      asymmetryRisk >= 45 && articulationGap >= 18
+        ? "비대칭 및 자모음 편차가 동반되어 협응 훈련 권고"
+        : asymmetryRisk >= 35
+          ? "비대칭 신호 관찰, 좌우 협응 훈련 권고"
+          : articulationGap >= 15
+            ? "자모음 편차 관찰, 약한 영역 집중 권고"
+            : "음성-안면 매칭 안정 범위";
+
     const p = this.session.patient as any;
     const entry: TrainingHistoryEntry = {
       historyId: `history_${Date.now()}`,
@@ -469,16 +625,71 @@ export class SessionManager {
       age: Number(this.session.patient.age ?? 0),
       educationYears: Number(this.session.patient.educationYears ?? 0),
       place: this.session.place,
+      trainingMode: mode,
       completedAt: this.session.completedAt ?? Date.now(),
       aq: Number(aq),
       stepScores: this.getStepScoresForHistory(),
       stepDetails: {
-        step1: readArray("step1_data"),
-        step2: readArray("step2_recorded_audios"),
-        step3: readArray("step3_data"),
-        step4: readArray("step4_recorded_audios"),
-        step5: readArray("step5_recorded_data"),
-        step6: readArray("step6_recorded_data"),
+        step1: step1Rows,
+        step2: step2Rows,
+        step3: step3Rows,
+        step4: step4Rows,
+        step5: step5Rows,
+        step6: step6Rows,
+      },
+      articulationScores: {
+        step2: {
+          averageConsonantAccuracy: Number(
+            this.session.step2?.averageConsonantAccuracy ?? 0,
+          ),
+          averageVowelAccuracy: Number(
+            this.session.step2?.averageVowelAccuracy ?? 0,
+          ),
+        },
+        step3: {
+          averageConsonantAccuracy: Number(
+            this.session.step3?.averageConsonantAccuracy ?? 0,
+          ),
+          averageVowelAccuracy: Number(
+            this.session.step3?.averageVowelAccuracy ?? 0,
+          ),
+        },
+        step4: {
+          averageConsonantAccuracy: Number(step4Consonant ?? 0),
+          averageVowelAccuracy: Number(step4Vowel ?? 0),
+        },
+        step5: {
+          averageConsonantAccuracy: Number(
+            this.session.step5?.averageConsonantAccuracy ?? 0,
+          ),
+          averageVowelAccuracy: Number(
+            this.session.step5?.averageVowelAccuracy ?? 0,
+          ),
+        },
+        articulationWritingConsistency: {
+          step4: Number(
+            this.session.step4?.averageArticulationWritingConsistency ?? 0,
+          ),
+          step5: Number(
+            this.session.step5?.averageArticulationWritingConsistency ?? 0,
+          ),
+          step6: Number(
+            this.session.step6?.items?.length
+              ? this.session.step6.items.reduce(
+                  (sum, row) => sum + Number((row as any)?.articulationWritingConsistency ?? 0),
+                  0,
+                ) / this.session.step6.items.length
+              : 0,
+          ),
+        },
+      },
+      facialAnalysisSnapshot: {
+        asymmetryRisk: Number(asymmetryRisk.toFixed(1)),
+        articulationGap: Number(articulationGap.toFixed(1)),
+        overallConsonant: Number(overallConsonant.toFixed(1)),
+        overallVowel: Number(overallVowel.toFixed(1)),
+        articulationFaceMatchSummary,
+        timelineCurrentAsymmetry: Number(asymmetryRisk.toFixed(1)),
       },
     };
 
@@ -547,6 +758,7 @@ export class SessionManager {
           age: Number(patient.age ?? 0),
           educationYears: Number(patient.educationYears ?? 0),
           place,
+          trainingMode: "self",
           completedAt: dt,
           aq,
           stepScores: {
@@ -572,7 +784,7 @@ export class SessionManager {
             ],
             step3: [
               {
-                text: "예시 그림 매칭 정답",
+                text: "예시 단어 명명 정답",
                 isCorrect: true,
               },
             ],

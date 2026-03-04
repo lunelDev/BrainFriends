@@ -29,8 +29,13 @@ const INITIAL_METRICS: MetricsData = {
   face: {
     symmetryScore: 100,
     openingRatio: 0,
+    mouthWidth: 0,
     isStretched: false,
     deviation: 0,
+    staticSymmetryScore: 100,
+    dynamicSymmetryScore: 100,
+    eyebrowLiftPct: 0,
+    eyeClosureStrengthPct: 0,
   },
 };
 

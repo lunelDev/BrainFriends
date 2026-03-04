@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { TrainingProvider, useTraining } from "./TrainingContext";
 import FaceTracker from "@/components/diagnosis/FaceTracker";
 
@@ -28,7 +28,13 @@ function MetricBox({ label, subLabel, value, target, color }: any) {
 }
 
 function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
-  const { clinicalMetrics, updateClinical, updateSidebar } = useTraining();
+  const {
+    clinicalMetrics,
+    runtimeStatus,
+    updateClinical,
+    updateSidebar,
+    updateRuntimeStatus,
+  } = useTraining();
 
   // ✅ 엔진용 Refs (화면에는 보이지 않으며 좌표 추출용으로만 사용)
   const engineVideoRef = useRef<HTMLVideoElement>(null);
@@ -43,6 +49,67 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
     return isPass ? "text-emerald-500" : "text-orange-400";
   };
 
+  useEffect(() => {
+    const onError = (event: ErrorEvent) => {
+      updateRuntimeStatus({
+        pageError: true,
+        needsRetry: true,
+        message: event.message || "페이지 오류가 발생했습니다. 다시 실행해 주세요.",
+      });
+    };
+
+    const onRejection = (event: PromiseRejectionEvent) => {
+      const reason =
+        typeof event.reason === "string"
+          ? event.reason
+          : event.reason?.message || "비동기 처리 오류가 발생했습니다.";
+      updateRuntimeStatus({
+        pageError: true,
+        needsRetry: true,
+        message: reason,
+      });
+    };
+
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+    };
+  }, [updateRuntimeStatus]);
+
+  const runtimeIndicator = runtimeStatus.pageError
+    ? {
+        label: "오류 감지",
+        value: runtimeStatus.needsRetry ? "재실행 필요" : "오류",
+        target: "확인",
+        color: "text-red-500",
+        lamp: "bg-red-500 animate-pulse",
+      }
+    : runtimeStatus.saving
+      ? {
+          label: "저장 중",
+          value: "저장 진행",
+          target: "대기",
+          color: "text-amber-500",
+          lamp: "bg-amber-500 animate-pulse",
+        }
+      : runtimeStatus.recording
+        ? {
+            label: "녹음 상태",
+            value: "녹음 중",
+            target: "정상",
+            color: "text-sky-500",
+            lamp: "bg-sky-500 animate-pulse",
+          }
+        : {
+            label: "운영 상태",
+            value: "정상",
+            target: "OK",
+            color: "text-emerald-500",
+            lamp: "bg-emerald-500",
+          };
+
   return (
     <div className="h-screen w-full bg-[#F3F4F6] overflow-hidden">
       <div className="w-full h-screen bg-white flex flex-col overflow-hidden relative">
@@ -51,7 +118,7 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
         </div>
 
         <footer className="px-6 py-2 border-t border-slate-100 bg-white shrink-0">
-          <div className="grid grid-cols-6 gap-2.5 w-full max-w-7xl mx-auto">
+          <div className="grid grid-cols-7 gap-2.5 w-full max-w-7xl mx-auto">
             <MetricBox
               label="System Latency"
               subLabel="처리 속도"
@@ -102,6 +169,23 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
               target="≤ 10"
               color={getStatusColor(clinicalMetrics.stability, 10, false)}
             />
+            <div className="relative group flex flex-col items-start border-r border-slate-50 last:border-0 pr-2.5">
+              <div className="pointer-events-none absolute -top-7 left-0 z-20 rounded-md bg-slate-900 px-2 py-1 text-[10px] font-bold text-white opacity-0 shadow-md transition-opacity group-hover:opacity-100 whitespace-nowrap max-w-[240px] truncate">
+                {runtimeStatus.message || "녹음/저장/오류 상태"}
+              </div>
+              <span className="text-[7px] md:text-[8px] font-black text-slate-400 uppercase mb-0.5">
+                Runtime Alert
+              </span>
+              <div className="flex items-center gap-1.5 leading-none">
+                <span className={`inline-block h-2 w-2 rounded-full ${runtimeIndicator.lamp}`} />
+                <span className={`text-[8px] md:text-[9px] font-mono font-black ${runtimeIndicator.color}`}>
+                  {runtimeIndicator.value}
+                </span>
+                <span className="text-[7px] md:text-[8px] font-bold text-slate-300 font-mono">
+                  {runtimeIndicator.target}
+                </span>
+              </div>
+            </div>
           </div>
         </footer>
 
@@ -118,7 +202,13 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
 
               updateSidebar({
                 facialSymmetry: m.symmetryScore / 100,
+                staticFacialSymmetry: (m.staticSymmetryScore || m.symmetryScore) / 100,
+                dynamicFacialSymmetry:
+                  (m.dynamicSymmetryScore || m.symmetryScore) / 100,
                 mouthOpening: (m.openingRatio || 0) / 100,
+                mouthWidth: m.mouthWidth || 0,
+                eyebrowLift: (m.eyebrowLiftPct || 0) / 100,
+                eyeClosureStrength: (m.eyeClosureStrengthPct || 0) / 100,
                 faceDetected: true,
                 landmarks: m.landmarks, // Context로 좌표 전달
               });

@@ -16,11 +16,15 @@ import {
   VISUAL_MATCHING_RECOMMENDED_COUNT,
 } from "@/constants/visualTrainingData";
 import { useTraining } from "../TrainingContext";
-import { AnalysisSidebar } from "@/components/training/AnalysisSidebar";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { loadPatientProfile } from "@/lib/patientStorage";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
+import {
+  analyzeArticulation,
+  createInitialArticulationAnalyzerState,
+} from "@/lib/analysis/articulationAnalyzer";
+import { estimateLipSymmetryFromLandmarks } from "@/lib/analysis/lipMetrics";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 
 export const dynamic = "force-dynamic";
@@ -109,12 +113,46 @@ function Step3Content() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const { sidebarMetrics } = useTraining();
+  const { sidebarMetrics, updateSidebar } = useTraining();
   const place = (searchParams?.get("place") as PlaceType) || "home";
+  const isRehabMode = searchParams.get("trainMode") === "rehab";
+  const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
+  const pushStep4OrRehabResult = useCallback(
+    (step3Score: number) => {
+      const step1Score = searchParams.get("step1") || "0";
+      const step2Score = searchParams.get("step2") || "0";
+      if (isRehabMode && rehabTargetStep === 3) {
+        const params = new URLSearchParams({
+          place,
+          trainMode: "rehab",
+          targetStep: "3",
+          step1: step1Score,
+          step2: step2Score,
+          step3: String(step3Score),
+          step4: "0",
+          step5: "0",
+          step6: "0",
+        });
+        router.push(`/result-rehab?${params.toString()}`);
+        return;
+      }
+      router.push(
+        `/step-4?place=${place}&step1=${step1Score}&step2=${step2Score}&step3=${step3Score}`,
+      );
+    },
+    [isRehabMode, place, rehabTargetStep, router, searchParams],
+  );
   const handleGoHome = () => {
     setIsHomeExitModalOpen(true);
   };
   const confirmGoHome = () => {
+    const isTrialMode =
+      typeof window !== "undefined" &&
+      sessionStorage.getItem("btt.trialMode") === "1";
+    if (isTrialMode) {
+      router.push("/");
+      return;
+    }
     saveTrainingExitProgress(place, 3);
     router.push("/select");
   };
@@ -133,9 +171,41 @@ function Step3Content() {
   >({});
   const [analysisResults, setAnalysisResults] = useState<any[]>([]);
   const [isHomeExitModalOpen, setIsHomeExitModalOpen] = useState(false);
+  const articulationStateRef = useRef(createInitialArticulationAnalyzerState());
+  const liveArticulationRef = useRef({
+    consonant: 0,
+    vowel: 0,
+    consonantDetails: {
+      closureRatePct: 0,
+      closureHoldMs: 0,
+      lipSymmetryPct: 0,
+      openingSpeedMs: 0,
+      closureHoldScore: 0,
+      openingSpeedScore: 0,
+      finalScore: 0,
+    },
+    vowelDetails: {
+      mouthOpeningPct: 0,
+      mouthWidthPct: 0,
+      roundingPct: 0,
+      patternMatchPct: 0,
+      finalScore: 0,
+    },
+  });
+  const articulationAggregateRef = useRef({
+    consonantSum: 0,
+    vowelSum: 0,
+    closureRateSum: 0,
+    closureHoldMsSum: 0,
+    lipSymmetrySum: 0,
+    openingSpeedMsSum: 0,
+    mouthOpeningSum: 0,
+    mouthWidthSum: 0,
+    roundingSum: 0,
+    patternMatchSum: 0,
+    count: 0,
+  });
 
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Record<string, string>>({});
 
   const protocol = useMemo(() => {
@@ -162,6 +232,124 @@ function Step3Content() {
   }, [place]);
 
   const currentItem = protocol[currentIndex];
+
+  useEffect(() => {
+    articulationStateRef.current = createInitialArticulationAnalyzerState();
+    articulationAggregateRef.current = {
+      consonantSum: 0,
+      vowelSum: 0,
+      closureRateSum: 0,
+      closureHoldMsSum: 0,
+      lipSymmetrySum: 0,
+      openingSpeedMsSum: 0,
+      mouthOpeningSum: 0,
+      mouthWidthSum: 0,
+      roundingSum: 0,
+      patternMatchSum: 0,
+      count: 0,
+    };
+    liveArticulationRef.current = {
+      consonant: 0,
+      vowel: 0,
+      consonantDetails: {
+        closureRatePct: 0,
+        closureHoldMs: 0,
+        lipSymmetryPct: 0,
+        openingSpeedMs: 0,
+        closureHoldScore: 0,
+        openingSpeedScore: 0,
+        finalScore: 0,
+      },
+      vowelDetails: {
+        mouthOpeningPct: 0,
+        mouthWidthPct: 0,
+        roundingPct: 0,
+        patternMatchPct: 0,
+        finalScore: 0,
+      },
+    };
+    updateSidebar({
+      consonantAccuracy: 0,
+      vowelAccuracy: 0,
+      consonantClosureRate: 0,
+      consonantClosureHoldScore: 0,
+      consonantLipSymmetry: 0,
+      consonantOpeningSpeedScore: 0,
+      consonantClosureHoldMs: 0,
+      consonantOpeningSpeedMs: 0,
+      vowelMouthOpening: 0,
+      vowelMouthWidth: 0,
+      vowelRounding: 0,
+      vowelPatternMatch: 0,
+    });
+  }, [currentIndex, currentItem?.targetWord, updateSidebar]);
+
+  useEffect(() => {
+    if (!currentItem?.targetWord) return;
+
+    const lipSymmetry = estimateLipSymmetryFromLandmarks(sidebarMetrics.landmarks);
+    const {
+      consonantAccuracy,
+      vowelAccuracy,
+      consonantDetails,
+      vowelDetails,
+      nextState,
+    } = analyzeArticulation({
+      targetText: currentItem.targetWord,
+      mouthOpening: sidebarMetrics.mouthOpening || 0,
+      mouthWidth: sidebarMetrics.mouthWidth || 0,
+      lipSymmetry,
+      timestampMs:
+        typeof window !== "undefined" ? window.performance.now() : Date.now(),
+      previousState: articulationStateRef.current,
+    });
+
+    articulationStateRef.current = nextState;
+    liveArticulationRef.current = {
+      consonant: consonantAccuracy,
+      vowel: vowelAccuracy,
+      consonantDetails,
+      vowelDetails,
+    };
+    updateSidebar({
+      consonantAccuracy: consonantAccuracy / 100,
+      vowelAccuracy: vowelAccuracy / 100,
+      consonantClosureRate: consonantDetails.closureRatePct / 100,
+      consonantClosureHoldScore: consonantDetails.closureHoldScore / 100,
+      consonantLipSymmetry: consonantDetails.lipSymmetryPct / 100,
+      consonantOpeningSpeedScore: consonantDetails.openingSpeedScore / 100,
+      consonantClosureHoldMs: consonantDetails.closureHoldMs,
+      consonantOpeningSpeedMs: consonantDetails.openingSpeedMs,
+      vowelMouthOpening:
+        (vowelDetails.mouthOpeningScore ?? vowelDetails.mouthOpeningPct) / 100,
+      vowelMouthWidth:
+        (vowelDetails.mouthWidthScore ?? vowelDetails.mouthWidthPct) / 100,
+      vowelRounding: vowelDetails.roundingPct / 100,
+      vowelPatternMatch: vowelDetails.patternMatchPct / 100,
+    });
+
+    articulationAggregateRef.current.consonantSum += consonantAccuracy;
+    articulationAggregateRef.current.vowelSum += vowelAccuracy;
+    articulationAggregateRef.current.closureRateSum +=
+      consonantDetails.closureRatePct;
+    articulationAggregateRef.current.closureHoldMsSum +=
+      consonantDetails.closureHoldMs;
+    articulationAggregateRef.current.lipSymmetrySum +=
+      consonantDetails.lipSymmetryPct;
+    articulationAggregateRef.current.openingSpeedMsSum +=
+      consonantDetails.openingSpeedMs;
+    articulationAggregateRef.current.mouthOpeningSum +=
+      vowelDetails.mouthOpeningPct;
+    articulationAggregateRef.current.mouthWidthSum += vowelDetails.mouthWidthPct;
+    articulationAggregateRef.current.roundingSum += vowelDetails.roundingPct;
+    articulationAggregateRef.current.patternMatchSum += vowelDetails.patternMatchPct;
+    articulationAggregateRef.current.count += 1;
+  }, [
+    currentItem?.targetWord,
+    sidebarMetrics.mouthOpening,
+    sidebarMetrics.mouthWidth,
+    updateSidebar,
+  ]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -279,6 +467,91 @@ function Step3Content() {
       text: currentItem.targetWord, // 들려준 단어
       userAnswer: id,
       isCorrect: isCorrect,
+      dataSource: "measured",
+      consonantAccuracy: Number(
+        (
+          (articulationAggregateRef.current.count > 0
+            ? articulationAggregateRef.current.consonantSum /
+              articulationAggregateRef.current.count
+            : liveArticulationRef.current.consonant) || 0
+        ).toFixed(1),
+      ),
+      vowelAccuracy: Number(
+        (
+          (articulationAggregateRef.current.count > 0
+            ? articulationAggregateRef.current.vowelSum /
+              articulationAggregateRef.current.count
+            : liveArticulationRef.current.vowel) || 0
+        ).toFixed(1),
+      ),
+      consonantDetail: {
+        closureRatePct: Number(
+          (
+            articulationAggregateRef.current.count > 0
+              ? articulationAggregateRef.current.closureRateSum /
+                articulationAggregateRef.current.count
+              : liveArticulationRef.current.consonantDetails.closureRatePct
+          ).toFixed(1),
+        ),
+        closureHoldMs: Number(
+          (
+            articulationAggregateRef.current.count > 0
+              ? articulationAggregateRef.current.closureHoldMsSum /
+                articulationAggregateRef.current.count
+              : liveArticulationRef.current.consonantDetails.closureHoldMs
+          ).toFixed(1),
+        ),
+        lipSymmetryPct: Number(
+          (
+            articulationAggregateRef.current.count > 0
+              ? articulationAggregateRef.current.lipSymmetrySum /
+                articulationAggregateRef.current.count
+              : liveArticulationRef.current.consonantDetails.lipSymmetryPct
+          ).toFixed(1),
+        ),
+        openingSpeedMs: Number(
+          (
+            articulationAggregateRef.current.count > 0
+              ? articulationAggregateRef.current.openingSpeedMsSum /
+                articulationAggregateRef.current.count
+              : liveArticulationRef.current.consonantDetails.openingSpeedMs
+          ).toFixed(1),
+        ),
+      },
+      vowelDetail: {
+        mouthOpeningPct: Number(
+          (
+            articulationAggregateRef.current.count > 0
+              ? articulationAggregateRef.current.mouthOpeningSum /
+                articulationAggregateRef.current.count
+              : liveArticulationRef.current.vowelDetails.mouthOpeningPct
+          ).toFixed(1),
+        ),
+        mouthWidthPct: Number(
+          (
+            articulationAggregateRef.current.count > 0
+              ? articulationAggregateRef.current.mouthWidthSum /
+                articulationAggregateRef.current.count
+              : liveArticulationRef.current.vowelDetails.mouthWidthPct
+          ).toFixed(1),
+        ),
+        roundingPct: Number(
+          (
+            articulationAggregateRef.current.count > 0
+              ? articulationAggregateRef.current.roundingSum /
+                articulationAggregateRef.current.count
+              : liveArticulationRef.current.vowelDetails.roundingPct
+          ).toFixed(1),
+        ),
+        patternMatchPct: Number(
+          (
+            articulationAggregateRef.current.count > 0
+              ? articulationAggregateRef.current.patternMatchSum /
+                articulationAggregateRef.current.count
+              : liveArticulationRef.current.vowelDetails.patternMatchPct
+          ).toFixed(1),
+        ),
+      },
       timestamp: new Date().toLocaleTimeString(),
     };
 
@@ -321,6 +594,16 @@ function Step3Content() {
             score: avgScore,
             correctCount,
             totalCount: totalQuestions,
+            averageConsonantAccuracy:
+              updatedResults.reduce(
+                (sum, row) => sum + Number(row?.consonantAccuracy || 0),
+                0,
+              ) / Math.max(1, updatedResults.length),
+            averageVowelAccuracy:
+              updatedResults.reduce(
+                (sum, row) => sum + Number(row?.vowelAccuracy || 0),
+                0,
+              ) / Math.max(1, updatedResults.length),
             timestamp: Date.now(),
           });
 
@@ -329,9 +612,7 @@ function Step3Content() {
           console.error("❌ Step 3 SessionManager 저장 실패:", e);
         }
 
-        router.push(
-          `/step-4?place=${place}&step1=${searchParams.get("step1")}&step2=${searchParams.get("step2")}&step3=${avgScore}`,
-        );
+        pushStep4OrRehabResult(avgScore);
       }
     }, 1500);
   };
@@ -346,6 +627,9 @@ function Step3Content() {
         text: item.targetWord,
         userAnswer: index % 5 === 0 ? "skip" : item.answerId,
         isCorrect: index % 5 !== 0,
+        dataSource: "demo",
+        consonantAccuracy: 74 + ((index + 1) % 4) * 5,
+        vowelAccuracy: 72 + (index % 4) * 5,
         timestamp: new Date().toLocaleTimeString(),
       }));
 
@@ -365,16 +649,24 @@ function Step3Content() {
         score,
         correctCount,
         totalCount,
+        averageConsonantAccuracy:
+          demoResults.reduce(
+            (sum, row) => sum + Number(row?.consonantAccuracy || 0),
+            0,
+          ) / Math.max(1, demoResults.length),
+        averageVowelAccuracy:
+          demoResults.reduce(
+            (sum, row) => sum + Number(row?.vowelAccuracy || 0),
+            0,
+          ) / Math.max(1, demoResults.length),
         timestamp: Date.now(),
       });
 
-      router.push(
-        `/step-4?place=${place}&step1=${searchParams.get("step1") || 0}&step2=${searchParams.get("step2") || 0}&step3=${score}`,
-      );
+      pushStep4OrRehabResult(score);
     } catch (error) {
       console.error("Step3 skip failed:", error);
     }
-  }, [place, protocol, router, searchParams]);
+  }, [place, protocol, pushStep4OrRehabResult]);
 
   if (!isMounted || !currentItem) return null;
 
@@ -399,7 +691,7 @@ function Step3Content() {
               Step 03 • Visual-Auditory Association
             </span>
             <h2 className="text-lg font-black text-slate-900 tracking-tight">
-              단어-그림 매칭
+              단어 명명
             </h2>
           </div>
         </div>
@@ -430,8 +722,7 @@ function Step3Content() {
         </div>
       </header>
 
-      <div className="flex flex-1 flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden">
-        <main className="flex-1 flex flex-col min-h-[calc(100vh-4rem)] lg:min-h-0 bg-[#FBFBFC] pb-8 lg:pb-0">
+      <main className="flex-1 flex flex-col min-h-[calc(100vh-4rem)] lg:min-h-0 bg-[#FBFBFC] pb-8 lg:pb-0 overflow-y-auto">
           <div className="w-full max-w-5xl mx-auto px-6 py-4 flex flex-col h-full min-h-0 gap-4">
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 border-b border-slate-100 pb-3 shrink-0">
               <div className="space-y-1">
@@ -531,24 +822,7 @@ function Step3Content() {
               </div>
             </div>
           </div>
-        </main>
-
-        <aside className="w-full lg:w-[380px] h-auto min-h-[340px] lg:h-full mt-auto lg:mt-0 border-t lg:border-t-0 lg:border-l border-slate-50 bg-white p-3 lg:p-4 flex flex-col overflow-visible lg:overflow-hidden">
-          <AnalysisSidebar
-            videoRef={videoRef}
-            canvasRef={canvasRef}
-            isFaceReady={sidebarMetrics.faceDetected}
-            metrics={{
-              symmetryScore: (sidebarMetrics.facialSymmetry || 0) * 100,
-              openingRatio: (sidebarMetrics.mouthOpening || 0) * 100,
-              audioLevel: isSpeaking ? 25 : 0,
-            }}
-            showTracking={false}
-            scoreLabel="진행도"
-            scoreValue={`${currentIndex + (isAnswered ? 1 : 0)} / ${protocol.length}`}
-          />
-        </aside>
-      </div>
+      </main>
       <HomeExitModal
         open={isHomeExitModalOpen}
         onConfirm={confirmGoHome}
@@ -571,3 +845,4 @@ export default function Step3Page() {
     </Suspense>
   );
 }
+
