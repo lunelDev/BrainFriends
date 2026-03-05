@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useEffect, useMemo, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -24,7 +24,7 @@ function getResultSummarySizeClass(text: string): string {
   return "text-lg md:text-xl";
 }
 
-// --- ?곗씠?????諛??좏떥由ы떚 濡쒖쭅 (蹂댁〈) ---
+// --- 데이터 타입 및 유틸리티 로직 (보존) ---
 type ExportFile = { name: string; data: Uint8Array };
 type DerivedKwab = {
   evidence: Array<any>;
@@ -65,7 +65,7 @@ type DerivedKwab = {
   percentile: number;
 };
 
-// ZIP ?앹꽦 愿???좏떥由ы떚 (蹂댁〈)
+// ZIP 생성 관련 유틸리티 (보존)
 function makeCrc32Table() {
   const table = new Uint32Array(256);
   for (let i = 0; i < 256; i++) {
@@ -163,6 +163,9 @@ function ResultContent() {
     () => (searchParams.get("place") as PlaceType) || "home",
     [searchParams],
   );
+  const isRehabResult = searchParams.get("trainMode") === "rehab";
+  const currentTrainingMode = isRehabResult ? "rehab" : "self";
+  const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
   const patientProfile = useMemo(() => loadPatientProfile(), []);
   const patientForHistory = useMemo(() => {
     if (!patientProfile) return null;
@@ -173,7 +176,7 @@ function ResultContent() {
     } as any;
   }, [patientProfile]);
 
-  // --- 湲곗〈 ?곗궛 濡쒖쭅 (蹂댁〈) ---
+  // --- 기존 연산 로직 (보존) ---
   const queryScores = useMemo(
     () => ({
       1: Number(searchParams.get("step1") || 0),
@@ -223,12 +226,12 @@ function ResultContent() {
         .map((s) => s.trim())
         .filter(Boolean);
       const utteranceCount = Math.max(1, sentenceParts.length);
-      const hangulChars = (transcript.match(/[媛-??/g) || []).length;
+      const hangulChars = (transcript.match(/[가-힣]/g) || []).length;
       const syllablesPerUtterance = hangulChars / utteranceCount;
       const hasCompleteSentences =
         sentenceParts.some((s) => s.length >= 12) ||
-        /[?ㅼ슂?덈떎]\s*$/.test(transcript);
-      const hasWordFindingDifficulty = /(?????湲?洹멸쾶|洹멸굅|...|??/.test(
+        /[다요니다]\s*$/.test(transcript);
+      const hasWordFindingDifficulty = /(음|어|저기|그게|그거|...|…)/.test(
         transcript,
       );
       const speechDurationSec = Number(item?.speechDuration || 0);
@@ -251,7 +254,7 @@ function ResultContent() {
       };
     });
 
-    // K-WAB ?댁슜?꾨떖 ?먯닔(0~10): 吏덈Ц ?뺣컲??0~6) + 洹몃┝?ㅻ챸 ?붿냼??湲곕컲 洹쇱궗
+    // K-WAB 내용전달 점수(0~10): 질문 정반응(0~6) + 그림설명 요소수 기반 근사
     const goodCoverageCount = itemAnalyses.filter(
       (a) => a.keywordCoverage >= 0.2,
     ).length;
@@ -268,7 +271,7 @@ function ResultContent() {
       pictureDescriptionItems,
     });
 
-    // K-WAB ?좎갹???먯닔(0~10): ???怨쇱젣 ?섑뻾 ?좎갹???됯퇏 洹쇱궗
+    // K-WAB 유창성 점수(0~10): 대화/과제 수행 유창성 평균 근사
     const fluencyScore =
       itemAnalyses.reduce((sum, a) => sum + a.fluencyKwab, 0) /
       Math.max(1, itemAnalyses.length);
@@ -304,7 +307,7 @@ function ResultContent() {
         spontaneousSpeech,
         auditoryComprehension: {
           yesNoScore: Math.round(step1Accuracy * 60),
-          // Step3(洹몃┝ 留ㅼ묶) ?뺥솗?꾨? ?깅쭚 ?몄? ?먯닔??諛섏쁺
+          // Step3(그림 매칭) 정확도를 낱말 인지 점수에 반영
           wordRecognitionScore: Math.round(step3Accuracy * 60),
           commandScore: Math.round(step1Accuracy * 80),
         },
@@ -405,42 +408,42 @@ function ResultContent() {
     return [
       {
         id: 1,
-        title: "泥?컖 ?댄빐",
+        title: "청각 이해",
         display: `${s1Correct}/${s1Total}`,
         percent: s1Percent,
         metric: `${s1Correct}/${s1Total}`,
       },
       {
         id: 2,
-        title: "?곕씪留먰븯湲?,
+        title: "따라말하기",
         display: `${Math.round(s2Score)}%`,
         percent: s2Score,
         metric: `${Math.round(s2Score)}%`,
       },
       {
         id: 3,
-        title: "洹몃┝ 留ㅼ묶",
+        title: "그림 매칭",
         display: `${s3Correct}/${s3Total}`,
         percent: s3Percent,
         metric: `${s3Correct}/${s3Total}`,
       },
       {
         id: 4,
-        title: "?좎갹??,
+        title: "유창성",
         display: `${fmt1(s4Score)}/10`,
         percent: s4Percent,
         metric: `${fmt1(s4Score)}/10`,
       },
       {
         id: 5,
-        title: "?쎄린",
+        title: "읽기",
         display: `${Math.round(s5Percent)}%`,
         percent: s5Percent,
         metric: `${Math.round(s5Percent)}%`,
       },
       {
         id: 6,
-        title: "?곌린",
+        title: "쓰기",
         display: `${s6Correct}/${s6Total}`,
         percent: s6Percent,
         metric: `${s6Correct}/${s6Total}`,
@@ -473,40 +476,40 @@ function ResultContent() {
 
     const domains = [
       {
-        name: "泥?컖 ?댄빐",
+        name: "청각 이해",
         percent: comprehension.percent,
         metric: comprehension.metric,
       },
       {
-        name: "?곕씪留먰븯湲?,
+        name: "따라말하기",
         percent: repetition.percent,
         metric: repetition.metric,
       },
-      { name: "洹몃┝ 留ㅼ묶", percent: matching.percent, metric: matching.metric },
-      { name: "?좎갹??, percent: fluency.percent, metric: fluency.metric },
-      { name: "?쎄린", percent: reading.percent, metric: reading.metric },
-      { name: "?곌린", percent: writing.percent, metric: writing.metric },
+      { name: "그림 매칭", percent: matching.percent, metric: matching.metric },
+      { name: "유창성", percent: fluency.percent, metric: fluency.metric },
+      { name: "읽기", percent: reading.percent, metric: reading.metric },
+      { name: "쓰기", percent: writing.percent, metric: writing.metric },
     ];
     const strongest = domains.reduce((a, b) =>
       a.percent >= b.percent ? a : b,
     );
     const weakest = domains.reduce((a, b) => (a.percent <= b.percent ? a : b));
 
-    const typeLabel = derivedKwab.aphasiaType || "鍮꾪듅?댁쟻 ?ㅼ뼱利?;
+    const typeLabel = derivedKwab.aphasiaType || "비특이적 실어증";
     const aqLabel =
       derivedKwab.aq >= 75
-        ? "寃쎈룄 ?섏????섏궗?뚰넻 ?대젮?"
+        ? "경도 수준의 의사소통 어려움"
         : derivedKwab.aq >= 50
-          ? "以묐벑???섏????섏궗?뚰넻 ?대젮?"
-          : "以묐벑??以묒쬆 ?섏????섏궗?뚰넻 ?대젮?";
+          ? "중등도 수준의 의사소통 어려움"
+          : "중등도-중증 수준의 의사소통 어려움";
 
     return {
-      summary: `[?됯? ?붿빟]\n${typeLabel} ?묒긽??愿李곕릺硫?AQ ${derivedKwab.aq}?먯쑝濡?${aqLabel}???쒖궗?⑸땲??\n\n[?몃? 寃곌낵]\n泥?컖 ?댄빐 ${comprehension.metric} 쨌 ?곕씪留먰븯湲?${repetition.metric} 쨌 洹몃┝ 留ㅼ묶 ${matching.metric}\n?좎갹??${fluency.metric} 쨌 ?쎄린 ${reading.metric} 쨌 ?곌린 ${writing.metric}`,
-      strength: `${strongest.name}(${strongest.metric}) ?곸뿭? ?곷??곸쑝濡?蹂댁〈?섏뼱 援ъ“?붾맂 ?⑥꽌 ?쒓났 ??怨쇱젣 ?섑뻾 ?덉젙?깆씠 ?뺤씤?⑸땲??`,
-      need: `${weakest.name}(${weakest.metric}) ?곸뿭????섍? ?먮뱶?ъ졇, ?⑤Ц ?곗텧?믩컲蹂듈넂?뺤옣 ?쒖꽌???④퀎???몄뼱移섎즺媛 ?곗꽑 沅뚯옣?⑸땲??`,
+      summary: `[평가 요약]\n${typeLabel} 양상이 관찰되며 AQ ${derivedKwab.aq}점으로 ${aqLabel}이 시사됩니다.\n\n[세부 결과]\n청각 이해 ${comprehension.metric} · 따라말하기 ${repetition.metric} · 그림 매칭 ${matching.metric}\n유창성 ${fluency.metric} · 읽기 ${reading.metric} · 쓰기 ${writing.metric}`,
+      strength: `${strongest.name}(${strongest.metric}) 영역은 상대적으로 보존되어 구조화된 단서 제공 시 과제 수행 안정성이 확인됩니다.`,
+      need: `${weakest.name}(${weakest.metric}) 영역의 저하가 두드러져, 단문 산출→반복→확장 순서의 단계적 언어치료가 우선 권장됩니다.`,
       recommendation:
-        "媛?뺤뿉?쒕뒗 湲곕뒫?는룻빑?ъ뼱瑜??ы븿??1~2臾몄옣 留먰븯湲??덈젴???섎（ 15~20遺? 二?5???댁긽 ?쒗뻾?섍퀬, 移섎즺?ㅼ뿉?쒕뒗 ????곸뿭 以묒떖?쇰줈 怨쇱젣 ?쒖씠?꾨? ?먯쭊?곸쑝濡??곹뼢?섎뒗 以묒옱瑜?沅뚯옣?⑸땲??",
-      aqText: `${derivedKwab.aq}??(${aqLabel})`,
+        "가정에서는 기능어·핵심어를 포함한 1~2문장 말하기 훈련을 하루 15~20분, 주 5회 이상 시행하고, 치료실에서는 저하 영역 중심으로 과제 난이도를 점진적으로 상향하는 중재를 권장합니다.",
+      aqText: `${derivedKwab.aq}점 (${aqLabel})`,
       strongestText: `${strongest.name} ${strongest.metric}`,
       weakestText: `${weakest.name} ${weakest.metric}`,
     };
@@ -516,10 +519,10 @@ function ResultContent() {
     if (!clinicalImpression) return null;
     return {
       ...clinicalImpression,
-      summary: addSentenceLineBreaks(clinicalImpression.summary),
-      strength: addSentenceLineBreaks(clinicalImpression.strength),
-      need: addSentenceLineBreaks(clinicalImpression.need),
-      recommendation: addSentenceLineBreaks(clinicalImpression.recommendation),
+      summary: clinicalImpression.summary,
+      strength: clinicalImpression.strength,
+      need: clinicalImpression.need,
+      recommendation: clinicalImpression.recommendation,
     };
   }, [clinicalImpression]);
 
@@ -530,136 +533,148 @@ function ResultContent() {
     return getAQNormalComparison(derivedKwab.aq, age, educationYears);
   }, [derivedKwab, patientProfile]);
 
+  const latestAndPreviousHistory = useMemo(() => {
+    if (!patientForHistory) return { current: null, previous: null };
+    const all = SessionManager.getHistoryFor(patientForHistory)
+      .filter((row) => !String(row.historyId || "").startsWith("mock_"))
+      .filter((row) =>
+        currentTrainingMode === "rehab"
+          ? row.trainingMode === "rehab"
+          : row.trainingMode !== "rehab",
+      )
+      .sort((a, b) => b.completedAt - a.completedAt);
+    return {
+      current: all[0] ?? null,
+      previous: all[1] ?? null,
+    };
+  }, [currentTrainingMode, historyRefreshKey, patientForHistory]);
+
+  const facialReport = useMemo(() => {
+    const avg = (vals: number[]) =>
+      vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    const toNum = (v: unknown) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const s2 = sessionData?.step2?.items || [];
+    const s4 = sessionData?.step4?.items || [];
+    const s5 = sessionData?.step5?.items || [];
+    const scoreFromItems = (items: any[], key: string) =>
+      avg(
+        items.map((it: any) => toNum(it?.[key])).filter((v: number) => v > 0),
+      );
+
+    const current = latestAndPreviousHistory.current;
+    const previous = latestAndPreviousHistory.previous;
+
+    const step2Consonant =
+      toNum(current?.articulationScores?.step2?.averageConsonantAccuracy) ||
+      scoreFromItems(s2, "consonantAccuracy");
+    const step2Vowel =
+      toNum(current?.articulationScores?.step2?.averageVowelAccuracy) ||
+      scoreFromItems(s2, "vowelAccuracy");
+    const step4Consonant =
+      toNum(current?.articulationScores?.step4?.averageConsonantAccuracy) ||
+      scoreFromItems(s4, "consonantAccuracy");
+    const step4Vowel =
+      toNum(current?.articulationScores?.step4?.averageVowelAccuracy) ||
+      scoreFromItems(s4, "vowelAccuracy");
+    const step5Consonant =
+      toNum(current?.articulationScores?.step5?.averageConsonantAccuracy) ||
+      scoreFromItems(s5, "consonantAccuracy");
+    const step5Vowel =
+      toNum(current?.articulationScores?.step5?.averageVowelAccuracy) ||
+      scoreFromItems(s5, "vowelAccuracy");
+
+    const overallConsonant = avg(
+      [step2Consonant, step4Consonant, step5Consonant].filter((v) => v > 0),
+    );
+    const overallVowel = avg(
+      [step2Vowel, step4Vowel, step5Vowel].filter((v) => v > 0),
+    );
+    const asymmetryRisk = toNum(current?.facialAnalysisSnapshot?.asymmetryRisk);
+    const prevAsymmetryRisk = toNum(
+      previous?.facialAnalysisSnapshot?.asymmetryRisk,
+    );
+    const asymmetryDelta =
+      prevAsymmetryRisk > 0
+        ? Number((asymmetryRisk - prevAsymmetryRisk).toFixed(1))
+        : null;
+    const articulationGap =
+      toNum(current?.facialAnalysisSnapshot?.articulationGap) ||
+      Number(Math.abs(overallConsonant - overallVowel).toFixed(1));
+
+    const riskLabel =
+      asymmetryRisk >= 45 ? "고위험" : asymmetryRisk >= 30 ? "주의" : "저위험";
+
+    const hasCameraData =
+      [
+        step2Consonant,
+        step2Vowel,
+        step4Consonant,
+        step4Vowel,
+        step5Consonant,
+        step5Vowel,
+      ].some((v) => v > 0) || asymmetryRisk > 0;
+    if (!hasCameraData) return null;
+
+    return {
+      overallConsonant,
+      overallVowel,
+      step2Consonant,
+      step2Vowel,
+      step4Consonant,
+      step4Vowel,
+      step5Consonant,
+      step5Vowel,
+      asymmetryRisk,
+      asymmetryDelta,
+      articulationGap,
+      riskLabel,
+      summary:
+        current?.facialAnalysisSnapshot?.articulationFaceMatchSummary ||
+        "음성-안면 매칭 추적 데이터가 아직 충분하지 않습니다.",
+    };
+  }, [latestAndPreviousHistory, sessionData]);
+
   const previousHistory = useMemo(() => {
     if (!patientForHistory) return [];
     const all = SessionManager.getHistoryFor(patientForHistory)
-      .filter((row) => row.place === place)
+      .filter((row) => !String(row.historyId || "").startsWith("mock_"))
+      .filter((row) =>
+        currentTrainingMode === "rehab"
+          ? row.trainingMode === "rehab"
+          : row.trainingMode !== "rehab",
+      )
       .sort((a, b) => b.completedAt - a.completedAt);
 
     return all.length > 1 ? all.slice(1) : [];
-  }, [historyRefreshKey, patientForHistory, place]);
+  }, [currentTrainingMode, historyRefreshKey, patientForHistory]);
 
-  const articulationFaceMetrics = useMemo(() => {
-    const toNum = (v: unknown) => {
-      const n = Number(v);
-      return Number.isFinite(n) ? n : null;
-    };
-    const avg = (arr: number[]) =>
-      arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
-
-    const s2 = sessionData?.step2?.items || [];
-    const s3 = sessionData?.step3?.items || [];
-    const s5 = sessionData?.step5?.items || [];
-    const all = [...s2, ...s3, ...s5];
-
-    const consonant = avg(
-      all
-        .map((row: any) => toNum(row?.consonantAccuracy))
-        .filter((v: number | null): v is number => v !== null),
-    );
-    const vowel = avg(
-      all
-        .map((row: any) => toNum(row?.vowelAccuracy))
-        .filter((v: number | null): v is number => v !== null),
-    );
-    const asymmetryRisk = avg(
-      s2
-        .map((row: any) => toNum(row?.symmetryScore ?? row?.faceScore))
-        .filter((v: number | null): v is number => v !== null)
-        .map((v: number) => Math.max(0, Math.min(100, 100 - v))),
-    );
-    const articulationGap =
-      consonant !== null && vowel !== null ? Math.abs(consonant - vowel) : 0;
-
-    return {
-      consonant,
-      vowel,
-      asymmetryRisk: asymmetryRisk ?? 0,
-      articulationGap,
-    };
-  }, [sessionData]);
-
-  const articulationFaceMatchReport = useMemo(() => {
-    const selectedSnapshot = (selectedHistory as any)?.facialAnalysisSnapshot;
-    if (selectedSnapshot?.articulationFaceMatchSummary) {
-      return String(selectedSnapshot.articulationFaceMatchSummary);
-    }
-    const c = Number(articulationFaceMetrics.consonant ?? 0);
-    const v = Number(articulationFaceMetrics.vowel ?? 0);
-    const asym = Number(articulationFaceMetrics.asymmetryRisk ?? 0);
-    const gap = Math.abs(c - v);
-    const higher = c >= v ? "?먯쓬" : "紐⑥쓬";
-    const lower = c >= v ? "紐⑥쓬" : "?먯쓬";
-    if (asym >= 45 && gap >= 18) {
-      return `${higher} ?鍮?${lower} ?몄감? ?덈㈃ 鍮꾨?移?씠 ?④퍡 愿李곕맗?덈떎. 醫뚯슦 ?낆닠 ?먯뇙/媛쒕갑 諛섎났 ?덈젴??沅뚯옣?⑸땲??`;
-    }
-    if (asym >= 35) {
-      return "?덈㈃ 鍮꾨?移??좏샇媛 愿李곕릺??議곗쓬 ?묒쓳??遺덉븞?뺥븷 ???덉뒿?덈떎. 以묒떖???뺣젹???좎???諛섎났 諛쒗솕瑜?沅뚯옣?⑸땲??";
-    }
-    if (gap >= 15) {
-      return `${higher} ?鍮?${lower} ?먯닔 李⑥씠媛 ?덉뒿?덈떎. ??? ?곸뿭 以묒떖?쇰줈 ?덈젴 媛뺣룄瑜?議곗젙?섏꽭??`;
-    }
-    return "?꾩옱 ?뚯꽦-?덈㈃ 留ㅼ묶? 鍮꾧탳???덉젙?곸엯?덈떎. ?숈씪 議곌굔???뺢린 痢≪젙?쇰줈 蹂??異붿씠瑜??뺤씤?섏꽭??";
-  }, [articulationFaceMetrics, selectedHistory]);
-
-  const goldenFaceTimeline = useMemo(() => {
-    const calcAsym = (rows: any[]) => {
-      const values = (rows || [])
-        .map((r: any) => Number(r?.symmetryScore ?? r?.faceScore))
-        .filter((v: number) => Number.isFinite(v))
-        .map((v: number) => Math.max(0, Math.min(100, 100 - v)));
-      if (!values.length) return null;
-      return values.reduce((a: number, b: number) => a + b, 0) / values.length;
-    };
-
-    const historyPoints = previousHistory.map((row: any) => ({
-      date: new Date(row.completedAt).toLocaleDateString("ko-KR", {
-        month: "2-digit",
-        day: "2-digit",
-      }),
-      asymmetry:
-        Number((row as any)?.facialAnalysisSnapshot?.timelineCurrentAsymmetry) ||
-        calcAsym(row?.stepDetails?.step2 || []),
-    }));
-
-    const currentAsymmetry =
-      Number((selectedHistory as any)?.facialAnalysisSnapshot?.timelineCurrentAsymmetry) ||
-      Number(articulationFaceMetrics.asymmetryRisk || 0);
-    const currentPoint = {
-      date: selectedHistory
-        ? new Date(selectedHistory.completedAt).toLocaleDateString("ko-KR", {
-            month: "2-digit",
-            day: "2-digit",
-          })
-        : "?ㅻ뒛",
-      asymmetry: currentAsymmetry,
-    };
-
-    const points = [...historyPoints, currentPoint].filter(
-      (p: { date: string; asymmetry: number | null }) =>
-        p.asymmetry !== null && Number.isFinite(Number(p.asymmetry)),
-    ) as Array<{ date: string; asymmetry: number }>;
-    if (!points.length) return { points: [], polyline: "", min: 0, max: 100 };
-
-    const min = Math.min(...points.map((p) => p.asymmetry), 0);
-    const max = Math.max(...points.map((p) => p.asymmetry), 1);
-    const range = Math.max(1, max - min);
-    const polyline = points
-      .map((p, i) => {
-        const x = points.length === 1 ? 10 : (i / (points.length - 1)) * 100;
-        const y = 100 - ((p.asymmetry - min) / range) * 100;
-        return `${x},${y}`;
-      })
-      .join(" ");
-    return { points, polyline, min, max };
-  }, [articulationFaceMetrics.asymmetryRisk, previousHistory, selectedHistory]);
+  const rehabComparison = useMemo(() => {
+    if (!isRehabResult || rehabTargetStep < 1 || rehabTargetStep > 6)
+      return null;
+    const current = stepDetails.find((s) => s.id === rehabTargetStep);
+    if (!current) return null;
+    const latestPrevious = previousHistory[0];
+    const key =
+      `step${rehabTargetStep}` as keyof TrainingHistoryEntry["stepScores"];
+    const prevScore = latestPrevious
+      ? Number(latestPrevious.stepScores?.[key] ?? 0)
+      : null;
+    const currScore = Number(current.percent ?? 0);
+    const delta =
+      prevScore === null ? null : Number((currScore - prevScore).toFixed(1));
+    return { current, prevScore, currScore, delta };
+  }, [isRehabResult, rehabTargetStep, stepDetails, previousHistory]);
 
   const aqSeverityLabel = (aq: number) => {
-    if (aq >= 93.8) return "?뺤긽 踰붿쐞";
-    if (aq >= 76) return "寃쎈룄";
-    if (aq >= 51) return "以묐벑??;
-    if (aq >= 26) return "以묒쬆";
-    return "理쒖쨷利?;
+    if (aq >= 93.8) return "정상 범위";
+    if (aq >= 76) return "경도";
+    if (aq >= 51) return "중등도";
+    if (aq >= 26) return "중증";
+    return "최중증";
   };
   const HISTORY_PAGE_SIZE = 4;
   const historyTotalPages = Math.max(
@@ -688,25 +703,6 @@ function ResultContent() {
     }
   }, [previousHistory, selectedHistory]);
 
-  useEffect(() => {
-    if (!patientForHistory) return;
-    const all = SessionManager.getHistoryFor(patientForHistory).filter(
-      (row) => row.place === place,
-    );
-    // ?댁쟾湲곕줉 ?섏씠吏?ㅼ씠??4媛?珥덇낵) ?뺤씤???꾪빐 理쒖냼 6媛??꾩옱 1 + ?댁쟾 5) 蹂댁옣
-    if (all.length < 6) {
-      const need = 6 - all.length;
-      const inserted = SessionManager.seedMockHistoryFor(
-        patientForHistory,
-        place,
-        need,
-      );
-      if (inserted > 0) {
-        setHistoryRefreshKey((v) => v + 1);
-      }
-    }
-  }, [patientForHistory, place]);
-
   const parseStoredArray = (key: string) => {
     try {
       const raw = localStorage.getItem(key);
@@ -718,7 +714,7 @@ function ResultContent() {
     }
   };
 
-  // --- ?곗씠??遺덈윭?ㅺ린 諛??대낫?닿린 濡쒖쭅 (蹂댁〈) ---
+  // --- 데이터 불러오기 및 내보내기 로직 (보존) ---
   useEffect(() => {
     setIsMounted(true);
     const backups = {
@@ -747,6 +743,17 @@ function ResultContent() {
     });
   }, []);
 
+  useEffect(() => {
+    if (!patientProfile) return;
+    try {
+      const sm = new SessionManager(patientProfile as any, place);
+      sm.finalizeSessionAndSaveHistory(currentTrainingMode);
+      setHistoryRefreshKey((v) => v + 1);
+    } catch (e) {
+      console.error("Result finalize/save history failed:", e);
+    }
+  }, [currentTrainingMode, patientProfile, place]);
+
   const handleExportData = () => {
     if (!sessionData) return;
     const patient = loadPatientProfile();
@@ -763,7 +770,7 @@ function ResultContent() {
       },
     ];
 
-    // ?ㅻ뵒???대?吏 諛깆뾽 濡쒖쭅 ?ы븿
+    // 오디오/이미지 백업 로직 포함
     const zipBlob = createZipBlob(files);
     const url = URL.createObjectURL(zipBlob);
     const a = document.createElement("a");
@@ -805,7 +812,7 @@ function ResultContent() {
     }
     stopPlayback();
     const utterance = new SpeechSynthesisUtterance(
-      text || "?뚯꽦 ?곗씠?곌? ?놁뒿?덈떎.",
+      text || "음성 데이터가 없습니다.",
     );
     utterance.lang = "ko-KR";
     utterance.rate = 0.92;
@@ -832,7 +839,7 @@ function ResultContent() {
         item?.targetText ||
         item?.targetWord ||
         item?.prompt ||
-        "?뚯꽦 ?곗씠?곌? ?놁뒿?덈떎.",
+        "음성 데이터가 없습니다.",
     );
 
   if (!isMounted || !sessionData) return null;
@@ -962,7 +969,7 @@ function ResultContent() {
       `}</style>
 
       <div className="h-full min-h-screen overflow-y-auto bg-[#F8FAFC] text-[#0f172a] pb-12 font-sans">
-        {/* ?곷떒諛?*/}
+        {/* 상단바 */}
         <header className="no-print h-16 px-6 border-b border-orange-100 flex items-center justify-between bg-white sticky top-0 z-40">
           <div className="flex items-center gap-3">
             <img
@@ -971,17 +978,17 @@ function ResultContent() {
               className="w-10 h-10 rounded-xl object-cover"
             />
             <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">
+              <p className="text-xs font-black uppercase tracking-widest text-orange-500">
                 Report
               </p>
-              <h1 className="text-lg font-black">?ы솢 ?됯? 寃곌낵</h1>
+              <h1 className="text-lg font-black">자가 진단 평가 결과</h1>
             </div>
           </div>
           <button
             type="button"
             onClick={() => router.push("/select")}
-            aria-label="?덉쑝濡??대룞"
-            title="??
+            aria-label="홈으로 이동"
+            title="홈"
             className="w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition-colors flex items-center justify-center"
           >
             <svg
@@ -1015,42 +1022,47 @@ function ResultContent() {
             onClick={handleExportData}
             className="px-4 py-2 bg-white text-slate-900 border border-orange-200 rounded-xl text-xs font-bold shadow-sm hover:bg-orange-50 active:scale-95 transition-all"
           >
-            ?곗씠??諛깆뾽
+            데이터 백업
           </button>
           <button
             onClick={() => window.print()}
             className="px-4 py-2 bg-orange-500 text-white rounded-xl text-xs font-bold shadow-sm hover:bg-orange-600 active:scale-95 transition-all"
           >
-            吏꾨떒??異쒕젰 (PDF)
+            진단서 출력 (PDF)
           </button>
         </div>
 
         <main className="max-w-5xl mx-auto px-6 py-8 space-y-4 print-container">
-          {/* [HEADER] 怨듭떇 吏꾨떒???ㅽ???*/}
+          {/* [HEADER] 공식 진단서 스타일 */}
           <header className="bg-white rounded-2xl p-4 md:p-5 border border-slate-300 shadow-sm relative overflow-hidden print-card print-header">
             <div className="absolute top-0 left-0 w-2 h-full bg-slate-900 no-print" />
             <div className="space-y-3 text-left w-full min-w-0">
               <h2 className="text-lg font-black text-slate-900 tracking-tight">
-                醫낇빀 ?몄뼱 吏꾨떒 由ы룷??              </h2>
+                {isRehabResult
+                  ? "언어 재활 반복훈련 리포트"
+                  : "종합 언어 진단 리포트"}
+              </h2>
               <div className="grid grid-cols-1 md:grid-cols-[repeat(3,minmax(0,1fr))_280px] gap-2 patient-meta-grid">
                 <div className="bg-white border border-slate-300 rounded-xl px-3 py-2">
-                  <p className="text-[10px] font-bold text-slate-700">?깊븿</p>
+                  <p className="text-xs font-bold text-slate-700">성함</p>
                   <p className="text-[14px] font-black text-slate-900 leading-tight">
-                    {loadPatientProfile()?.name || "誘몄엯??}
+                    {loadPatientProfile()?.name || "미입력"}
                   </p>
                 </div>
                 <div className="bg-white border border-slate-300 rounded-xl px-3 py-2">
-                  <p className="text-[10px] font-bold text-slate-700">?곕졊</p>
+                  <p className="text-xs font-bold text-slate-700">연령</p>
                   <p className="text-[14px] font-black text-slate-900 leading-tight">
-                    {loadPatientProfile()?.age || "-"}??                  </p>
+                    {loadPatientProfile()?.age || "-"}세
+                  </p>
                 </div>
                 <div className="bg-white border border-slate-300 rounded-xl px-3 py-2">
-                  <p className="text-[10px] font-bold text-slate-700">援먯쑁</p>
+                  <p className="text-xs font-bold text-slate-700">교육</p>
                   <p className="text-[14px] font-black text-slate-900 leading-tight">
-                    {loadPatientProfile()?.educationYears || "-"}??                  </p>
+                    {loadPatientProfile()?.educationYears || "-"}년
+                  </p>
                 </div>
                 <div className="md:col-start-4 md:row-start-1 md:row-end-3 text-center bg-slate-900 rounded-xl px-4 py-2 text-white shadow-sm w-full aq-card">
-                  <p className="text-[10px] font-black opacity-80 uppercase tracking-widest mb-0.5">
+                  <p className="text-xs font-black opacity-80 uppercase tracking-widest mb-0.5">
                     Diagnostic Score (AQ)
                   </p>
                   <div className="flex items-baseline justify-center gap-1">
@@ -1059,15 +1071,15 @@ function ResultContent() {
                     </span>
                     <span className="text-xs font-bold opacity-60">/ 100</span>
                   </div>
-                  <p className="mt-1 text-[10px] font-black uppercase bg-white/20 py-0.5 rounded-full">
-                    {derivedKwab?.aphasiaType || "?좏삎 遺꾩꽍 以?}
+                  <p className="mt-1 text-xs font-black uppercase bg-white/20 py-0.5 rounded-full">
+                    {derivedKwab?.aphasiaType || "유형 분석 중"}
                   </p>
                 </div>
                 <div className="normal-compare-card md:col-start-1 md:col-span-3 md:row-start-2 rounded-xl border border-slate-900 bg-slate-900 px-3 py-2 text-center">
-                  <p className="text-[11px] font-black text-white tracking-wide">
+                  <p className="text-sm font-black text-white tracking-wide">
                     {normalComparison
-                      ? `?뺤긽援??됯퇏 ${normalComparison.mean.toFixed(2)} (SD ${normalComparison.sd.toFixed(2)}) / ?鍮?${normalComparison.diff >= 0 ? "+" : ""}${normalComparison.diff.toFixed(1)}`
-                      : "?뺤긽援?湲곗? 怨꾩궛 遺덇?"}
+                      ? `정상군 평균 ${normalComparison.mean.toFixed(2)} (SD ${normalComparison.sd.toFixed(2)}) / 대비 ${normalComparison.diff >= 0 ? "+" : ""}${normalComparison.diff.toFixed(1)}`
+                      : "정상군 기준 계산 불가"}
                   </p>
                 </div>
               </div>
@@ -1075,10 +1087,53 @@ function ResultContent() {
           </header>
 
           <div className="grid grid-cols-1 md:grid-cols-[360px_1fr] gap-4 items-stretch print-top-grid">
-            {/* [01] ??웾 李⑦듃 */}
+            {rehabComparison && (
+              <section className="no-print md:col-span-2 bg-white rounded-2xl p-4 border border-orange-200 shadow-sm">
+                <h3 className="text-base font-black text-slate-900 border-l-4 border-orange-500 pl-3 mb-3">
+                  반복훈련 변화 비교 (Step 0{rehabTargetStep})
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p className="text-xs font-black text-slate-500">
+                      이번 점수
+                    </p>
+                    <p className="text-lg font-black text-slate-900">
+                      {rehabComparison.currScore.toFixed(1)}%
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p className="text-xs font-black text-slate-500">
+                      이전 점수
+                    </p>
+                    <p className="text-lg font-black text-slate-900">
+                      {rehabComparison.prevScore === null
+                        ? "기록 없음"
+                        : `${rehabComparison.prevScore.toFixed(1)}%`}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p className="text-xs font-black text-slate-500">변화량</p>
+                    <p
+                      className={`text-lg font-black ${
+                        rehabComparison.delta === null
+                          ? "text-slate-700"
+                          : rehabComparison.delta >= 0
+                            ? "text-emerald-600"
+                            : "text-orange-600"
+                      }`}
+                    >
+                      {rehabComparison.delta === null
+                        ? "-"
+                        : `${rehabComparison.delta > 0 ? "+" : ""}${rehabComparison.delta.toFixed(1)}%p`}
+                    </p>
+                  </div>
+                </div>
+              </section>
+            )}
+            {/* [01] 역량 차트 */}
             <section className="bg-white rounded-2xl p-5 border border-orange-200 shadow-sm h-full profile-section">
               <h3 className="text-lg font-black text-slate-900 border-l-4 border-orange-500 pl-3 mb-5 uppercase tracking-wider">
-                01. ?몄뼱 湲곕뒫 ?꾨줈?뚯씪
+                01. 언어 기능 프로파일
               </h3>
               <div className="profile-body">
                 <div className="flex justify-center mb-5 profile-chart-wrap">
@@ -1115,7 +1170,7 @@ function ResultContent() {
                       key={d.id}
                       className="bg-orange-50/70 p-2.5 rounded-lg flex flex-col items-center border border-orange-100 profile-metric-item"
                     >
-                      <p className="text-[10px] font-black text-slate-700 mb-0.5 metric-title">
+                      <p className="text-xs font-black text-slate-700 mb-0.5 metric-title">
                         {d.title}
                       </p>
                       <p className="text-base font-black text-slate-900 leading-none metric-value">
@@ -1127,351 +1182,71 @@ function ResultContent() {
               </div>
             </section>
 
-            {/* [02] ?뚭껄??*/}
+            {/* [02] 소견서 */}
             <section className="bg-white rounded-2xl p-5 border border-orange-200 shadow-sm h-full">
               <h3 className="text-lg font-black text-slate-900 border-l-4 border-orange-500 pl-3 mb-4 pb-2 border-b border-orange-100 uppercase tracking-wider">
-                02. ?꾨Ц媛 ?꾩긽 ?뚭껄
+                {isRehabResult ? "02. 반복훈련 요약" : "02. 전문가 임상 소견"}
               </h3>
 
               <div className="bg-orange-50/40 border border-orange-200 rounded-xl p-4 space-y-3 impression-content">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <div className="rounded-lg border border-orange-200 bg-white px-3 py-2">
-                    <p className="text-[10px] font-black text-slate-600">
-                      醫낇빀 ?댁꽍
+                    <p className="text-xs font-black text-slate-600">
+                      종합 해석
                     </p>
-                    <p className="text-[11px] font-black text-slate-800">
+                    <p className="text-sm font-black text-slate-800">
                       {clinicalImpression?.aqText}
                     </p>
                   </div>
                   <div className="rounded-lg border border-emerald-200 bg-white px-3 py-2">
-                    <p className="text-[10px] font-black text-slate-600">
-                      ?곷???媛뺤젏
+                    <p className="text-xs font-black text-slate-600">
+                      상대적 강점
                     </p>
-                    <p className="text-[11px] font-black text-emerald-600">
+                    <p className="text-sm font-black text-emerald-600">
                       {clinicalImpression?.strongestText}
                     </p>
                   </div>
                   <div className="rounded-lg border border-sky-200 bg-white px-3 py-2">
-                    <p className="text-[10px] font-black text-slate-600">
-                      吏묒쨷 以묒옱 ?곸뿭
+                    <p className="text-xs font-black text-slate-600">
+                      집중 중재 영역
                     </p>
-                    <p className="text-[11px] font-black text-sky-700">
+                    <p className="text-sm font-black text-sky-700">
                       {clinicalImpression?.weakestText}
                     </p>
                   </div>
                 </div>
 
-                <p
-                  className={`${getResultSummarySizeClass(formattedClinicalImpression?.summary || "")} font-black text-slate-800 leading-relaxed whitespace-pre-line`}
-                >
+                <p className="text-base md:text-lg font-black text-slate-800 leading-relaxed whitespace-pre-line">
                   {formattedClinicalImpression?.summary}
                 </p>
-                <p className="text-[11px] font-bold text-slate-600 leading-relaxed whitespace-pre-line">
-                  ?곷???媛뺤젏: {formattedClinicalImpression?.strength}
+                <p className="text-sm font-bold text-slate-600 leading-relaxed whitespace-pre-line">
+                  상대적 강점: {formattedClinicalImpression?.strength}
                 </p>
-                <p className="text-[11px] font-bold text-slate-600 leading-relaxed whitespace-pre-line">
-                  吏묒쨷 ?덈젴: {formattedClinicalImpression?.need}
+                <p className="text-sm font-bold text-slate-600 leading-relaxed whitespace-pre-line">
+                  집중 훈련: {formattedClinicalImpression?.need}
                 </p>
-                <p className="text-[11px] font-bold text-slate-600 leading-relaxed whitespace-pre-line">
-                  ?덈젴 沅뚯옣?ы빆: {formattedClinicalImpression?.recommendation}
+                <p className="text-sm font-bold text-slate-600 leading-relaxed whitespace-pre-line">
+                  훈련 권장사항: {formattedClinicalImpression?.recommendation}
                 </p>
               </div>
             </section>
           </div>
 
           <section className="no-print bg-white rounded-2xl p-5 border border-orange-200 shadow-sm">
-            <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
-              <h3 className="text-lg font-black text-slate-900 border-l-4 border-orange-500 pl-3 uppercase tracking-wider">
-                ?댁쟾 湲곕줉
-              </h3>
-              <div className="flex items-center gap-2">
-                <p className="text-[11px] font-bold text-slate-600">
-                  珥?{previousHistory.length}嫄?                </p>
-                <button
-                  onClick={() => setSelectedHistory(null)}
-                  className="px-2.5 py-1 rounded-lg border border-orange-200 bg-white text-[10px] font-black text-slate-700 hover:bg-orange-50"
-                >
-                  ?꾩옱 湲곕줉 蹂닿린
-                </button>
-              </div>
-            </div>
-
-            {previousHistory.length === 0 ? (
-              <div className="h-20 rounded-xl border border-dashed border-orange-200 bg-orange-50/70 flex items-center justify-center text-[11px] font-bold text-slate-700">
-                鍮꾧탳???댁쟾 湲곕줉???놁뒿?덈떎.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {pagedHistory.map((row) => (
-                    <button
-                      key={row.historyId}
-                      onClick={() => setSelectedHistory(row)}
-                      className={`text-left rounded-xl border p-3 space-y-2 transition-colors ${
-                        selectedHistory?.historyId === row.historyId
-                          ? "border-orange-300 bg-orange-50/50"
-                          : "border-slate-200 bg-slate-50 hover:bg-slate-100"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <p className="text-[11px] font-black text-slate-700">
-                          {new Date(row.completedAt).toLocaleString("ko-KR")}
-                        </p>
-                        <p className="text-[11px] font-black text-slate-800">
-                          AQ {row.aq}
-                        </p>
-                      </div>
-                      <div className="grid grid-cols-3 gap-1 text-[10px] font-bold text-slate-500">
-                        <span>泥?컖 {row.stepScores.step1}%</span>
-                        <span>?곕씪留?{row.stepScores.step2}%</span>
-                        <span>留ㅼ묶 {row.stepScores.step3}%</span>
-                        <span>?좎갹 {row.stepScores.step4}%</span>
-                        <span>?쎄린 {row.stepScores.step5}%</span>
-                        <span>?곌린 {row.stepScores.step6}%</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-
-                {previousHistory.length > HISTORY_PAGE_SIZE && (
-                  <div className="flex items-center justify-center gap-1.5 pt-1">
-                    <button
-                      onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
-                      disabled={historyPage === 1}
-                      className="px-2 py-1 rounded-md border border-slate-200 text-[10px] font-black text-slate-600 disabled:opacity-40"
-                    >
-                      ?댁쟾
-                    </button>
-                    {Array.from({ length: historyTotalPages }).map((_, i) => {
-                      const page = i + 1;
-                      return (
-                        <button
-                          key={`history-page-${page}`}
-                          onClick={() => setHistoryPage(page)}
-                          className={`w-7 h-7 rounded-md text-[10px] font-black border ${
-                            historyPage === page
-                              ? "bg-slate-900 text-white border-slate-900"
-                              : "bg-white text-slate-600 border-slate-200"
-                          }`}
-                        >
-                          {page}
-                        </button>
-                      );
-                    })}
-                    <button
-                      onClick={() =>
-                        setHistoryPage((p) =>
-                          Math.min(historyTotalPages, p + 1),
-                        )
-                      }
-                      disabled={historyPage === historyTotalPages}
-                      className="px-2 py-1 rounded-md border border-slate-200 text-[10px] font-black text-slate-600 disabled:opacity-40"
-                    >
-                      ?ㅼ쓬
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
-
-          <section className="print-only bg-white rounded-2xl p-5 border border-orange-200 shadow-sm print-history-list">
-            <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
-              <h3 className="text-lg font-black text-slate-900 border-l-4 border-orange-500 pl-3 uppercase tracking-wider">
-                03. ?댁쟾 湲곕줉 吏꾨떒 由ъ뒪??              </h3>
-              <p className="text-[11px] font-bold text-slate-600">
-                珥?{previousHistory.length}嫄?              </p>
-            </div>
-
-            {previousHistory.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-200 p-3 text-[11px] font-bold text-slate-600">
-                ?댁쟾 湲곕줉 ?놁쓬
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {previousHistory.slice(0, 4).map((row, index) => (
-                  <div
-                    key={`print-history-${row.historyId}`}
-                    className="history-row rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
-                  >
-                    <div className="flex items-center justify-between text-[11px] font-black text-slate-700">
-                      <span>
-                        {index + 1}.{" "}
-                        {new Date(row.completedAt).toLocaleDateString("ko-KR")}
-                      </span>
-                      <span className="text-slate-800">AQ {row.aq}</span>
-                    </div>
-                    <p className="mt-1 text-[10px] font-bold text-slate-500">
-                      以묒쬆?? {aqSeverityLabel(row.aq)} 쨌 泥?컖{" "}
-                      {row.stepScores.step1}% 쨌 ?곕씪留?                      {row.stepScores.step2}% 쨌 留ㅼ묶 {row.stepScores.step3}% 쨌
-                      ?좎갹 {row.stepScores.step4}% 쨌 ?쎄린 {row.stepScores.step5}
-                      % 쨌 ?곌린 {row.stepScores.step6}%
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          {selectedHistory && (
-            <section className="no-print bg-white rounded-2xl p-5 border border-orange-200 shadow-sm">
-              <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
-                <div className="space-y-1">
-                  <h3 className="text-lg font-black text-slate-900 border-l-4 border-orange-500 pl-3 uppercase tracking-wider">
-                    ?댁쟾 湲곕줉 ?곸꽭
-                  </h3>
-                  <p className="text-xs font-bold text-slate-600">
-                    {new Date(selectedHistory.completedAt).toLocaleString(
-                      "ko-KR",
-                    )}{" "}
-                    쨌 AQ {selectedHistory.aq}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {stepDetails.map((step) => {
-                  const key =
-                    `step${step.id}` as keyof TrainingHistoryEntry["stepDetails"];
-                  const items = selectedHistory.stepDetails?.[key] || [];
-                  const isOpen = openAllAccordions || openStepId === step.id;
-                  return (
-                    <div
-                      key={`history-${selectedHistory.historyId}-${step.id}`}
-                      className="bg-slate-50/50 rounded-xl border border-slate-100 overflow-hidden"
-                    >
-                      <button
-                        onClick={() => {
-                          if (openAllAccordions) {
-                            setOpenAllAccordions(false);
-                            setOpenStepId(step.id);
-                            return;
-                          }
-                          setOpenStepId(isOpen ? null : step.id);
-                        }}
-                        className="w-full px-4 py-3 bg-white flex items-center justify-between text-left border-b border-slate-100"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full uppercase tracking-widest">
-                            Step 0{step.id}
-                          </span>
-                          <span className="text-xs font-black text-slate-800">
-                            {step.title}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-[10px] font-black text-slate-600">
-                            {items.length} Activities
-                          </span>
-                          <span className="text-slate-600 text-[10px] font-black">
-                            {isOpen ? "?? : "??}
-                          </span>
-                        </div>
-                      </button>
-
-                      {isOpen && (
-                        <div
-                          className={`grid gap-2 p-3 ${
-                            items.length === 3
-                              ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3"
-                              : "grid-cols-1 sm:grid-cols-2 md:grid-cols-5"
-                          }`}
-                        >
-                          {items.length === 0 ? (
-                            <div className="col-span-full h-20 flex items-center justify-center italic text-[10px] text-slate-300 font-bold border border-dashed border-slate-200 rounded-xl">
-                              No Data Recorded
-                            </div>
-                          ) : (
-                            items.map((it: any, i: number) => (
-                              <div
-                                key={i}
-                                className="group bg-white p-3 rounded-lg border border-slate-200/60 shadow-sm hover:border-orange-200 transition-all"
-                              >
-                                <div className="flex justify-between items-center mb-2">
-                                  <span className="text-[9px] font-black text-slate-300 uppercase">
-                                    Index {i + 1}
-                                  </span>
-                                  <div
-                                    className={`px-1.5 py-0.5 rounded text-[8px] font-black ${it.isCorrect ? "bg-emerald-50 text-emerald-500" : "bg-orange-50 text-orange-700"}`}
-                                  >
-                                    {it.isCorrect ? "CORRECT" : "REVIEW"}
-                                  </div>
-                                </div>
-
-                                {step.id === 6 && it.userImage && (
-                                  <div className="aspect-video bg-slate-50 rounded-md mb-2 overflow-hidden border border-slate-100 flex items-center justify-center">
-                                    <img
-                                      src={it.userImage}
-                                      className="max-h-full max-w-full object-contain p-2"
-                                      alt="history-training-result"
-                                    />
-                                  </div>
-                                )}
-
-                                <p className="text-xs font-bold text-slate-600 leading-snug mb-2">
-                                  "
-                                  {it.text ||
-                                    it.targetText ||
-                                    it.targetWord ||
-                                    "..."}
-                                  "
-                                </p>
-
-                                {shouldShowPlayButton(step.id, it) && (
-                                  <button
-                                    onClick={() => {
-                                      const id = `h-${selectedHistory.historyId}-s${step.id}-${i}`;
-                                      if (it.audioUrl) {
-                                        playAudio(it.audioUrl, id);
-                                      } else {
-                                        playSpeechFallback(
-                                          getPlayableText(it),
-                                          id,
-                                        );
-                                      }
-                                    }}
-                                    className={`w-full py-1.5 rounded-md text-[10px] font-black flex items-center justify-center gap-2 transition-all ${playingIndex === `h-${selectedHistory.historyId}-s${step.id}-${i}` ? "bg-slate-900 text-white shadow-sm" : "bg-slate-50 text-slate-600 group-hover:bg-orange-50 group-hover:text-slate-900"}`}
-                                  >
-                                    {playingIndex ===
-                                    `h-${selectedHistory.historyId}-s${step.id}-${i}` ? (
-                                      <>
-                                        <span>??/span> STOP SOUND
-                                      </>
-                                    ) : (
-                                      <>
-                                        <span>??/span> PLAY SOUND
-                                      </>
-                                    )}
-                                  </button>
-                                )}
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-
-
-          <section className="no-print bg-white rounded-2xl p-5 border border-orange-200 shadow-sm">
             <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
               <div className="space-y-1">
                 <h3 className="text-lg font-black text-slate-900 border-l-4 border-orange-500 pl-3 uppercase tracking-wider">
-                  03. ?섑뻾 湲곕줉 ?곸꽭
+                  03. 수행 기록 상세
                 </h3>
                 <p className="text-xs font-bold text-slate-600">
-                  ?④퀎蹂???ぉ???쇱퀜 ?곸꽭 湲곕줉???뺤씤?섏꽭??
+                  단계별 항목을 펼쳐 상세 기록을 확인하세요.
                 </p>
               </div>
               <button
                 onClick={() => setOpenAllAccordions((prev) => !prev)}
-                className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-[11px] font-black text-slate-600 hover:bg-slate-50 transition-colors"
+                className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-sm font-black text-slate-600 hover:bg-slate-50 transition-colors"
               >
-                {openAllAccordions ? "?꾩껜?リ린" : "?꾩껜蹂닿린"}
+                {openAllAccordions ? "전체닫기" : "전체보기"}
               </button>
             </div>
 
@@ -1496,7 +1271,7 @@ function ResultContent() {
                       className="w-full px-4 py-3 bg-white flex items-center justify-between text-left border-b border-slate-100"
                     >
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full uppercase tracking-widest">
+                        <span className="text-xs font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full uppercase tracking-widest">
                           Step 0{step.id}
                         </span>
                         <span className="text-xs font-black text-slate-800">
@@ -1504,11 +1279,11 @@ function ResultContent() {
                         </span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-[10px] font-black text-slate-600">
+                        <span className="text-xs font-black text-slate-600">
                           {items.length} Activities
                         </span>
-                        <span className="text-slate-600 text-[10px] font-black">
-                          {isOpen ? "?? : "??}
+                        <span className="text-slate-600 text-xs font-black">
+                          {isOpen ? "▲" : "▼"}
                         </span>
                       </div>
                     </button>
@@ -1522,7 +1297,7 @@ function ResultContent() {
                         }`}
                       >
                         {items.length === 0 ? (
-                          <div className="col-span-full h-20 flex items-center justify-center italic text-[10px] text-slate-300 font-bold border border-dashed border-slate-200 rounded-xl">
+                          <div className="col-span-full h-20 flex items-center justify-center italic text-xs text-slate-300 font-bold border border-dashed border-slate-200 rounded-xl">
                             No Data Recorded
                           </div>
                         ) : (
@@ -1532,7 +1307,7 @@ function ResultContent() {
                               className="group bg-white p-3 rounded-lg border border-slate-200/60 shadow-sm hover:border-orange-200 transition-all"
                             >
                               <div className="flex justify-between items-center mb-2">
-                                <span className="text-[9px] font-black text-slate-300 uppercase">
+                                <span className="text-xs font-black text-slate-300 uppercase">
                                   Index {i + 1}
                                 </span>
                                 <div
@@ -1574,15 +1349,15 @@ function ResultContent() {
                                       );
                                     }
                                   }}
-                                  className={`w-full py-1.5 rounded-md text-[10px] font-black flex items-center justify-center gap-2 transition-all ${playingIndex === `s${step.id}-${i}` ? "bg-slate-900 text-white shadow-sm" : "bg-slate-50 text-slate-600 group-hover:bg-orange-50 group-hover:text-slate-900"}`}
+                                  className={`w-full py-1.5 rounded-md text-xs font-black flex items-center justify-center gap-2 transition-all ${playingIndex === `s${step.id}-${i}` ? "bg-slate-900 text-white shadow-sm" : "bg-slate-50 text-slate-600 group-hover:bg-orange-50 group-hover:text-slate-900"}`}
                                 >
                                   {playingIndex === `s${step.id}-${i}` ? (
                                     <>
-                                      <span>??/span> STOP SOUND
+                                      <span>■</span> STOP SOUND
                                     </>
                                   ) : (
                                     <>
-                                      <span>??/span> PLAY SOUND
+                                      <span>▶</span> PLAY SOUND
                                     </>
                                   )}
                                 </button>
@@ -1597,109 +1372,91 @@ function ResultContent() {
               })}
             </div>
           </section>
-          <section className="bg-white rounded-2xl p-5 border border-orange-200 shadow-sm">
-            <div className="space-y-1 mb-3">
-              <h3 className="text-base md:text-lg font-black text-slate-900 border-l-4 border-orange-500 pl-3">
-                골든 페이스 타임라인
-              </h3>
-              <p className="text-[11px] md:text-xs font-bold text-slate-600">
-                과거 기록 대비 안면 비대칭 위험도 변화 추이
-              </p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div className="h-32">
-                {goldenFaceTimeline.points.length > 1 ? (
-                  <svg viewBox="0 0 100 100" className="w-full h-full">
-                    <polyline
-                      fill="none"
-                      stroke="#f97316"
-                      strokeWidth="2.5"
-                      points={goldenFaceTimeline.polyline}
-                    />
-                    {goldenFaceTimeline.points.map((p, i) => {
-                      const x =
-                        goldenFaceTimeline.points.length === 1
-                          ? 10
-                          : (i / (goldenFaceTimeline.points.length - 1)) * 100;
-                      const y =
-                        100 -
-                        ((p.asymmetry - goldenFaceTimeline.min) /
-                          Math.max(
-                            1,
-                            goldenFaceTimeline.max - goldenFaceTimeline.min,
-                          )) *
-                          100;
-                      return (
-                        <circle
-                          key={`${p.date}-${i}`}
-                          cx={x}
-                          cy={y}
-                          r="2.2"
-                          fill="#0f172a"
-                        />
-                      );
-                    })}
-                  </svg>
-                ) : (
-                  <div className="h-full flex items-center justify-center text-[11px] font-bold text-slate-500">
-                    타임라인 데이터가 아직 충분하지 않습니다.
+          {facialReport && (
+            <>
+              <section className="no-print bg-white rounded-2xl p-4 border border-orange-200 shadow-sm">
+                <h3 className="text-base font-black text-slate-900 border-l-4 border-orange-500 pl-3 mb-3">
+                  안면 기반 자-모음 정확도
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                  <div className="rounded-xl border border-orange-200 bg-orange-50 px-3 py-2">
+                    <p className="text-xs font-black text-slate-600">
+                      전체 자음
+                    </p>
+                    <p className="text-xl font-black text-slate-900">
+                      {Math.round(facialReport.overallConsonant)}%
+                    </p>
                   </div>
-                )}
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {goldenFaceTimeline.points.map((p, i) => (
-                  <span
-                    key={`tag-${p.date}-${i}`}
-                    className="text-[10px] font-bold px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-700"
-                  >
-                    {p.date} {Number(p.asymmetry).toFixed(1)}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </section>
+                  <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2">
+                    <p className="text-xs font-black text-slate-600">
+                      전체 모음
+                    </p>
+                    <p className="text-xl font-black text-slate-900">
+                      {Math.round(facialReport.overallVowel)}%
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p className="text-xs font-black text-slate-600">Step2</p>
+                    <p className="text-base font-black text-slate-900">
+                      자 {Math.round(facialReport.step2Consonant)}% · 모{" "}
+                      {Math.round(facialReport.step2Vowel)}%
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p className="text-xs font-black text-slate-600">Step4</p>
+                    <p className="text-base font-black text-slate-900">
+                      자 {Math.round(facialReport.step4Consonant)}% · 모{" "}
+                      {Math.round(facialReport.step4Vowel)}%
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p className="text-xs font-black text-slate-600">Step5</p>
+                    <p className="text-base font-black text-slate-900">
+                      자 {Math.round(facialReport.step5Consonant)}% · 모{" "}
+                      {Math.round(facialReport.step5Vowel)}%
+                    </p>
+                  </div>
+                </div>
+              </section>
 
-          <section className="bg-white rounded-2xl p-5 border border-orange-200 shadow-sm">
-            <div className="space-y-1 mb-3">
-              <h3 className="text-base md:text-lg font-black text-slate-900 border-l-4 border-orange-500 pl-3">
-                AI 조음-안면 매칭 리포트
-              </h3>
-              <p className="text-[11px] md:text-xs font-bold text-slate-600">
-                자모음 정확도와 안면 비대칭 지표를 결합한 참고 리포트
-              </p>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-2.5">
-              <div className="rounded-xl border border-slate-200 p-2.5 bg-slate-50">
-                <p className="text-[10px] font-bold text-slate-500">자음 정확도</p>
-                <p className="text-lg md:text-xl font-black text-slate-900">
-                  {Number(articulationFaceMetrics.consonant ?? 0).toFixed(1)}%
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-200 p-2.5 bg-slate-50">
-                <p className="text-[10px] font-bold text-slate-500">모음 정확도</p>
-                <p className="text-lg md:text-xl font-black text-slate-900">
-                  {Number(articulationFaceMetrics.vowel ?? 0).toFixed(1)}%
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-200 p-2.5 bg-slate-50">
-                <p className="text-[10px] font-bold text-slate-500">비대칭 위험도</p>
-                <p className="text-lg md:text-xl font-black text-slate-900">
-                  {Number(articulationFaceMetrics.asymmetryRisk ?? 0).toFixed(1)}%
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-200 p-2.5 bg-slate-50">
-                <p className="text-[10px] font-bold text-slate-500">조음 불균형</p>
-                <p className="text-lg md:text-xl font-black text-slate-900">
-                  {Number(articulationFaceMetrics.articulationGap ?? 0).toFixed(1)}p
-                </p>
-              </div>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs md:text-sm font-bold text-slate-800 leading-relaxed">
-                {articulationFaceMatchReport}
-              </p>
-            </div>
-          </section>
+              <section className="no-print bg-white rounded-2xl p-4 border border-orange-200 shadow-sm">
+                <h3 className="text-base font-black text-slate-900 border-l-4 border-slate-900 pl-3 mb-3">
+                  안면 비대칭 위험도 분류 (스크리닝)
+                </h3>
+                <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center">
+                    <p className="text-xs font-black text-emerald-700">
+                      위험도
+                    </p>
+                    <p className="text-4xl font-black text-emerald-700 mt-1">
+                      {facialReport.riskLabel}
+                    </p>
+                    <p className="text-2xl font-black text-emerald-700 mt-1">
+                      {Math.round(facialReport.asymmetryRisk)} / 100
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 space-y-2">
+                    <p className="text-xs font-black text-slate-800">
+                      본 결과는 진단이 아닌 위험도 분류(스크리닝)입니다.
+                    </p>
+                    <p className="text-sm font-bold text-slate-700">
+                      {facialReport.summary}
+                    </p>
+                    <p className="text-sm font-black text-slate-700">
+                      비대칭 신호 {Math.round(facialReport.asymmetryRisk)} ·
+                      자모음 불균형 {facialReport.articulationGap.toFixed(1)}
+                    </p>
+                    <p className="text-sm font-black text-slate-700">
+                      골든 페이스 타임라인 변화:{" "}
+                      {facialReport.asymmetryDelta === null
+                        ? "이전 데이터 없음"
+                        : `${facialReport.asymmetryDelta > 0 ? "+" : ""}${facialReport.asymmetryDelta.toFixed(1)}%p`}
+                    </p>
+                  </div>
+                </div>
+              </section>
+            </>
+          )}
         </main>
       </div>
     </>

@@ -212,6 +212,7 @@ export interface TrainingHistoryEntry {
   educationYears: number;
   place: string;
   trainingMode?: TrainingMode;
+  rehabStep?: number;
   completedAt: number;
   aq: number;
   stepScores: {
@@ -328,13 +329,13 @@ export class SessionManager {
     this.saveHistoryEntry(mode);
   }
 
-  finalizeSessionAndSaveHistory(mode: TrainingMode = "self") {
+  finalizeSessionAndSaveHistory(mode: TrainingMode = "self", rehabStep?: number) {
     if (!this.session.completedAt) {
       this.session.completedAt = Date.now();
     }
     this.updateKWABScores();
     this.saveSession();
-    this.saveHistoryEntry(mode);
+    this.saveHistoryEntry(mode, rehabStep);
   }
 
   // ========================================================================
@@ -541,7 +542,7 @@ export class SessionManager {
     return { step1, step2, step3, step4, step5, step6 };
   }
 
-  private saveHistoryEntry(mode: TrainingMode = "self") {
+  private saveHistoryEntry(mode: TrainingMode = "self", rehabStep?: number) {
     if (typeof window === "undefined") return;
     const aq = this.session.kwabScores?.aq;
     if (aq === undefined || aq === null) return;
@@ -620,6 +621,29 @@ export class SessionManager {
             : "음성-안면 매칭 안정 범위";
 
     const p = this.session.patient as any;
+    const normalizedRehabStep =
+      mode === "rehab" && Number.isFinite(Number(rehabStep))
+        ? Math.max(1, Math.min(6, Number(rehabStep)))
+        : undefined;
+    const stepScores = this.getStepScoresForHistory();
+    const stepDetails = {
+      step1: step1Rows,
+      step2: step2Rows,
+      step3: step3Rows,
+      step4: step4Rows,
+      step5: step5Rows,
+      step6: step6Rows,
+    };
+    if (mode === "rehab" && normalizedRehabStep) {
+      const onlyKey = `step${normalizedRehabStep}` as keyof typeof stepScores;
+      (Object.keys(stepScores) as Array<keyof typeof stepScores>).forEach((key) => {
+        if (key !== onlyKey) stepScores[key] = 0;
+      });
+      (Object.keys(stepDetails) as Array<keyof typeof stepDetails>).forEach((key) => {
+        if (key !== onlyKey) stepDetails[key] = [];
+      });
+    }
+
     const entry: TrainingHistoryEntry = {
       historyId: `history_${Date.now()}`,
       sessionId: this.session.sessionId,
@@ -630,17 +654,11 @@ export class SessionManager {
       educationYears: Number(this.session.patient.educationYears ?? 0),
       place: this.session.place,
       trainingMode: mode,
+      rehabStep: normalizedRehabStep,
       completedAt: this.session.completedAt ?? Date.now(),
       aq: Number(aq),
-      stepScores: this.getStepScoresForHistory(),
-      stepDetails: {
-        step1: step1Rows,
-        step2: step2Rows,
-        step3: step3Rows,
-        step4: step4Rows,
-        step5: step5Rows,
-        step6: step6Rows,
-      },
+      stepScores,
+      stepDetails,
       articulationScores: {
         step2: {
           averageConsonantAccuracy: Number(
@@ -701,7 +719,77 @@ export class SessionManager {
     const next = [...withoutSameSession, entry]
       .sort((a, b) => a.completedAt - b.completedAt)
       .slice(-50);
-    localStoreAdapter.setItem(historyKey, JSON.stringify(next));
+
+    const isQuotaExceededError = (error: unknown) => {
+      if (error instanceof DOMException) {
+        return error.name === "QuotaExceededError" || error.code === 22;
+      }
+      if (typeof error === "object" && error !== null && "name" in error) {
+        return (error as { name?: string }).name === "QuotaExceededError";
+      }
+      return false;
+    };
+
+    const compactRow = (row: any) => {
+      const compactItems = (items: any[]) =>
+        (Array.isArray(items) ? items : []).map((item) => ({
+          ...item,
+          audioUrl: undefined,
+          userImage: undefined,
+          cameraFrameImage: undefined,
+          cameraFrameFrames: undefined,
+          imageData: undefined,
+        }));
+      return {
+        ...row,
+        stepDetails: row?.stepDetails
+          ? {
+              ...row.stepDetails,
+              step1: compactItems(row.stepDetails.step1),
+              step2: compactItems(row.stepDetails.step2),
+              step3: compactItems(row.stepDetails.step3),
+              step4: compactItems(row.stepDetails.step4),
+              step5: compactItems(row.stepDetails.step5),
+              step6: compactItems(row.stepDetails.step6),
+            }
+          : row?.stepDetails,
+      };
+    };
+
+    try {
+      localStoreAdapter.setItem(historyKey, JSON.stringify(next));
+    } catch (error) {
+      if (!isQuotaExceededError(error)) {
+        console.warn("[SessionManager] history save failed", error);
+        return;
+      }
+      const compacted = next.map((row) => compactRow(row)).slice(-20);
+      try {
+        localStoreAdapter.setItem(historyKey, JSON.stringify(compacted));
+      } catch (retryError) {
+        if (!isQuotaExceededError(retryError)) {
+          console.warn("[SessionManager] compact history save failed", retryError);
+          return;
+        }
+        const minimal = compacted.slice(-8).map((row) => ({
+          ...row,
+          stepDetails: {
+            step1: [],
+            step2: [],
+            step3: [],
+            step4: [],
+            step5: [],
+            step6: [],
+          },
+        }));
+        try {
+          localStoreAdapter.setItem(historyKey, JSON.stringify(minimal));
+        } catch (finalError) {
+          console.warn("[SessionManager] minimal history save failed", finalError);
+          // 마지막 방어: 히스토리 저장 실패를 앱 흐름 오류로 전파하지 않음
+        }
+      }
+    }
   }
 
   static getHistoryFor(patient: PatientProfile): TrainingHistoryEntry[] {
@@ -715,6 +803,28 @@ export class SessionManager {
       return rows.sort((a, b) => a.completedAt - b.completedAt);
     } catch {
       return [];
+    }
+  }
+
+  static deleteHistoryEntries(
+    patient: PatientProfile,
+    historyIds: string[],
+  ): number {
+    if (typeof window === "undefined" || !Array.isArray(historyIds) || historyIds.length === 0) {
+      return 0;
+    }
+    const patientKey = SessionManager.getPatientKey(patient);
+    const key = `${HISTORY_STORAGE_PREFIX}:${patientKey}`;
+    const target = new Set(historyIds.map((id) => String(id)));
+    try {
+      const raw = localStoreAdapter.getItem(key);
+      const rows = raw ? (JSON.parse(raw) as TrainingHistoryEntry[]) : [];
+      if (!Array.isArray(rows)) return 0;
+      const next = rows.filter((row) => !target.has(String(row.historyId)));
+      localStoreAdapter.setItem(key, JSON.stringify(next));
+      return Math.max(0, rows.length - next.length);
+    } catch {
+      return 0;
     }
   }
 

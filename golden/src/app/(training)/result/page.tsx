@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useEffect, useMemo, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -16,6 +16,23 @@ import {
   TrainingHistoryEntry,
 } from "@/lib/kwab/SessionManager";
 import { addSentenceLineBreaks } from "@/lib/text/displayText";
+import {
+  Trophy,
+  Activity,
+  FileText,
+  ScanFace,
+  Database,
+  Printer,
+  CheckCircle2,
+  Sparkles,
+  HeartHandshake,
+  Headphones,
+  MessageSquare,
+  Image,
+  Zap,
+  BookOpen,
+  PenTool,
+} from "lucide-react";
 
 function getResultSummarySizeClass(text: string): string {
   const normalizedLength = (text || "").replace(/\s+/g, "").length;
@@ -307,7 +324,7 @@ function ResultContent() {
         spontaneousSpeech,
         auditoryComprehension: {
           yesNoScore: Math.round(step1Accuracy * 60),
-          // Step3(그림 매칭) 정확도를 낱말 인지 점수에 반영
+          // Step3(단어 명명) 정확도를 낱말 인지 점수에 반영
           wordRecognitionScore: Math.round(step3Accuracy * 60),
           commandScore: Math.round(step1Accuracy * 80),
         },
@@ -399,11 +416,19 @@ function ResultContent() {
         )
       : clamp(queryScores[5]);
 
-    const s6Correct = s6.filter((i: any) => i?.isCorrect).length;
-    const s6Total = s6.length || 5;
-    const s6Percent = s6.length
-      ? clamp((s6Correct / s6.length) * 100)
-      : clamp((queryScores[6] / 5) * 100);
+    const s6Score = s6.length
+      ? clamp(
+          avg(
+            s6.map((i: any) =>
+              Number.isFinite(Number(i?.writingScore))
+                ? Number(i?.writingScore)
+                : i?.isCorrect
+                  ? 100
+                  : 0,
+            ),
+          ),
+        )
+      : clamp(queryScores[6]);
 
     return [
       {
@@ -416,13 +441,13 @@ function ResultContent() {
       {
         id: 2,
         title: "따라말하기",
-        display: `${Math.round(s2Score)}%`,
+        display: `${Math.round(s2Score)}점`,
         percent: s2Score,
         metric: `${Math.round(s2Score)}%`,
       },
       {
         id: 3,
-        title: "그림 매칭",
+        title: "단어 명명",
         display: `${s3Correct}/${s3Total}`,
         percent: s3Percent,
         metric: `${s3Correct}/${s3Total}`,
@@ -437,28 +462,41 @@ function ResultContent() {
       {
         id: 5,
         title: "읽기",
-        display: `${Math.round(s5Percent)}%`,
+        display: `${Math.round(s5Percent)}점`,
         percent: s5Percent,
         metric: `${Math.round(s5Percent)}%`,
       },
       {
         id: 6,
         title: "쓰기",
-        display: `${s6Correct}/${s6Total}`,
-        percent: s6Percent,
-        metric: `${s6Correct}/${s6Total}`,
+        display: `${Math.round(s6Score)}점`,
+        percent: s6Score,
+        metric: `${Math.round(s6Score)}점`,
       },
     ];
   }, [queryScores, sessionData]);
 
-  const chartPoints = useMemo(() => {
-    return stepDetails
-      .map((d, i) => {
-        const a = (Math.PI * 2 * i) / 6 - Math.PI / 2;
-        const r = (Math.min(d.percent, 100) / 100) * 75;
-        return `${100 + r * Math.cos(a)},${100 + r * Math.sin(a)}`;
-      })
-      .join(" ");
+  const profileNodes = useMemo(() => {
+    const center = 180;
+    const baseRadius = 90;
+    const badgeRadius = 138;
+    return stepDetails.map((d, i) => {
+      const angle = (Math.PI * 2 * i) / 6 - Math.PI / 2;
+      const valueRadius = (Math.min(d.percent, 100) / 100) * baseRadius;
+      const x = center + valueRadius * Math.cos(angle);
+      const y = center + valueRadius * Math.sin(angle);
+      const perNodeBadgeRadius = i === 0 || i === 3 ? 124 : badgeRadius;
+      const badgeX = center + perNodeBadgeRadius * Math.cos(angle);
+      const badgeY = center + perNodeBadgeRadius * Math.sin(angle);
+      return {
+        ...d,
+        x,
+        y,
+        badgeX,
+        badgeY,
+        short: d.title,
+      };
+    });
   }, [stepDetails]);
 
   const clinicalImpression = useMemo(() => {
@@ -485,7 +523,7 @@ function ResultContent() {
         percent: repetition.percent,
         metric: repetition.metric,
       },
-      { name: "그림 매칭", percent: matching.percent, metric: matching.metric },
+      { name: "단어 명명", percent: matching.percent, metric: matching.metric },
       { name: "유창성", percent: fluency.percent, metric: fluency.metric },
       { name: "읽기", percent: reading.percent, metric: reading.metric },
       { name: "쓰기", percent: writing.percent, metric: writing.metric },
@@ -495,23 +533,15 @@ function ResultContent() {
     );
     const weakest = domains.reduce((a, b) => (a.percent <= b.percent ? a : b));
 
-    const typeLabel = derivedKwab.aphasiaType || "비특이적 실어증";
-    const aqLabel =
-      derivedKwab.aq >= 75
-        ? "경도 수준의 의사소통 어려움"
-        : derivedKwab.aq >= 50
-          ? "중등도 수준의 의사소통 어려움"
-          : "중등도-중증 수준의 의사소통 어려움";
-
     return {
-      summary: `[평가 요약]\n${typeLabel} 양상이 관찰되며 AQ ${derivedKwab.aq}점으로 ${aqLabel}이 시사됩니다.\n\n[세부 결과]\n청각 이해 ${comprehension.metric} · 따라말하기 ${repetition.metric} · 그림 매칭 ${matching.metric}\n유창성 ${fluency.metric} · 읽기 ${reading.metric} · 쓰기 ${writing.metric}`,
-      strength: `${strongest.name}(${strongest.metric}) 영역은 상대적으로 보존되어 구조화된 단서 제공 시 과제 수행 안정성이 확인됩니다.`,
-      need: `${weakest.name}(${weakest.metric}) 영역의 저하가 두드러져, 단문 산출→반복→확장 순서의 단계적 언어치료가 우선 권장됩니다.`,
+      summary: `일상 대화의 바탕이 잘 유지되고 있으며, 전반적으로 의사소통을 이어갈 수 있는 힘이 확인됩니다. 특히 ${strongest.name}은 안정적으로 나타났고, ${weakest.name}은 생활 속 반복 연습을 통해 더 편안해질 수 있습니다.`,
+      strength: `${strongest.name}(${strongest.metric})이 특히 안정적으로 확인되었습니다. 이 부분은 아주 건강하시네요!`,
+      need: `${weakest.name}(${weakest.metric})은 조금 더 연습이 필요한 부분입니다. 이 부분이 좋아지면 가족과 대화할 때 떠오른 생각을 더 또렷하게 전하고, 외출이나 전화 상황에서도 원하는 말을 더 편안하게 표현하는 데 도움이 됩니다.`,
       recommendation:
-        "가정에서는 기능어·핵심어를 포함한 1~2문장 말하기 훈련을 하루 15~20분, 주 5회 이상 시행하고, 치료실에서는 저하 영역 중심으로 과제 난이도를 점진적으로 상향하는 중재를 권장합니다.",
-      aqText: `${derivedKwab.aq}점 (${aqLabel})`,
+        "오늘은 집에서 15분만 가볍게 연습해 보세요. 사진이나 생활 물건을 보며 이름 말하기 5분, 짧은 문장 따라 말하기 5분, 소리 내어 읽기 5분을 주 5회 꾸준히 이어가면 일상 대화가 한층 자연스러워집니다. 지금처럼 차분하게 이어가시면 분명 더 좋아질 수 있습니다.",
       strongestText: `${strongest.name} ${strongest.metric}`,
       weakestText: `${weakest.name} ${weakest.metric}`,
+      encourageText: "하루 15분 · 주 5회 생활 연습",
     };
   }, [derivedKwab, stepDetails]);
 
@@ -562,9 +592,7 @@ function ResultContent() {
     const s5 = sessionData?.step5?.items || [];
     const scoreFromItems = (items: any[], key: string) =>
       avg(
-        items
-          .map((it: any) => toNum(it?.[key]))
-          .filter((v: number) => v > 0),
+        items.map((it: any) => toNum(it?.[key])).filter((v: number) => v > 0),
       );
 
     const current = latestAndPreviousHistory.current;
@@ -595,9 +623,7 @@ function ResultContent() {
     const overallVowel = avg(
       [step2Vowel, step4Vowel, step5Vowel].filter((v) => v > 0),
     );
-    const asymmetryRisk = toNum(
-      current?.facialAnalysisSnapshot?.asymmetryRisk,
-    );
+    const asymmetryRisk = toNum(current?.facialAnalysisSnapshot?.asymmetryRisk);
     const prevAsymmetryRisk = toNum(
       previous?.facialAnalysisSnapshot?.asymmetryRisk,
     );
@@ -613,9 +639,14 @@ function ResultContent() {
       asymmetryRisk >= 45 ? "고위험" : asymmetryRisk >= 30 ? "주의" : "저위험";
 
     const hasCameraData =
-      [step2Consonant, step2Vowel, step4Consonant, step4Vowel, step5Consonant, step5Vowel].some(
-        (v) => v > 0,
-      ) || asymmetryRisk > 0;
+      [
+        step2Consonant,
+        step2Vowel,
+        step4Consonant,
+        step4Vowel,
+        step5Consonant,
+        step5Vowel,
+      ].some((v) => v > 0) || asymmetryRisk > 0;
     if (!hasCameraData) return null;
 
     return {
@@ -637,6 +668,7 @@ function ResultContent() {
     };
   }, [latestAndPreviousHistory, sessionData]);
 
+
   const previousHistory = useMemo(() => {
     if (!patientForHistory) return [];
     const all = SessionManager.getHistoryFor(patientForHistory)
@@ -652,14 +684,19 @@ function ResultContent() {
   }, [currentTrainingMode, historyRefreshKey, patientForHistory]);
 
   const rehabComparison = useMemo(() => {
-    if (!isRehabResult || rehabTargetStep < 1 || rehabTargetStep > 6) return null;
+    if (!isRehabResult || rehabTargetStep < 1 || rehabTargetStep > 6)
+      return null;
     const current = stepDetails.find((s) => s.id === rehabTargetStep);
     if (!current) return null;
     const latestPrevious = previousHistory[0];
-    const key = `step${rehabTargetStep}` as keyof TrainingHistoryEntry["stepScores"];
-    const prevScore = latestPrevious ? Number(latestPrevious.stepScores?.[key] ?? 0) : null;
+    const key =
+      `step${rehabTargetStep}` as keyof TrainingHistoryEntry["stepScores"];
+    const prevScore = latestPrevious
+      ? Number(latestPrevious.stepScores?.[key] ?? 0)
+      : null;
     const currScore = Number(current.percent ?? 0);
-    const delta = prevScore === null ? null : Number((currScore - prevScore).toFixed(1));
+    const delta =
+      prevScore === null ? null : Number((currScore - prevScore).toFixed(1));
     return { current, prevScore, currScore, delta };
   }, [isRehabResult, rehabTargetStep, stepDetails, previousHistory]);
 
@@ -751,16 +788,72 @@ function ResultContent() {
   const handleExportData = () => {
     if (!sessionData) return;
     const patient = loadPatientProfile();
+    const historyForPatient = patient
+      ? SessionManager.getHistoryFor(patient as any).sort(
+          (a, b) => b.completedAt - a.completedAt,
+        )
+      : [];
+    const latestExamAt = historyForPatient[0]?.completedAt || Date.now();
+
+    const pad2 = (n: number) => String(n).padStart(2, "0");
+    const formatExamDateTime = (ts: number) => {
+      const d = new Date(ts);
+      return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+    };
+    const normalizeBirthDate = (raw: any) => {
+      const text = String(raw || "").trim();
+      const digits = text.replace(/[^\d]/g, "");
+      if (digits.length >= 8) return digits.slice(0, 8);
+      return "생년월일미입력";
+    };
+    const sanitizeName = (raw: any) => {
+      const text = String(raw || "").trim() || "이름미입력";
+      return text.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_");
+    };
+
+    const rawStorageSnapshot = {
+      step1_data: parseStoredArray("step1_data"),
+      step2_recorded_audios: parseStoredArray("step2_recorded_audios"),
+      step3_data: parseStoredArray("step3_data"),
+      step4_recorded_audios: parseStoredArray("step4_recorded_audios"),
+      step5_recorded_data: parseStoredArray("step5_recorded_data"),
+      step6_recorded_data: parseStoredArray("step6_recorded_data"),
+    };
+
     const exportPayload = {
       exportedAt: new Date().toISOString(),
       patient,
+      place,
+      trainingMode: currentTrainingMode,
+      queryScores,
+      derivedKwab,
       summaryScores: stepDetails,
       details: sessionData,
+      counts: {
+        step1: sessionData?.step1?.items?.length || 0,
+        step2: sessionData?.step2?.items?.length || 0,
+        step3: sessionData?.step3?.items?.length || 0,
+        step4: sessionData?.step4?.items?.length || 0,
+        step5: sessionData?.step5?.items?.length || 0,
+        step6: sessionData?.step6?.items?.length || 0,
+      },
     };
     const files: ExportFile[] = [
       {
         name: "result.json",
         data: new TextEncoder().encode(JSON.stringify(exportPayload, null, 2)),
+      },
+      {
+        name: "history.json",
+        data: new TextEncoder().encode(
+          JSON.stringify(historyForPatient, null, 2),
+        ),
+      },
+      {
+        name: "storage-snapshot.json",
+        data: new TextEncoder().encode(
+          JSON.stringify(rawStorageSnapshot, null, 2),
+        ),
       },
     ];
 
@@ -769,7 +862,10 @@ function ResultContent() {
     const url = URL.createObjectURL(zipBlob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `report-${patient?.name || "patient"}.zip`;
+    const birthDatePart = normalizeBirthDate((patient as any)?.birthDate);
+    const namePart = sanitizeName((patient as any)?.name);
+    const examDatePart = formatExamDateTime(latestExamAt);
+    a.download = `${birthDatePart}-${namePart}-${examDatePart}.zip`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -805,7 +901,9 @@ function ResultContent() {
       return;
     }
     stopPlayback();
-    const utterance = new SpeechSynthesisUtterance(text || "음성 데이터가 없습니다.");
+    const utterance = new SpeechSynthesisUtterance(
+      text || "음성 데이터가 없습니다.",
+    );
     utterance.lang = "ko-KR";
     utterance.rate = 0.92;
     utterance.onend = () => setPlayingIndex(null);
@@ -816,10 +914,98 @@ function ResultContent() {
 
   const shouldShowPlayButton = (stepId: number, item: any) =>
     [2, 4, 5].includes(stepId) &&
-    Boolean(item?.audioUrl || item?.text || item?.transcript || item?.targetText || item?.prompt);
+    Boolean(
+      item?.audioUrl ||
+      item?.text ||
+      item?.transcript ||
+      item?.targetText ||
+      item?.prompt,
+    );
 
   const getPlayableText = (item: any) =>
-    String(item?.text || item?.transcript || item?.targetText || item?.targetWord || item?.prompt || "음성 데이터가 없습니다.");
+    String(
+      item?.text ||
+        item?.transcript ||
+        item?.targetText ||
+        item?.targetWord ||
+        item?.prompt ||
+        "음성 데이터가 없습니다.",
+    );
+
+  const getSelfItemFeedback = (stepId: number, item: any) => {
+    const toNum = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : null);
+
+    if (stepId === 2) {
+      const score = toNum(item?.finalScore ?? item?.speechScore);
+      if (score !== null) {
+        return {
+          good:
+            score >= 80
+              ? "발화 정확도가 안정적으로 유지되었습니다."
+              : "문장을 끝까지 따라 말한 점이 좋았습니다.",
+          improve:
+            score >= 80
+              ? "호흡 길이를 일정하게 유지하면 더 자연스러워집니다."
+              : "핵심 단어를 천천히 또렷하게 발음해 보세요.",
+        };
+      }
+    }
+
+    if (stepId === 4) {
+      const score = toNum(item?.fluencyScore ?? item?.kwabScore);
+      if (score !== null) {
+        return {
+          good:
+            score >= 7
+              ? "상황 문장을 연결해 말하는 흐름이 좋습니다."
+              : "핵심 단어를 포함해 말하려는 시도가 좋습니다.",
+          improve:
+            score >= 7
+              ? "문장 간 짧은 멈춤을 줄이면 전달력이 더 좋아집니다."
+              : "주어-서술어를 붙여 짧은 완성 문장으로 말해 보세요.",
+        };
+      }
+    }
+
+    if (stepId === 5) {
+      const score = toNum(item?.readingScore);
+      if (score !== null) {
+        return {
+          good:
+            score >= 80
+              ? "문장 읽기 속도와 정확도가 안정적입니다."
+              : "끝까지 읽고 다시 확인한 점이 좋았습니다.",
+          improve:
+            score >= 80
+              ? "어절 사이 멈춤을 일정하게 유지해 보세요."
+              : "문장 부호에서 잠깐 쉬고 또박또박 읽어보세요.",
+        };
+      }
+    }
+
+    if (stepId === 6) {
+      const score = toNum(item?.writingScore);
+      if (score !== null) {
+        return {
+          good:
+            score >= 80
+              ? "획수 흐름이 안정적입니다."
+              : "단어 형태를 끝까지 맞추려는 점이 좋았습니다.",
+          improve:
+            score >= 80
+              ? "획 간 간격을 일정하게 맞춰보세요."
+              : "자획 간격을 조금 더 일정하게 맞춰보세요.",
+        };
+      }
+    }
+
+    return {
+      good: item?.isCorrect
+        ? "과제를 차분하게 수행했습니다."
+        : "끝까지 시도한 점이 좋았습니다.",
+      improve: "핵심 단어를 천천히 반복 연습해 보세요.",
+    };
+  };
 
   if (!isMounted || !sessionData) return null;
 
@@ -828,7 +1014,7 @@ function ResultContent() {
       <style jsx global>{`
         @page {
           size: A4 portrait;
-          margin: 4mm;
+          margin: 50px;
         }
         @media print {
           body {
@@ -947,143 +1133,172 @@ function ResultContent() {
         }
       `}</style>
 
-      <div className="h-full min-h-screen overflow-y-auto bg-[#F8FAFC] text-[#0f172a] pb-12 font-sans">
+      <div className="h-full min-h-screen overflow-y-auto bg-[#FFF7ED] text-[#0f172a] pb-12">
         {/* 상단바 */}
-        <header className="no-print h-16 px-6 border-b border-orange-100 flex items-center justify-between bg-white sticky top-0 z-40">
-          <div className="flex items-center gap-3">
-            <img
-              src="/images/logo/logo.png"
-              alt="GOLDEN logo"
-              className="w-10 h-10 rounded-xl object-cover"
-            />
-            <div>
-              <p className="text-xs font-black uppercase tracking-widest text-orange-500">
-                Report
-              </p>
-              <h1 className="text-lg font-black">재활 평가 결과</h1>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => router.push("/select")}
-            aria-label="홈으로 이동"
-            title="홈"
-            className="w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition-colors flex items-center justify-center"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M3 10.5 12 3l9 7.5"
+        <header className="no-print h-16 px-4 sm:px-6 lg:px-[200px] border-b border-orange-100 flex items-center justify-between bg-white sticky top-0 z-40">
+          <div className="w-full flex items-center justify-between min-w-0">
+            <div className="flex items-center gap-3">
+              <img
+                src="/images/logo/logo.png"
+                alt="GOLDEN logo"
+                className="w-10 h-10 rounded-xl object-cover"
               />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M5.5 9.5V21h13V9.5"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M10 21v-5h4v5"
-              />
-            </svg>
-          </button>
-        </header>
-
-        <div className="no-print max-w-5xl mx-auto w-full px-6 pt-3 flex justify-end gap-2">
-          <button
-            onClick={handleExportData}
-            className="px-4 py-2 bg-white text-slate-900 border border-orange-200 rounded-xl text-xs font-bold shadow-sm hover:bg-orange-50 active:scale-95 transition-all"
-          >
-            데이터 백업
-          </button>
-          <button
-            onClick={() => window.print()}
-            className="px-4 py-2 bg-orange-500 text-white rounded-xl text-xs font-bold shadow-sm hover:bg-orange-600 active:scale-95 transition-all"
-          >
-            진단서 출력 (PDF)
-          </button>
-        </div>
-
-        <main className="max-w-5xl mx-auto px-6 py-8 space-y-4 print-container">
-          {/* [HEADER] 공식 진단서 스타일 */}
-          <header className="bg-white rounded-2xl p-4 md:p-5 border border-slate-300 shadow-sm relative overflow-hidden print-card print-header">
-            <div className="absolute top-0 left-0 w-2 h-full bg-slate-900 no-print" />
-            <div className="space-y-3 text-left w-full min-w-0">
-              <h2 className="text-lg font-black text-slate-900 tracking-tight">
-                {isRehabResult ? "언어 재활 반복훈련 리포트" : "종합 언어 진단 리포트"}
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-[repeat(3,minmax(0,1fr))_280px] gap-2 patient-meta-grid">
-                <div className="bg-white border border-slate-300 rounded-xl px-3 py-2">
-                  <p className="text-xs font-bold text-slate-700">성함</p>
-                  <p className="text-[14px] font-black text-slate-900 leading-tight">
-                    {loadPatientProfile()?.name || "미입력"}
-                  </p>
-                </div>
-                <div className="bg-white border border-slate-300 rounded-xl px-3 py-2">
-                  <p className="text-xs font-bold text-slate-700">연령</p>
-                  <p className="text-[14px] font-black text-slate-900 leading-tight">
-                    {loadPatientProfile()?.age || "-"}세
-                  </p>
-                </div>
-                <div className="bg-white border border-slate-300 rounded-xl px-3 py-2">
-                  <p className="text-xs font-bold text-slate-700">교육</p>
-                  <p className="text-[14px] font-black text-slate-900 leading-tight">
-                    {loadPatientProfile()?.educationYears || "-"}년
-                  </p>
-                </div>
-                <div className="md:col-start-4 md:row-start-1 md:row-end-3 text-center bg-slate-900 rounded-xl px-4 py-2 text-white shadow-sm w-full aq-card">
-                  <p className="text-xs font-black opacity-80 uppercase tracking-widest mb-0.5">
-                    Diagnostic Score (AQ)
-                  </p>
-                  <div className="flex items-baseline justify-center gap-1">
-                    <span className="text-2xl font-black leading-none aq-value">
-                      {derivedKwab?.aq || "0.0"}
-                    </span>
-                    <span className="text-xs font-bold opacity-60">/ 100</span>
-                  </div>
-                  <p className="mt-1 text-xs font-black uppercase bg-white/20 py-0.5 rounded-full">
-                    {derivedKwab?.aphasiaType || "유형 분석 중"}
-                  </p>
-                </div>
-                <div className="normal-compare-card md:col-start-1 md:col-span-3 md:row-start-2 rounded-xl border border-slate-900 bg-slate-900 px-3 py-2 text-center">
-                  <p className="text-sm font-black text-white tracking-wide">
-                    {normalComparison
-                      ? `정상군 평균 ${normalComparison.mean.toFixed(2)} (SD ${normalComparison.sd.toFixed(2)}) / 대비 ${normalComparison.diff >= 0 ? "+" : ""}${normalComparison.diff.toFixed(1)}`
-                      : "정상군 기준 계산 불가"}
-                  </p>
-                </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-orange-500">
+                  Report
+                </p>
+                <h1 className="text-base sm:text-lg md:text-xl font-black flex items-center gap-1.5">
+                  자가 진단 평가 결과
+                </h1>
               </div>
             </div>
-          </header>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportData}
+                className="px-3 sm:px-4 py-2 bg-white text-slate-900 border border-orange-200 rounded-xl text-[11px] sm:text-xs font-bold shadow-sm hover:bg-orange-50 active:scale-95 transition-all inline-flex items-center gap-1.5"
+              >
+                <Database className="w-3.5 h-3.5 text-orange-500" />
+                데이터 백업
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="px-3 sm:px-4 py-2 bg-orange-500 text-white rounded-xl text-[11px] sm:text-xs font-bold shadow-sm hover:bg-orange-600 active:scale-95 transition-all inline-flex items-center gap-1.5"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                진단서 출력
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/select")}
+                aria-label="홈으로 이동"
+                title="홈"
+                className="w-9 h-9 rounded-xl border border-orange-200 bg-white text-orange-700 hover:bg-orange-50 transition-colors flex items-center justify-center"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M3 10.5 12 3l9 7.5"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M5.5 9.5V21h13V9.5"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M10 21v-5h4v5"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </header>
 
-          <div className="grid grid-cols-1 md:grid-cols-[360px_1fr] gap-4 items-stretch print-top-grid">
+        <main className="w-full px-4 sm:px-6 lg:px-[200px] py-5 sm:py-8 pb-10 sm:pb-8 space-y-4 sm:space-y-5 print-container">
+          {/* [HEADER] 환자 프로필 */}
+          {!isRehabResult && (
+            <>
+              <section className="no-print rounded-3xl border border-orange-300 bg-gradient-to-r from-orange-600 to-orange-500 p-5 sm:p-6 md:p-7 text-white shadow-sm">
+                <p className="text-[11px] md:text-xs font-black uppercase tracking-[0.25em] text-orange-100">
+                  Self Assessment Report
+                </p>
+                <h3 className="mt-2 text-lg sm:text-xl md:text-2xl lg:text-3xl font-black tracking-tight leading-snug">
+                  자가진단 종합 점수 {derivedKwab?.aq || "0.0"}점
+                </h3>
+                <p className="mt-2 text-sm sm:text-base md:text-lg font-bold text-orange-50 leading-relaxed">
+                  자가진단 평가 결과를 기준으로 강점 영역과 집중 중재 영역을
+                  확인하세요.
+                </p>
+              </section>
+
+              <section className="no-print grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="flex items-center gap-3 bg-white p-3 md:p-4 rounded-3xl shadow-sm border border-orange-100">
+                  <div className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-gradient-to-br from-orange-500 to-orange-400 text-white font-black text-base sm:text-lg md:text-xl flex items-center justify-center shrink-0">
+                    {(patientProfile?.name || "환").trim().charAt(0)}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-base sm:text-lg md:text-xl font-black text-slate-900 leading-snug truncate">
+                      {patientProfile?.name || "미입력"} 님
+                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs md:text-sm text-slate-600 leading-relaxed">
+                      <span className="font-semibold">
+                        연령{" "}
+                        <b className="font-black text-slate-900">
+                          {patientProfile?.age || "-"}세
+                        </b>
+                      </span>
+                      <span className="font-semibold">
+                        교육 기간{" "}
+                        <b className="font-black text-slate-900">
+                          {patientProfile?.educationYears || "-"}년
+                        </b>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-orange-200 bg-white p-3 md:p-4 min-h-[48px] shadow-sm">
+                  <p className="text-sm font-black text-slate-500">현재 점수</p>
+                  <p className="text-lg sm:text-xl font-black text-orange-600 mt-1 leading-snug">
+                    {derivedKwab?.aq || "0.0"}점
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-orange-200 bg-white p-3 md:p-4 min-h-[48px] shadow-sm">
+                  <p className="text-sm font-black text-slate-500">평가 분류</p>
+                  <p className="text-lg sm:text-xl font-black text-slate-900 mt-1 leading-snug">
+                    {aqSeverityLabel(Number(derivedKwab?.aq || 0))}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-orange-200 bg-white p-3 md:p-4 min-h-[48px] shadow-sm">
+                  <p className="text-sm font-black text-slate-500">
+                    정상군 대비
+                  </p>
+                  <p className="text-lg sm:text-xl font-black text-slate-900 mt-1 leading-snug">
+                    {normalComparison
+                      ? `${normalComparison.diff >= 0 ? "+" : ""}${normalComparison.diff.toFixed(1)}`
+                      : "-"}
+                  </p>
+                </div>
+              </section>
+            </>
+          )}
+
+          <div className="grid grid-cols-1 gap-4 items-stretch print-top-grid">
             {rehabComparison && (
               <section className="no-print md:col-span-2 bg-white rounded-2xl p-4 border border-orange-200 shadow-sm">
-                <h3 className="text-base font-black text-slate-900 border-l-4 border-orange-500 pl-3 mb-3">
+                <h3 className="text-base sm:text-lg md:text-xl font-black text-slate-900 border-l-4 border-orange-500 pl-3 mb-3">
                   반복훈련 변화 비교 (Step 0{rehabTargetStep})
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                    <p className="text-xs font-black text-slate-500">이번 점수</p>
-                    <p className="text-lg font-black text-slate-900">{rehabComparison.currScore.toFixed(1)}%</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                    <p className="text-xs font-black text-slate-500">이전 점수</p>
-                    <p className="text-lg font-black text-slate-900">
-                      {rehabComparison.prevScore === null ? "기록 없음" : `${rehabComparison.prevScore.toFixed(1)}%`}
+                    <p className="text-sm font-black text-slate-500">
+                      이번 점수
+                    </p>
+                    <p className="text-base sm:text-lg font-black text-slate-900">
+                      {rehabComparison.currScore.toFixed(1)}%
                     </p>
                   </div>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                    <p className="text-xs font-black text-slate-500">변화량</p>
+                    <p className="text-sm font-black text-slate-500">
+                      이전 점수
+                    </p>
+                    <p className="text-base sm:text-lg font-black text-slate-900">
+                      {rehabComparison.prevScore === null
+                        ? "기록 없음"
+                        : `${rehabComparison.prevScore.toFixed(1)}%`}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p className="text-sm font-black text-slate-500">변화량</p>
                     <p
-                      className={`text-lg font-black ${
+                      className={`text-base sm:text-lg font-black ${
                         rehabComparison.delta === null
                           ? "text-slate-700"
                           : rehabComparison.delta >= 0
@@ -1099,393 +1314,207 @@ function ResultContent() {
                 </div>
               </section>
             )}
-            {/* [01] 역량 차트 */}
-            <section className="bg-white rounded-2xl p-5 border border-orange-200 shadow-sm h-full profile-section">
-              <h3 className="text-lg font-black text-slate-900 border-l-4 border-orange-500 pl-3 mb-5 uppercase tracking-wider">
-                01. 언어 기능 프로파일
+            {/* [01] 언어 기능 프로파일 */}
+            <section className="bg-white rounded-[32px] p-4 md:p-5 border border-orange-200 shadow-sm h-full profile-section">
+              <h3 className="text-base sm:text-lg md:text-xl font-black text-slate-900 mb-4 uppercase tracking-wider flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center">
+                  <Activity className="w-4 h-4 text-orange-500" />
+                </span>
+                언어 기능 프로파일
               </h3>
-              <div className="profile-body">
-                <div className="flex justify-center mb-5 profile-chart-wrap">
-                  <svg
-                    viewBox="0 0 200 200"
-                    className="w-48 h-48 profile-chart"
-                  >
-                    {[0.25, 0.5, 0.75, 1].map((st) => (
-                      <polygon
-                        key={st}
-                        points={stepDetails
-                          .map((_, i) => {
-                            const a = (Math.PI * 2 * i) / 6 - Math.PI / 2;
-                            return `${100 + 75 * st * Math.cos(a)},${100 + 75 * st * Math.sin(a)}`;
-                          })
-                          .join(" ")}
-                        fill="none"
-                        stroke="#F1F5F9"
-                        strokeWidth="2"
-                      />
-                    ))}
-                    <polygon
-                      points={chartPoints}
-                      fill="rgba(139, 69, 19, 0.15)"
-                      stroke="#F97316"
-                      strokeWidth="4"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </div>
-                <div className="grid grid-cols-2 gap-2 profile-metrics">
-                  {stepDetails.map((d) => (
-                    <div
-                      key={d.id}
-                      className="bg-orange-50/70 p-2.5 rounded-lg flex flex-col items-center border border-orange-100 profile-metric-item"
-                    >
-                      <p className="text-xs font-black text-slate-700 mb-0.5 metric-title">
-                        {d.title}
-                      </p>
-                      <p className="text-base font-black text-slate-900 leading-none metric-value">
-                        {d.display}
-                      </p>
+              <div className="profile-body rounded-[24px] border border-orange-200 bg-orange-50/30 p-3 md:p-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+                  <div className="rounded-2xl border border-orange-100 bg-white p-3 md:p-4 h-full md:h-[280px]">
+                    <div className="flex items-center justify-center h-full">
+                      <svg
+                        viewBox="0 0 360 360"
+                        className="w-[280px] h-[280px] sm:w-[300px] sm:h-[300px] md:w-[320px] md:h-[320px] profile-chart"
+                      >
+                        {[0.25, 0.5, 0.75, 1].map((st) => (
+                          <polygon
+                            key={st}
+                            points={stepDetails
+                              .map((_, i) => {
+                                const a = (Math.PI * 2 * i) / 6 - Math.PI / 2;
+                                return `${180 + 90 * st * Math.cos(a)},${180 + 90 * st * Math.sin(a)}`;
+                              })
+                              .join(" ")}
+                            fill="none"
+                            stroke="#E2E8F0"
+                            strokeWidth="2"
+                          />
+                        ))}
+                        <polygon
+                          points={profileNodes
+                            .map((n) => `${n.x},${n.y}`)
+                            .join(" ")}
+                          fill="rgba(249,115,22,0.18)"
+                          stroke="#F97316"
+                          strokeWidth="4"
+                          strokeLinejoin="round"
+                        />
+                        {profileNodes.map((n) => (
+                          <g key={`node-${n.id}`}>
+                            <circle cx={n.x} cy={n.y} r="4" fill="#F97316" />
+                            <g
+                              transform={`translate(${n.badgeX}, ${n.badgeY})`}
+                            >
+                              <rect
+                                x="-46"
+                                y="-14"
+                                width="92"
+                                height="28"
+                                rx="14"
+                                fill="white"
+                                stroke="#FDBA74"
+                                strokeWidth="1.5"
+                              />
+                              <text
+                                x="0"
+                                y="-1"
+                                textAnchor="middle"
+                                fontSize="8.5"
+                                fill="#475569"
+                                fontWeight="700"
+                              >
+                                {n.short}
+                              </text>
+                              <text
+                                x="0"
+                                y="10"
+                                textAnchor="middle"
+                                fontSize="9.5"
+                                fill="#0F172A"
+                                fontWeight="800"
+                              >
+                                {n.display}
+                              </text>
+                            </g>
+                          </g>
+                        ))}
+                      </svg>
                     </div>
-                  ))}
+                  </div>
+                  <div className="grid grid-cols-2 grid-rows-3 gap-2 h-full md:h-[280px] profile-metrics">
+                    {stepDetails.map((d, idx) => {
+                      const Icon =
+                        [
+                          Headphones,
+                          MessageSquare,
+                          Image,
+                          Zap,
+                          BookOpen,
+                          PenTool,
+                        ][idx] || Activity;
+                      return (
+                        <div
+                          key={d.id}
+                          className="bg-white p-3 rounded-xl border border-orange-100 shadow-sm h-full min-h-[78px] flex items-center justify-between gap-2"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-6 h-6 rounded-md bg-orange-50 border border-orange-200 flex items-center justify-center">
+                              <Icon className="w-3.5 h-3.5 text-orange-500" />
+                            </span>
+                            <p className="text-xs sm:text-sm font-black text-slate-500 tracking-wide truncate">
+                              {d.title}
+                            </p>
+                          </div>
+                          <p className="text-sm sm:text-base md:text-lg font-black text-slate-900 leading-none shrink-0">
+                            {d.display}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </section>
 
             {/* [02] 소견서 */}
-            <section className="bg-white rounded-2xl p-5 border border-orange-200 shadow-sm h-full">
-              <h3 className="text-lg font-black text-slate-900 border-l-4 border-orange-500 pl-3 mb-4 pb-2 border-b border-orange-100 uppercase tracking-wider">
-                {isRehabResult ? "02. 반복훈련 요약" : "02. 전문가 임상 소견"}
+            <section className="bg-white rounded-2xl p-4 md:p-6 border border-orange-200 shadow-sm h-full">
+              <h3 className="text-base sm:text-lg md:text-xl font-black text-slate-900 mb-4 uppercase tracking-wider flex items-center gap-2 leading-relaxed">
+                <span className="w-8 h-8 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center">
+                  <FileText className="w-4 h-4 text-orange-500" />
+                </span>
+                {isRehabResult ? "반복훈련 요약" : "전문가 임상 소견"}
               </h3>
 
-              <div className="bg-orange-50/40 border border-orange-200 rounded-xl p-4 space-y-3 impression-content">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div className="rounded-lg border border-orange-200 bg-white px-3 py-2">
-                    <p className="text-xs font-black text-slate-600">
-                      종합 해석
+              <div className="bg-orange-50/40 border border-orange-200 rounded-2xl p-4 md:p-5 space-y-4 impression-content">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="rounded-xl border border-orange-200 bg-white p-3 md:p-4 min-h-[48px]">
+                    <p className="text-xs md:text-sm font-black text-slate-500 tracking-wide">
+                      잘하고 있는 점
                     </p>
-                    <p className="text-sm font-black text-slate-800">
-                      {clinicalImpression?.aqText}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-emerald-200 bg-white px-3 py-2">
-                    <p className="text-xs font-black text-slate-600">
-                      상대적 강점
-                    </p>
-                    <p className="text-sm font-black text-emerald-600">
+                    <p className="mt-1 text-sm md:text-base font-bold text-slate-900 leading-loose">
                       {clinicalImpression?.strongestText}
                     </p>
                   </div>
-                  <div className="rounded-lg border border-sky-200 bg-white px-3 py-2">
-                    <p className="text-xs font-black text-slate-600">
-                      집중 중재 영역
+                  <div className="rounded-xl border border-orange-200 bg-white p-3 md:p-4 min-h-[48px]">
+                    <p className="text-xs md:text-sm font-black text-slate-500 tracking-wide">
+                      노력이 필요한 점
                     </p>
-                    <p className="text-sm font-black text-sky-700">
+                    <p className="mt-1 text-sm md:text-base font-bold text-orange-600 leading-loose">
                       {clinicalImpression?.weakestText}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-orange-200 bg-white p-3 md:p-4 min-h-[48px]">
+                    <p className="text-xs md:text-sm font-black text-slate-500 tracking-wide">
+                      오늘의 응원 권고
+                    </p>
+                    <p className="mt-1 text-sm md:text-base font-bold text-slate-900 leading-loose">
+                      {clinicalImpression?.encourageText}
                     </p>
                   </div>
                 </div>
 
-                <p className="text-base md:text-lg font-black text-slate-800 leading-relaxed whitespace-pre-line">
-                  {formattedClinicalImpression?.summary}
-                </p>
-                <p className="text-sm font-bold text-slate-600 leading-relaxed whitespace-pre-line">
-                  상대적 강점: {formattedClinicalImpression?.strength}
-                </p>
-                <p className="text-sm font-bold text-slate-600 leading-relaxed whitespace-pre-line">
-                  집중 훈련: {formattedClinicalImpression?.need}
-                </p>
-                <p className="text-sm font-bold text-slate-600 leading-relaxed whitespace-pre-line">
-                  훈련 권장사항: {formattedClinicalImpression?.recommendation}
-                </p>
+                <div className="space-y-3">
+                  <div className="rounded-xl bg-white border border-orange-200 p-3 md:p-4 flex items-start gap-2.5">
+                    <Sparkles className="w-4 h-4 text-orange-500 mt-1 shrink-0" />
+                    <p className="min-w-0 text-sm md:text-base font-semibold text-slate-800 leading-loose whitespace-pre-line break-words">
+                      {addSentenceLineBreaks(
+                        formattedClinicalImpression?.summary || "",
+                      )}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white border border-orange-200 p-3 md:p-4 flex items-start gap-2.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-1 shrink-0" />
+                    <p className="min-w-0 text-sm md:text-base font-semibold text-slate-700 leading-loose whitespace-pre-line break-words">
+                      {addSentenceLineBreaks(
+                        `잘하고 있는 점: ${formattedClinicalImpression?.strength || ""}`,
+                      )}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white border border-orange-200 p-3 md:p-4 flex items-start gap-2.5">
+                    <Activity className="w-4 h-4 text-orange-500 mt-1 shrink-0" />
+                    <p className="min-w-0 text-sm md:text-base font-semibold text-slate-700 leading-loose whitespace-pre-line break-words">
+                      {addSentenceLineBreaks(
+                        `노력이 필요한 점: ${formattedClinicalImpression?.need || ""}`,
+                      )}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white border border-orange-200 p-3 md:p-4 flex items-start gap-2.5">
+                    <HeartHandshake className="w-4 h-4 text-orange-500 mt-1 shrink-0" />
+                    <p className="min-w-0 text-sm md:text-base font-semibold text-slate-700 leading-loose whitespace-pre-line break-words">
+                      {addSentenceLineBreaks(
+                        `오늘의 응원 권고: ${formattedClinicalImpression?.recommendation || ""}`,
+                      )}
+                    </p>
+                  </div>
+                </div>
               </div>
             </section>
           </div>
 
           <section className="no-print bg-white rounded-2xl p-5 border border-orange-200 shadow-sm">
-            <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
-              <h3 className="text-lg font-black text-slate-900 border-l-4 border-orange-500 pl-3 uppercase tracking-wider">
-                이전 기록
-              </h3>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-bold text-slate-600">
-                  총 {previousHistory.length}건
-                </p>
-                <button
-                  onClick={() => setSelectedHistory(null)}
-                  className="px-2.5 py-1 rounded-lg border border-orange-200 bg-white text-xs font-black text-slate-700 hover:bg-orange-50"
-                >
-                  현재 기록 보기
-                </button>
-              </div>
-            </div>
-
-            {previousHistory.length === 0 ? (
-              <div className="h-20 rounded-xl border border-dashed border-orange-200 bg-orange-50/70 flex items-center justify-center text-sm font-bold text-slate-700">
-                비교할 이전 기록이 없습니다.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {pagedHistory.map((row) => (
-                    <button
-                      key={row.historyId}
-                      onClick={() => setSelectedHistory(row)}
-                      className={`text-left rounded-xl border p-3 space-y-2 transition-colors ${
-                        selectedHistory?.historyId === row.historyId
-                          ? "border-orange-300 bg-orange-50/50"
-                          : "border-slate-200 bg-slate-50 hover:bg-slate-100"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-black text-slate-700">
-                          {new Date(row.completedAt).toLocaleString("ko-KR")}
-                        </p>
-                        <p className="text-sm font-black text-slate-800">
-                          AQ {row.aq}
-                        </p>
-                      </div>
-                      <div className="grid grid-cols-3 gap-1 text-xs font-bold text-slate-500">
-                        <span>청각 {row.stepScores.step1}%</span>
-                        <span>따라말 {row.stepScores.step2}%</span>
-                        <span>매칭 {row.stepScores.step3}%</span>
-                        <span>유창 {row.stepScores.step4}%</span>
-                        <span>읽기 {row.stepScores.step5}%</span>
-                        <span>쓰기 {row.stepScores.step6}%</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-
-                {previousHistory.length > HISTORY_PAGE_SIZE && (
-                  <div className="flex items-center justify-center gap-1.5 pt-1">
-                    <button
-                      onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
-                      disabled={historyPage === 1}
-                      className="px-2 py-1 rounded-md border border-slate-200 text-xs font-black text-slate-600 disabled:opacity-40"
-                    >
-                      이전
-                    </button>
-                    {Array.from({ length: historyTotalPages }).map((_, i) => {
-                      const page = i + 1;
-                      return (
-                        <button
-                          key={`history-page-${page}`}
-                          onClick={() => setHistoryPage(page)}
-                          className={`w-7 h-7 rounded-md text-xs font-black border ${
-                            historyPage === page
-                              ? "bg-slate-900 text-white border-slate-900"
-                              : "bg-white text-slate-600 border-slate-200"
-                          }`}
-                        >
-                          {page}
-                        </button>
-                      );
-                    })}
-                    <button
-                      onClick={() =>
-                        setHistoryPage((p) =>
-                          Math.min(historyTotalPages, p + 1),
-                        )
-                      }
-                      disabled={historyPage === historyTotalPages}
-                      className="px-2 py-1 rounded-md border border-slate-200 text-xs font-black text-slate-600 disabled:opacity-40"
-                    >
-                      다음
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
-
-          <section className="print-only bg-white rounded-2xl p-5 border border-orange-200 shadow-sm print-history-list">
-            <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
-              <h3 className="text-lg font-black text-slate-900 border-l-4 border-orange-500 pl-3 uppercase tracking-wider">
-                03. 이전 기록 진단 리스트
-              </h3>
-              <p className="text-sm font-bold text-slate-600">
-                총 {previousHistory.length}건
-              </p>
-            </div>
-
-            {previousHistory.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-200 p-3 text-sm font-bold text-slate-600">
-                이전 기록 없음
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {previousHistory.slice(0, 4).map((row, index) => (
-                  <div
-                    key={`print-history-${row.historyId}`}
-                    className="history-row rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
-                  >
-                    <div className="flex items-center justify-between text-sm font-black text-slate-700">
-                      <span>
-                        {index + 1}.{" "}
-                        {new Date(row.completedAt).toLocaleDateString("ko-KR")}
-                      </span>
-                      <span className="text-slate-800">AQ {row.aq}</span>
-                    </div>
-                    <p className="mt-1 text-xs font-bold text-slate-500">
-                      중증도: {aqSeverityLabel(row.aq)} · 청각{" "}
-                      {row.stepScores.step1}% · 따라말
-                      {row.stepScores.step2}% · 매칭 {row.stepScores.step3}% ·
-                      유창 {row.stepScores.step4}% · 읽기 {row.stepScores.step5}
-                      % · 쓰기 {row.stepScores.step6}%
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          {selectedHistory && (
-            <section className="no-print bg-white rounded-2xl p-5 border border-orange-200 shadow-sm">
-              <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
-                <div className="space-y-1">
-                  <h3 className="text-lg font-black text-slate-900 border-l-4 border-orange-500 pl-3 uppercase tracking-wider">
-                    이전 기록 상세
-                  </h3>
-                  <p className="text-xs font-bold text-slate-600">
-                    {new Date(selectedHistory.completedAt).toLocaleString(
-                      "ko-KR",
-                    )}{" "}
-                    · AQ {selectedHistory.aq}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {stepDetails.map((step) => {
-                  const key =
-                    `step${step.id}` as keyof TrainingHistoryEntry["stepDetails"];
-                  const items = selectedHistory.stepDetails?.[key] || [];
-                  const isOpen = openAllAccordions || openStepId === step.id;
-                  return (
-                    <div
-                      key={`history-${selectedHistory.historyId}-${step.id}`}
-                      className="bg-slate-50/50 rounded-xl border border-slate-100 overflow-hidden"
-                    >
-                      <button
-                        onClick={() => {
-                          if (openAllAccordions) {
-                            setOpenAllAccordions(false);
-                            setOpenStepId(step.id);
-                            return;
-                          }
-                          setOpenStepId(isOpen ? null : step.id);
-                        }}
-                        className="w-full px-4 py-3 bg-white flex items-center justify-between text-left border-b border-slate-100"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full uppercase tracking-widest">
-                            Step 0{step.id}
-                          </span>
-                          <span className="text-xs font-black text-slate-800">
-                            {step.title}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs font-black text-slate-600">
-                            {items.length} Activities
-                          </span>
-                          <span className="text-slate-600 text-xs font-black">
-                            {isOpen ? "▲" : "▼"}
-                          </span>
-                        </div>
-                      </button>
-
-                      {isOpen && (
-                        <div
-                          className={`grid gap-2 p-3 ${
-                            items.length === 3
-                              ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3"
-                              : "grid-cols-1 sm:grid-cols-2 md:grid-cols-5"
-                          }`}
-                        >
-                          {items.length === 0 ? (
-                            <div className="col-span-full h-20 flex items-center justify-center italic text-xs text-slate-300 font-bold border border-dashed border-slate-200 rounded-xl">
-                              No Data Recorded
-                            </div>
-                          ) : (
-                            items.map((it: any, i: number) => (
-                              <div
-                                key={i}
-                                className="group bg-white p-3 rounded-lg border border-slate-200/60 shadow-sm hover:border-orange-200 transition-all"
-                              >
-                                <div className="flex justify-between items-center mb-2">
-                                  <span className="text-xs font-black text-slate-300 uppercase">
-                                    Index {i + 1}
-                                  </span>
-                                  <div
-                                    className={`px-1.5 py-0.5 rounded text-[8px] font-black ${it.isCorrect ? "bg-emerald-50 text-emerald-500" : "bg-orange-50 text-orange-700"}`}
-                                  >
-                                    {it.isCorrect ? "CORRECT" : "REVIEW"}
-                                  </div>
-                                </div>
-
-                                {step.id === 6 && it.userImage && (
-                                  <div className="aspect-video bg-slate-50 rounded-md mb-2 overflow-hidden border border-slate-100 flex items-center justify-center">
-                                    <img
-                                      src={it.userImage}
-                                      className="max-h-full max-w-full object-contain p-2"
-                                      alt="history-training-result"
-                                    />
-                                  </div>
-                                )}
-
-                                <p className="text-xs font-bold text-slate-600 leading-snug mb-2">
-                                  "
-                                  {it.text ||
-                                    it.targetText ||
-                                    it.targetWord ||
-                                    "..."}
-                                  "
-                                </p>
-
-                                {shouldShowPlayButton(step.id, it) && (
-                                  <button
-                                    onClick={() => {
-                                      const id = `h-${selectedHistory.historyId}-s${step.id}-${i}`;
-                                      if (it.audioUrl) {
-                                        playAudio(it.audioUrl, id);
-                                      } else {
-                                        playSpeechFallback(getPlayableText(it), id);
-                                      }
-                                    }}
-                                    className={`w-full py-1.5 rounded-md text-xs font-black flex items-center justify-center gap-2 transition-all ${playingIndex === `h-${selectedHistory.historyId}-s${step.id}-${i}` ? "bg-slate-900 text-white shadow-sm" : "bg-slate-50 text-slate-600 group-hover:bg-orange-50 group-hover:text-slate-900"}`}
-                                  >
-                                    {playingIndex ===
-                                    `h-${selectedHistory.historyId}-s${step.id}-${i}` ? (
-                                      <>
-                                        <span>■</span> STOP SOUND
-                                      </>
-                                    ) : (
-                                      <>
-                                        <span>▶</span> PLAY SOUND
-                                      </>
-                                    )}
-                                  </button>
-                                )}
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-
-          <section className="no-print bg-white rounded-2xl p-5 border border-orange-200 shadow-sm">
             <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
               <div className="space-y-1">
-                <h3 className="text-lg font-black text-slate-900 border-l-4 border-orange-500 pl-3 uppercase tracking-wider">
-                  03. 수행 기록 상세
+                <h3 className="text-base sm:text-lg md:text-xl font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-8 h-8 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center">
+                    <FileText className="w-4 h-4 text-orange-500" />
+                  </span>
+                  수행 기록 상세
                 </h3>
-                <p className="text-xs font-bold text-slate-600">
+                <p className="text-sm font-bold text-slate-600">
                   단계별 항목을 펼쳐 상세 기록을 확인하세요.
                 </p>
               </div>
@@ -1548,11 +1577,13 @@ function ResultContent() {
                             No Data Recorded
                           </div>
                         ) : (
-                          items.map((it: any, i: number) => (
-                            <div
-                              key={i}
-                              className="group bg-white p-3 rounded-lg border border-slate-200/60 shadow-sm hover:border-orange-200 transition-all"
-                            >
+                          items.map((it: any, i: number) => {
+                            const feedback = getSelfItemFeedback(step.id, it);
+                            return (
+                              <div
+                                key={i}
+                                className="group h-full bg-white p-3 rounded-lg border border-slate-200/60 shadow-sm hover:border-orange-200 transition-all flex flex-col"
+                              >
                               <div className="flex justify-between items-center mb-2">
                                 <span className="text-xs font-black text-slate-300 uppercase">
                                   Index {i + 1}
@@ -1583,6 +1614,27 @@ function ResultContent() {
                                 "
                               </p>
 
+                              {(feedback.good || feedback.improve) && (
+                                <div className="mt-1 pt-2 border-t border-slate-100 space-y-1 mb-2">
+                                  {feedback.good && (
+                                    <p className="text-[11px] font-semibold text-slate-600 leading-relaxed">
+                                      <span className="text-orange-600">
+                                        좋았던 점:
+                                      </span>{" "}
+                                      {feedback.good}
+                                    </p>
+                                  )}
+                                  {feedback.improve && (
+                                    <p className="text-[11px] font-semibold text-slate-500 leading-relaxed">
+                                      <span className="text-slate-700">
+                                        개선점:
+                                      </span>{" "}
+                                      {feedback.improve}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+
                               {shouldShowPlayButton(step.id, it) && (
                                 <button
                                   onClick={() => {
@@ -1590,10 +1642,13 @@ function ResultContent() {
                                     if (it.audioUrl) {
                                       playAudio(it.audioUrl, id);
                                     } else {
-                                      playSpeechFallback(getPlayableText(it), id);
+                                      playSpeechFallback(
+                                        getPlayableText(it),
+                                        id,
+                                      );
                                     }
                                   }}
-                                  className={`w-full py-1.5 rounded-md text-xs font-black flex items-center justify-center gap-2 transition-all ${playingIndex === `s${step.id}-${i}` ? "bg-slate-900 text-white shadow-sm" : "bg-slate-50 text-slate-600 group-hover:bg-orange-50 group-hover:text-slate-900"}`}
+                                  className={`mt-auto w-full py-1.5 rounded-md text-xs font-black flex items-center justify-center gap-2 transition-all ${playingIndex === `s${step.id}-${i}` ? "bg-orange-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 group-hover:bg-orange-50 group-hover:text-slate-900"}`}
                                 >
                                   {playingIndex === `s${step.id}-${i}` ? (
                                     <>
@@ -1606,8 +1661,9 @@ function ResultContent() {
                                   )}
                                 </button>
                               )}
-                            </div>
-                          ))
+                              </div>
+                            );
+                          })
                         )}
                       </div>
                     )}
@@ -1616,88 +1672,137 @@ function ResultContent() {
               })}
             </div>
           </section>
-        {facialReport && (
-          <>
-        <section className="no-print bg-white rounded-2xl p-4 border border-orange-200 shadow-sm">
-            <h3 className="text-base font-black text-slate-900 border-l-4 border-orange-500 pl-3 mb-3">
-              안면 기반 자-모음 정확도
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-              <div className="rounded-xl border border-orange-200 bg-orange-50 px-3 py-2">
-                <p className="text-xs font-black text-slate-600">전체 자음</p>
-                <p className="text-xl font-black text-slate-900">
-                  {Math.round(facialReport.overallConsonant)}%
-                </p>
-              </div>
-              <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2">
-                <p className="text-xs font-black text-slate-600">전체 모음</p>
-                <p className="text-xl font-black text-slate-900">
-                  {Math.round(facialReport.overallVowel)}%
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-xs font-black text-slate-600">Step2</p>
-                <p className="text-base font-black text-slate-900">
-                  자 {Math.round(facialReport.step2Consonant)}% · 모{" "}
-                  {Math.round(facialReport.step2Vowel)}%
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-xs font-black text-slate-600">Step4</p>
-                <p className="text-base font-black text-slate-900">
-                  자 {Math.round(facialReport.step4Consonant)}% · 모{" "}
-                  {Math.round(facialReport.step4Vowel)}%
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-xs font-black text-slate-600">Step5</p>
-                <p className="text-base font-black text-slate-900">
-                  자 {Math.round(facialReport.step5Consonant)}% · 모{" "}
-                  {Math.round(facialReport.step5Vowel)}%
-                </p>
-              </div>
-            </div>
-          </section>
 
-          <section className="no-print bg-white rounded-2xl p-4 border border-orange-200 shadow-sm">
-            <h3 className="text-base font-black text-slate-900 border-l-4 border-slate-900 pl-3 mb-3">
-              안면 비대칭 위험도 분류 (스크리닝)
-            </h3>
-            <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center">
-                <p className="text-xs font-black text-emerald-700">위험도</p>
-                <p className="text-4xl font-black text-emerald-700 mt-1">
-                  {facialReport.riskLabel}
-                </p>
-                <p className="text-2xl font-black text-emerald-700 mt-1">
-                  {Math.round(facialReport.asymmetryRisk)} / 100
-                </p>
+          {facialReport && (
+            <section className="no-print bg-white rounded-[32px] p-5 md:p-6 border border-slate-100 shadow-sm">
+              <h3 className="text-base sm:text-lg md:text-xl font-black text-slate-900 mb-5 uppercase tracking-wider flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-orange-50 border border-slate-100 flex items-center justify-center">
+                  <ScanFace className="w-4 h-4 text-orange-500" />
+                </span>
+                AI 정밀 분석
+              </h3>
+              <div className="grid grid-cols-12 gap-4 md:gap-5">
+                <div className="col-span-12 md:col-span-6 rounded-2xl border border-slate-100 bg-white p-4 md:p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-sm md:text-base font-black text-slate-800">
+                      안면 기반 자-모음 정확도
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-black text-amber-700">
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        자음
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-black text-indigo-700">
+                        <BookOpen className="w-3.5 h-3.5" />
+                        모음
+                      </span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-12 gap-3 md:gap-4">
+                    <div className="col-span-12 sm:col-span-6 rounded-xl border border-slate-100 bg-slate-50/50 p-3 md:p-4">
+                      <p className="text-xs text-slate-500 font-bold">
+                        전체 자음
+                      </p>
+                      <p className="mt-1 text-2xl md:text-3xl font-black text-amber-600 leading-none">
+                        {Math.round(facialReport.overallConsonant)}%
+                      </p>
+                    </div>
+                    <div className="col-span-12 sm:col-span-6 rounded-xl border border-slate-100 bg-slate-50/50 p-3 md:p-4">
+                      <p className="text-xs text-slate-500 font-bold">
+                        전체 모음
+                      </p>
+                      <p className="mt-1 text-2xl md:text-3xl font-black text-indigo-600 leading-none">
+                        {Math.round(facialReport.overallVowel)}%
+                      </p>
+                    </div>
+                    <div className="col-span-6 md:col-span-4 rounded-xl border border-slate-100 p-3">
+                      <p className="text-[11px] text-slate-500 font-bold">
+                        STEP 2
+                      </p>
+                      <p className="mt-1 text-xs sm:text-sm font-black text-slate-900">
+                        자 {Math.round(facialReport.step2Consonant)}% · 모{" "}
+                        {Math.round(facialReport.step2Vowel)}%
+                      </p>
+                    </div>
+                    <div className="col-span-6 md:col-span-4 rounded-xl border border-slate-100 p-3">
+                      <p className="text-[11px] text-slate-500 font-bold">
+                        STEP 4
+                      </p>
+                      <p className="mt-1 text-xs sm:text-sm font-black text-slate-900">
+                        자 {Math.round(facialReport.step4Consonant)}% · 모{" "}
+                        {Math.round(facialReport.step4Vowel)}%
+                      </p>
+                    </div>
+                    <div className="col-span-12 md:col-span-4 rounded-xl border border-slate-100 p-3">
+                      <p className="text-[11px] text-slate-500 font-bold">
+                        STEP 5
+                      </p>
+                      <p className="mt-1 text-xs sm:text-sm font-black text-slate-900">
+                        자 {Math.round(facialReport.step5Consonant)}% · 모{" "}
+                        {Math.round(facialReport.step5Vowel)}%
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="col-span-12 md:col-span-6 rounded-2xl border border-slate-100 bg-white p-4 md:p-5 min-h-[250px]">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-sm md:text-base font-black text-slate-800">
+                      안면 비대칭 위험도
+                    </p>
+                    <span className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
+                      <ScanFace className="w-4 h-4 text-slate-700" />
+                    </span>
+                  </div>
+                  <div className="mt-4">
+                    <p
+                      className={`text-2xl md:text-3xl font-black leading-none ${
+                        facialReport.asymmetryRisk >= 70
+                          ? "text-red-600"
+                          : facialReport.asymmetryRisk >= 40
+                            ? "text-amber-600"
+                            : "text-emerald-600"
+                      }`}
+                    >
+                      {facialReport.riskLabel}
+                    </p>
+                    <p className="mt-1 text-base font-black text-slate-900">
+                      {Math.round(facialReport.asymmetryRisk)} / 100
+                    </p>
+                  </div>
+                  <div className="mt-4 grid grid-cols-12 gap-2.5">
+                    <div className="col-span-6 rounded-xl border border-slate-100 bg-slate-50/50 p-2.5">
+                      <p className="text-[11px] font-bold text-slate-500">
+                        비대칭
+                      </p>
+                      <p className="text-sm font-black text-slate-900">
+                        {Math.round(facialReport.asymmetryRisk)}
+                      </p>
+                    </div>
+                    <div className="col-span-6 rounded-xl border border-slate-100 bg-slate-50/50 p-2.5">
+                      <p className="text-[11px] font-bold text-slate-500">
+                        불균형
+                      </p>
+                      <p className="text-sm font-black text-slate-900">
+                        {facialReport.articulationGap.toFixed(1)}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-4 text-xs sm:text-sm font-bold text-slate-600 leading-relaxed whitespace-pre-line break-words">
+                    {facialReport.summary}
+                  </p>
+                  <p className="mt-3 text-[11px] sm:text-xs font-bold text-slate-500">
+                    변화:{" "}
+                    {facialReport.asymmetryDelta === null
+                      ? "이전 데이터 없음"
+                      : `${facialReport.asymmetryDelta > 0 ? "+" : ""}${facialReport.asymmetryDelta.toFixed(1)}%p`}
+                  </p>
+                </div>
+
               </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 space-y-2">
-                <p className="text-xs font-black text-slate-800">
-                  본 결과는 진단이 아닌 위험도 분류(스크리닝)입니다.
-                </p>
-                <p className="text-sm font-bold text-slate-700">
-                  {facialReport.summary}
-                </p>
-                <p className="text-sm font-black text-slate-700">
-                  비대칭 신호 {Math.round(facialReport.asymmetryRisk)} · 자모음 불균형{" "}
-                  {facialReport.articulationGap.toFixed(1)}
-                </p>
-                <p className="text-sm font-black text-slate-700">
-                  골든 페이스 타임라인 변화:{" "}
-                  {facialReport.asymmetryDelta === null
-                    ? "이전 데이터 없음"
-                    : `${facialReport.asymmetryDelta > 0 ? "+" : ""}${facialReport.asymmetryDelta.toFixed(1)}%p`}
-                </p>
-              </div>
-            </div>
-          </section>
-          </>
+            </section>
           )}
-
-          
-</main>
+        </main>
       </div>
     </>
   );

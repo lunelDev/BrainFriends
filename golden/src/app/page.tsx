@@ -48,7 +48,7 @@ export default function HomePage() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const diffMs = today.getTime() - onset.getTime();
-    return diffMs < 0 ? 0 : Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    return diffMs < 0 ? 0 : Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
   };
 
   const getTodayLocalDate = () => {

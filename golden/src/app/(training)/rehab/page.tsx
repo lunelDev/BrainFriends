@@ -112,7 +112,7 @@ export default function RehabPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden bg-[#FDFCFB] min-h-screen font-[Pretendard]">
+    <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden bg-[#FDFCFB] min-h-screen">
       <div className="px-4 sm:px-6 py-3 border-b border-sky-100 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 bg-white/90 backdrop-blur-md shrink-0 sticky top-0 z-50">
         <div className="flex items-center gap-3 sm:gap-5 min-w-0">
           <img
@@ -152,7 +152,7 @@ export default function RehabPage() {
           </button>
           <button
             type="button"
-            onClick={() => router.push("/report")}
+            onClick={() => router.push("/report?mode=rehab&from=rehab")}
             className="h-8 sm:h-9 min-w-[90px] sm:min-w-[98px] px-3 sm:px-4 rounded-full text-[11px] sm:text-xs font-black shadow-sm border bg-[#0B1A3A] text-white border-[#0B1A3A] hover:bg-[#09152f] transition-all"
           >
             리포트 보기

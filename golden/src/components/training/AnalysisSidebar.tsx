@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTraining } from "../../app/(training)/TrainingContext";
 

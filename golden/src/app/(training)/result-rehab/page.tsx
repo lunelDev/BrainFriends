@@ -37,7 +37,7 @@ function ResultRehabPage() {
     if (!patient) return;
     try {
       const sm = new SessionManager(patient as any, place);
-      sm.finalizeSessionAndSaveHistory("rehab");
+      sm.finalizeSessionAndSaveHistory("rehab", safeStep);
     } catch (e) {
       console.error("[result-rehab] finalize failed:", e);
     }
@@ -51,14 +51,20 @@ function ResultRehabPage() {
       console.error("[result-rehab] load history failed:", e);
       setHistoryRows([]);
     }
-  }, [patient, place]);
+  }, [patient, place, safeStep]);
 
   const stepRows = useMemo(() => {
     return historyRows.filter((row) => {
+      if (
+        Number.isFinite(Number(row.rehabStep)) &&
+        Number(row.rehabStep) !== safeStep
+      ) {
+        return false;
+      }
       const details = row.stepDetails?.[detailKey];
       return Array.isArray(details) && details.length > 0;
     });
-  }, [detailKey, historyRows]);
+  }, [detailKey, historyRows, safeStep]);
 
   const previousStepRow = stepRows.length > 1 ? stepRows[1] : null;
   const latestStepRow = stepRows.length ? stepRows[0] : null;
@@ -344,7 +350,7 @@ function ResultRehabPage() {
               {stepResultCards.map((item) => (
                 <div
                   key={`step-result-${item.index}`}
-                  className="group bg-white p-3 rounded-lg border border-slate-200 shadow-sm"
+                  className="group h-full bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex flex-col"
                 >
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs font-black text-slate-300 uppercase">
@@ -401,7 +407,7 @@ function ResultRehabPage() {
                         }
                         playSpeechFallback(item.text, id);
                       }}
-                      className={`mt-2 w-full py-1.5 rounded-md text-xs font-black flex items-center justify-center gap-2 transition-all ${
+                      className={`mt-auto w-full py-1.5 rounded-md text-xs font-black flex items-center justify-center gap-2 transition-all ${
                         playingIndex === `step2-${item.index}`
                           ? "bg-slate-900 text-white"
                           : "bg-slate-50 text-slate-600 group-hover:bg-sky-50 group-hover:text-slate-900"

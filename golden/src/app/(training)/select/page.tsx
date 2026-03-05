@@ -157,7 +157,7 @@ export default function SelectPage() {
           <button
             type="button"
             onClick={() => router.push("/rehab")}
-            className="h-8 sm:h-9 min-w-[90px] sm:min-w-[98px] px-3 sm:px-4 rounded-full text-[11px] sm:text-xs font-black shadow-sm border bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100 transition-all"
+            className="h-8 sm:h-9 min-w-[90px] sm:min-w-[98px] px-3 sm:px-4 rounded-full text-[11px] sm:text-xs font-black shadow-sm border bg-gradient-to-r from-orange-600 to-orange-500 text-white border-orange-500 hover:from-orange-700 hover:to-orange-600 transition-all"
           >
             언어재활
           </button>

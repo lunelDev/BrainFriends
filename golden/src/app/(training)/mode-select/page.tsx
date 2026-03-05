@@ -39,7 +39,7 @@ export default function ModeSelectPage() {
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col bg-slate-50 min-h-screen font-[Pretendard]">
+    <div className="flex-1 flex flex-col bg-slate-50 min-h-screen">
       <div className="px-4 sm:px-6 py-3 border-b border-orange-100 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 bg-white/90 backdrop-blur-md shrink-0 sticky top-0 z-50">
         <div className="flex items-center gap-3 sm:gap-5 min-w-0">
           <img
@@ -58,7 +58,7 @@ export default function ModeSelectPage() {
               </span>
             </h2>
             <span
-              className={`justify-self-start inline-flex px-2.5 sm:px-3 py-1 rounded-full text-[10px] sm:text-[11px] font-black shadow-sm border ${
+              className={`mt-1 justify-self-start inline-flex px-2 sm:px-2.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black shadow-sm border whitespace-nowrap ${
                 ageGroup === "Senior"
                   ? "bg-orange-50 text-orange-700 border-orange-200"
                   : "bg-slate-50 text-slate-700 border-slate-200"
