@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { SessionManager } from "@/lib/kwab/SessionManager";
@@ -12,6 +12,9 @@ import {
   BookOpen,
   PenTool,
   ChevronRight,
+  ChevronDown,
+  Check,
+  MapPin,
 } from "lucide-react";
 
 const PLACE_OPTIONS = [
@@ -92,9 +95,22 @@ export default function RehabPage() {
   const [isMounted, setIsMounted] = useState(false);
   const [place, setPlace] =
     useState<(typeof PLACE_OPTIONS)[number]["key"]>("home");
+  const [isPlaceOpen, setIsPlaceOpen] = useState(false);
+  const placeDropdownRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    const onOutsideClick = (event: MouseEvent) => {
+      if (!placeDropdownRef.current) return;
+      if (!placeDropdownRef.current.contains(event.target as Node)) {
+        setIsPlaceOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onOutsideClick);
+    return () => document.removeEventListener("mousedown", onOutsideClick);
   }, []);
 
   const selectedPlace = useMemo(
@@ -106,13 +122,16 @@ export default function RehabPage() {
     if (patient) {
       SessionManager.clearSessionFor(patient as any, selectedPlace.key);
     }
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("btt.trainingMode", "rehab");
+    }
     router.push(
       `${route}?place=${encodeURIComponent(selectedPlace.key)}&trainMode=rehab&targetStep=${route.replace("/step-", "")}`,
     );
   };
 
   return (
-    <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden bg-[#FDFCFB] min-h-screen">
+    <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden bg-[#ffffff] min-h-screen">
       <div className="px-4 sm:px-6 py-3 border-b border-sky-100 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 bg-white/90 backdrop-blur-md shrink-0 sticky top-0 z-50">
         <div className="flex items-center gap-3 sm:gap-5 min-w-0">
           <img
@@ -177,21 +196,47 @@ export default function RehabPage() {
               부족한 영역을 집중 훈련하세요.
             </p>
           </div>
-          <div className="bg-white p-2 rounded-2xl shadow-sm border border-sky-100 flex items-center gap-2">
-            <span className="text-[11px] font-black text-slate-500 px-2">
-              장소
-            </span>
-            <select
-              value={place}
-              onChange={(e) => setPlace(e.target.value as typeof place)}
-              className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-700"
+          <div ref={placeDropdownRef} className="relative self-start md:self-end">
+            <button
+              type="button"
+              onClick={() => setIsPlaceOpen((prev) => !prev)}
+              className="h-10 px-3.5 rounded-full bg-slate-100/70 text-slate-700 hover:bg-slate-200/70 transition-colors inline-flex items-center gap-2 text-sm font-bold"
+              aria-expanded={isPlaceOpen}
+              aria-haspopup="listbox"
             >
-              {PLACE_OPTIONS.map((opt) => (
-                <option key={opt.key} value={opt.key}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+              <MapPin className="w-4 h-4 text-slate-500" />
+              <span>{selectedPlace.label}</span>
+              <ChevronDown
+                className={`w-4 h-4 text-slate-500 transition-transform ${isPlaceOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            {isPlaceOpen && (
+              <div className="absolute right-0 top-11 w-40 rounded-xl bg-white shadow-lg p-1.5 z-20">
+                {PLACE_OPTIONS.map((opt) => {
+                  const active = opt.key === place;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => {
+                        setPlace(opt.key);
+                        setIsPlaceOpen(false);
+                      }}
+                      className={`w-full h-9 px-2.5 rounded-lg text-left text-sm font-bold inline-flex items-center justify-between transition-colors ${
+                        active
+                          ? "bg-sky-50 text-sky-700"
+                          : "text-slate-700 hover:bg-slate-50"
+                      }`}
+                      role="option"
+                      aria-selected={active}
+                    >
+                      <span>{opt.label}</span>
+                      {active && <Check className="w-3.5 h-3.5" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </section>
 

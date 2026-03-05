@@ -67,6 +67,9 @@ export default function SelectPage() {
 
   useEffect(() => {
     setIsMounted(true);
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("btt.trainingMode", "self");
+    }
   }, []);
 
   const getStartPath = (place: string) =>

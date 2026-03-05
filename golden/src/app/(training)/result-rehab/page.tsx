@@ -16,6 +16,7 @@ import {
   buildTrendRows,
   countImprovedMetrics,
 } from "@/lib/results/rehab/adapters";
+import { Activity, FileText, ScanFace, TrendingUp } from "lucide-react";
 
 function ResultRehabPage() {
   const router = useRouter();
@@ -159,9 +160,7 @@ function ResultRehabPage() {
               <p className="text-xs font-black uppercase tracking-widest text-sky-500">
                 Report
               </p>
-              <h1 className="text-lg font-black">
-                반복훈련 결과 리포트
-              </h1>
+              <h1 className="text-lg font-black">반복훈련 결과 리포트</h1>
             </div>
           </div>
           <button
@@ -204,7 +203,7 @@ function ResultRehabPage() {
             Step {safeStep} · {REHAB_STEP_LABELS[safeStep]}
           </p>
           <h2 className="text-xl sm:text-2xl font-black mt-1">
-            이번 점수 {currentScore.toFixed(1)}점
+            재활 점수 {currentScore.toFixed(1)}점
           </h2>
           <p className="text-xs sm:text-sm opacity-90 mt-2">
             이전 동일 훈련 기록과 비교해 변화량을 확인하세요.
@@ -246,8 +245,13 @@ function ResultRehabPage() {
 
         <section className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm sm:text-base font-black text-slate-900">
-              {safeStep === 6 ? "이번 쓰기 결과 요약" : "이번 훈련 세부 항목 비교"}
+            <h3 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+              <span className="w-8 h-8 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center">
+                <Activity className="w-4 h-4 text-sky-600" />
+              </span>
+              {safeStep === 6
+                ? "이번 쓰기 결과 요약"
+                : "이번 훈련 세부 항목 비교"}
             </h3>
             <span className="text-[11px] font-bold text-slate-500">
               개선 항목 {improvedCount}개
@@ -260,66 +264,72 @@ function ResultRehabPage() {
           ) : (
             <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-slate-100 px-2.5 py-2.5">
               <div className="flex flex-wrap items-center gap-2 text-xs leading-relaxed">
-              {detailComparisons.map((metric) => {
-                const hasPrevious = metric.previous !== null;
-                const diff =
-                  hasPrevious && metric.current !== null
-                    ? Number(
-                        (metric.current - (metric.previous as number)).toFixed(
-                          1,
-                        ),
-                      )
-                    : null;
-                const improved =
-                  diff === null
-                    ? false
-                    : metric.higherBetter
-                      ? diff > 0
-                      : diff < 0;
-                const isConsonant = metric.key.includes("consonant");
-                const isVowel = metric.key.includes("vowel");
-                const isSymmetry = metric.key.includes("symmetry");
-                const isSpeed = metric.key.includes("reaction") || metric.key.includes("readingTime") || metric.key.includes("duration") || metric.key.includes("silence");
-                const dotColor = isConsonant || isVowel || isSymmetry || isSpeed
-                  ? "bg-sky-400"
-                  : "bg-slate-400";
-                const borderColor = isConsonant || isVowel || isSymmetry || isSpeed
-                  ? "border-sky-200"
-                  : "border-slate-200";
-                return (
-                  <span
-                    key={metric.key}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-white border ${borderColor} text-slate-600 shadow-sm`}
-                  >
-                    <i className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
-                    <span className="font-semibold">{metric.label}</span>
-                    <b className="text-slate-900">
-                      {metric.current === null
-                        ? "측정 없음"
-                        : `${metric.current.toFixed(1)}${metric.unit}`}
-                    </b>
-                    <span className="text-slate-400">/</span>
-                    <span className="font-semibold text-slate-500">
-                      {hasPrevious
-                        ? `이전 ${metric.previous?.toFixed(1)}${metric.unit}`
-                        : "이전 없음"}
-                    </span>
-                    <b
-                      className={`${
-                        diff === null
-                          ? "text-slate-500"
-                          : improved
-                            ? "text-sky-600"
-                            : "text-sky-600"
-                      }`}
+                {detailComparisons.map((metric) => {
+                  const hasPrevious = metric.previous !== null;
+                  const diff =
+                    hasPrevious && metric.current !== null
+                      ? Number(
+                          (
+                            metric.current - (metric.previous as number)
+                          ).toFixed(1),
+                        )
+                      : null;
+                  const improved =
+                    diff === null
+                      ? false
+                      : metric.higherBetter
+                        ? diff > 0
+                        : diff < 0;
+                  const isConsonant = metric.key.includes("consonant");
+                  const isVowel = metric.key.includes("vowel");
+                  const isSymmetry = metric.key.includes("symmetry");
+                  const isSpeed =
+                    metric.key.includes("reaction") ||
+                    metric.key.includes("readingTime") ||
+                    metric.key.includes("duration") ||
+                    metric.key.includes("silence");
+                  const dotColor =
+                    isConsonant || isVowel || isSymmetry || isSpeed
+                      ? "bg-sky-400"
+                      : "bg-slate-400";
+                  const borderColor =
+                    isConsonant || isVowel || isSymmetry || isSpeed
+                      ? "border-sky-200"
+                      : "border-slate-200";
+                  return (
+                    <span
+                      key={metric.key}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-white border ${borderColor} text-slate-600 shadow-sm`}
                     >
-                      {diff === null
-                        ? "-"
-                        : `${diff > 0 ? "+" : ""}${diff.toFixed(1)}${metric.unit}`}
-                    </b>
-                  </span>
-                );
-              })}
+                      <i className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
+                      <span className="font-semibold">{metric.label}</span>
+                      <b className="text-slate-900">
+                        {metric.current === null
+                          ? "측정 없음"
+                          : `${metric.current.toFixed(1)}${metric.unit}`}
+                      </b>
+                      <span className="text-slate-400">/</span>
+                      <span className="font-semibold text-slate-500">
+                        {hasPrevious
+                          ? `이전 ${metric.previous?.toFixed(1)}${metric.unit}`
+                          : "이전 없음"}
+                      </span>
+                      <b
+                        className={`${
+                          diff === null
+                            ? "text-slate-500"
+                            : improved
+                              ? "text-sky-600"
+                              : "text-sky-600"
+                        }`}
+                      >
+                        {diff === null
+                          ? "-"
+                          : `${diff > 0 ? "+" : ""}${diff.toFixed(1)}${metric.unit}`}
+                      </b>
+                    </span>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -327,7 +337,10 @@ function ResultRehabPage() {
 
         <section className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5">
           <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-3">
-            <h3 className="text-sm sm:text-base font-black text-slate-900">
+            <h3 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+              <span className="w-8 h-8 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center">
+                <FileText className="w-4 h-4 text-sky-600" />
+              </span>
               수행 기록 상세
             </h3>
             <span className="text-[11px] font-bold text-slate-500">
@@ -360,7 +373,7 @@ function ResultRehabPage() {
                       className={`px-1.5 py-0.5 rounded text-[8px] font-black ${
                         item.isCorrect
                           ? "bg-emerald-50 text-emerald-500"
-                          : "bg-orange-50 text-orange-700"
+                          : "bg-sky-50 text-sky-700"
                       }`}
                     >
                       {item.isCorrect ? "CORRECT" : "REVIEW"}
@@ -382,12 +395,14 @@ function ResultRehabPage() {
                     <div className="mt-2 pt-2 border-t border-slate-100 space-y-1">
                       {item.feedbackGood && (
                         <p className="text-[11px] font-semibold text-slate-600 leading-relaxed">
-                          <span className="text-sky-600">좋았던 점:</span> {item.feedbackGood}
+                          <span className="text-sky-600">좋았던 점:</span>{" "}
+                          {item.feedbackGood}
                         </p>
                       )}
                       {item.feedbackImprove && (
                         <p className="text-[11px] font-semibold text-slate-500 leading-relaxed">
-                          <span className="text-slate-700">개선점:</span> {item.feedbackImprove}
+                          <span className="text-slate-700">개선점:</span>{" "}
+                          {item.feedbackImprove}
                         </p>
                       )}
                     </div>
@@ -433,7 +448,10 @@ function ResultRehabPage() {
         {facialReport && (
           <section className="rounded-2xl border border-slate-200 bg-white p-3 sm:p-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-black text-slate-900 tracking-tight">
+              <h3 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center">
+                  <ScanFace className="w-4 h-4 text-sky-600" />
+                </span>
                 안면인식 기반 리포트
               </h3>
               <span className="text-[11px] font-bold text-slate-500">
@@ -445,19 +463,29 @@ function ResultRehabPage() {
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-sky-200 text-slate-600 shadow-sm">
                   <i className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-                  자음 <b className="text-slate-900">{facialReport.consonant.toFixed(1)}%</b>
+                  자음{" "}
+                  <b className="text-slate-900">
+                    {facialReport.consonant.toFixed(1)}%
+                  </b>
                 </span>
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-sky-200 text-slate-600 shadow-sm">
                   <i className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-                  모음 <b className="text-slate-900">{facialReport.vowel.toFixed(1)}%</b>
+                  모음{" "}
+                  <b className="text-slate-900">
+                    {facialReport.vowel.toFixed(1)}%
+                  </b>
                 </span>
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-sky-200 text-slate-600 shadow-sm">
                   <i className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-                  비대칭 <b className="text-slate-900">{facialReport.asymmetryRisk.toFixed(1)}%</b>
+                  비대칭{" "}
+                  <b className="text-slate-900">
+                    {facialReport.asymmetryRisk.toFixed(1)}%
+                  </b>
                 </span>
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-200 text-slate-600 shadow-sm">
                   <i className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                  위험도 <b className="text-slate-900">{facialReport.riskLabel}</b>
+                  위험도{" "}
+                  <b className="text-slate-900">{facialReport.riskLabel}</b>
                 </span>
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-200 text-slate-600 shadow-sm">
                   <i className="w-1.5 h-1.5 rounded-full bg-sky-400" />
@@ -479,8 +507,12 @@ function ResultRehabPage() {
 
         <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm sm:text-base font-black text-slate-900">
-              Step {safeStep} 변화 추이
+            <h3 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+              <span className="w-8 h-8 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center">
+                <TrendingUp className="w-4 h-4 text-sky-600" />
+              </span>
+              <span className="text-sky-600">{REHAB_STEP_LABELS[safeStep]}</span>{" "}
+              변화 추이
             </h3>
             <span className="text-sm font-bold text-slate-500">
               최근 {trendRows.length}회
@@ -508,7 +540,10 @@ function ResultRehabPage() {
                       <line
                         x1={trendChart?.padLeft ?? 24}
                         y1={y}
-                        x2={(trendChart?.width ?? 640) - (trendChart?.padRight ?? 12)}
+                        x2={
+                          (trendChart?.width ?? 640) -
+                          (trendChart?.padRight ?? 12)
+                        }
                         y2={y}
                         stroke="#E2E8F0"
                         strokeWidth="1"

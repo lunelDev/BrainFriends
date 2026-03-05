@@ -47,3 +47,40 @@ body {
   color: var(--foreground);
   font-family: var(--font-noto-sans-kr), "Noto Sans KR", sans-serif;
 }
+
+/* Rehab mode accent override: replace orange emphasis with blue across step pages */
+.rehab-accent-scope .text-orange-100 { color: #e0f2fe !important; }
+.rehab-accent-scope .text-orange-300 { color: #7dd3fc !important; }
+.rehab-accent-scope .text-orange-400 { color: #38bdf8 !important; }
+.rehab-accent-scope .text-orange-500 { color: #0ea5e9 !important; }
+.rehab-accent-scope .text-orange-600 { color: #0284c7 !important; }
+.rehab-accent-scope .text-orange-700 { color: #0369a1 !important; }
+
+.rehab-accent-scope .bg-orange-50 { background-color: #f0f9ff !important; }
+.rehab-accent-scope .bg-orange-100 { background-color: #e0f2fe !important; }
+.rehab-accent-scope .bg-orange-400 { background-color: #38bdf8 !important; }
+.rehab-accent-scope .bg-orange-500 { background-color: #0ea5e9 !important; }
+.rehab-accent-scope .bg-orange-50\/40 { background-color: rgb(240 249 255 / 0.4) !important; }
+.rehab-accent-scope .bg-orange-50\/95 { background-color: rgb(240 249 255 / 0.95) !important; }
+
+.rehab-accent-scope .border-orange-100 { border-color: #e0f2fe !important; }
+.rehab-accent-scope .border-orange-200 { border-color: #bae6fd !important; }
+.rehab-accent-scope .border-orange-300 { border-color: #7dd3fc !important; }
+.rehab-accent-scope .border-orange-500 { border-color: #0ea5e9 !important; }
+
+.rehab-accent-scope .ring-orange-100 { --tw-ring-color: #e0f2fe !important; }
+.rehab-accent-scope .ring-orange-200 { --tw-ring-color: #bae6fd !important; }
+.rehab-accent-scope .ring-orange-300 { --tw-ring-color: #7dd3fc !important; }
+
+.rehab-accent-scope .hover\:bg-orange-50:hover { background-color: #f0f9ff !important; }
+.rehab-accent-scope .hover\:bg-orange-100:hover { background-color: #e0f2fe !important; }
+.rehab-accent-scope .hover\:text-orange-600:hover { color: #0284c7 !important; }
+.rehab-accent-scope .hover\:border-orange-100:hover { border-color: #e0f2fe !important; }
+.rehab-accent-scope .hover\:border-orange-200:hover { border-color: #bae6fd !important; }
+.rehab-accent-scope .hover\:bg-orange-500:hover { background-color: #0284c7 !important; }
+.rehab-accent-scope .hover\:bg-orange-600:hover { background-color: #0369a1 !important; }
+
+.rehab-accent-scope .group:hover .group-hover\:bg-orange-50 { background-color: #f0f9ff !important; }
+.rehab-accent-scope .group:hover .group-hover\:bg-orange-100 { background-color: #e0f2fe !important; }
+.rehab-accent-scope .group:hover .group-hover\:text-orange-600 { color: #0284c7 !important; }
+.rehab-accent-scope .group:hover .group-hover\:text-white { color: #fff !important; }

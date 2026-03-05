@@ -23,7 +23,10 @@ function Step1Content() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const placeParam = (searchParams.get("place") as PlaceType) || "home";
-  const isRehabMode = searchParams.get("trainMode") === "rehab";
+  const isRehabMode =
+    searchParams.get("trainMode") === "rehab" ||
+    (typeof window !== "undefined" &&
+      sessionStorage.getItem("btt.trainingMode") === "rehab");
   const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
 
   const [isMounted, setIsMounted] = useState(false);
@@ -200,7 +203,9 @@ function Step1Content() {
         };
       });
 
-      const finalScore = demoResults.filter((result) => result.isCorrect).length;
+      const finalScore = demoResults.filter(
+        (result) => result.isCorrect,
+      ).length;
       saveStep1Results(demoResults, finalScore);
 
       const patient = loadPatientProfile();
@@ -340,7 +345,8 @@ function Step1Content() {
     }
   };
 
-  const replayEnabled = replayCount < 1 && !isSpeaking && !isAnswered && canAnswer;
+  const replayEnabled =
+    replayCount < 1 && !isSpeaking && !isAnswered && canAnswer;
 
   useEffect(() => {
     if (!isMounted || timeLeft === null || isSpeaking) return;
@@ -359,15 +365,21 @@ function Step1Content() {
   if (!isMounted || !currentItem) return null;
 
   return (
-    <div className="flex flex-col h-full bg-[#FBFBFC] overflow-hidden text-slate-900 font-sans">
+    <div
+      className={`flex flex-col h-full bg-[#ffffff] overflow-hidden text-slate-900 font-sans ${isRehabMode ? "rehab-accent-scope" : ""}`}
+    >
       {/* 상단 진행 프로그레스 바 */}
       <div className="fixed top-0 left-0 w-full h-1 z-[60] bg-slate-100">
         <div
-          className="h-full bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.5)]"
-          style={{ width: `${((currentIndex + 1) / trainingData.length) * 100}%` }}
+          className={`h-full ${isRehabMode ? "bg-sky-500 shadow-[0_0_10px_rgba(14,165,233,0.45)]" : "bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.5)]"}`}
+          style={{
+            width: `${((currentIndex + 1) / trainingData.length) * 100}%`,
+          }}
         />
       </div>
-      <header className="h-16 px-6 border-b border-orange-100 flex justify-between items-center bg-white/90 backdrop-blur-md shrink-0 sticky top-0 z-50">
+      <header
+        className={`h-16 px-6 border-b flex justify-between items-center bg-white/90 backdrop-blur-md shrink-0 sticky top-0 z-50 ${isRehabMode ? "border-sky-100" : "border-orange-100"}`}
+      >
         <div className="flex items-center gap-4">
           <img
             src="/images/logo/logo.png"
@@ -375,7 +387,9 @@ function Step1Content() {
             className="w-10 h-10 rounded-xl object-cover"
           />
           <div>
-            <span className="text-orange-500 font-black text-[10px] uppercase tracking-widest leading-none block">
+            <span
+              className={`font-black text-[10px] uppercase tracking-widest leading-none block ${isRehabMode ? "text-sky-500" : "text-orange-500"}`}
+            >
               Step 01 • Auditory Comprehension
             </span>
             <h2 className="text-lg font-black text-slate-900 tracking-tight">
@@ -396,14 +410,18 @@ function Step1Content() {
             className={`px-3 py-1.5 rounded-full font-black text-[11px] transition-all border ${
               isSpeaking
                 ? "bg-slate-50 border-slate-200 text-slate-400"
-                : "bg-orange-50 border-orange-200 text-orange-700"
+                : isRehabMode
+                  ? "bg-sky-50 border-sky-200 text-sky-700"
+                  : "bg-orange-50 border-orange-200 text-orange-700"
             }`}
           >
             {isSpeaking
               ? "LISTENING..."
               : `${timeLeft ?? currentItem.duration}s`}
           </div>
-          <div className="bg-orange-50 px-4 py-1.5 rounded-full font-black text-xs text-orange-700 border border-orange-200">
+          <div
+            className={`px-4 py-1.5 rounded-full font-black text-xs border ${isRehabMode ? "bg-sky-50 text-sky-700 border-sky-200" : "bg-orange-50 text-orange-700 border-orange-200"}`}
+          >
             {currentIndex + 1} / 10
           </div>
           <button
@@ -413,10 +431,28 @@ function Step1Content() {
             title="홈"
             className={`w-9 h-9 ${trainingButtonStyles.homeIcon}`}
           >
-            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 10.5 12 3l9 7.5" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5.5 9.5V21h13V9.5" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10 21v-5h4v5" />
+            <svg
+              viewBox="0 0 24 24"
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M3 10.5 12 3l9 7.5"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M5.5 9.5V21h13V9.5"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M10 21v-5h4v5"
+              />
             </svg>
           </button>
         </div>
@@ -429,17 +465,31 @@ function Step1Content() {
               <h1 className="text-2xl lg:text-3xl font-black text-slate-800 break-keep leading-tight">
                 {isSpeaking ? "질문을 잘 들어보세요" : "사실이 맞나요?"}
               </h1>
-              <div className="h-1.5 w-12 bg-orange-500/20 rounded-full mx-auto" />
+              <div
+                className={`h-1.5 w-12 rounded-full mx-auto ${isRehabMode ? "bg-sky-500/20" : "bg-orange-500/20"}`}
+              />
             </div>
 
             <button
               onClick={handleReplay}
               disabled={!replayEnabled}
-              className={`group flex items-center gap-2 mx-auto px-5 py-2.5 rounded-2xl shadow-sm disabled:opacity-30 active:scale-95 ${trainingButtonStyles.orangeOutline}`}
+              className={`group flex items-center gap-2 mx-auto px-5 py-2.5 rounded-2xl shadow-sm disabled:opacity-30 active:scale-95 ${
+                isRehabMode
+                  ? "bg-white text-sky-600 border border-sky-200 hover:bg-sky-50 transition-all"
+                  : trainingButtonStyles.orangeOutline
+              }`}
             >
-              <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center group-hover:bg-orange-500 transition-colors">
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                  isRehabMode
+                    ? "bg-sky-100 group-hover:bg-sky-500"
+                    : "bg-orange-100 group-hover:bg-orange-500"
+                }`}
+              >
                 <svg
-                  className="w-4 h-4 text-orange-600 group-hover:text-white"
+                  className={`w-4 h-4 group-hover:text-white ${
+                    isRehabMode ? "text-sky-600" : "text-orange-600"
+                  }`}
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -458,7 +508,13 @@ function Step1Content() {
                   />
                 </svg>
               </div>
-              <span className="text-sm font-black text-slate-600 group-hover:text-orange-600">
+              <span
+                className={`text-sm font-black text-slate-600 ${
+                  isRehabMode
+                    ? "group-hover:text-sky-600"
+                    : "group-hover:text-orange-600"
+                }`}
+              >
                 다시 듣기
               </span>
             </button>
@@ -475,7 +531,11 @@ function Step1Content() {
             <button
               disabled={isSpeaking || isAnswered || !canAnswer}
               onClick={() => handleAnswer(false)}
-              className="flex-1 aspect-square max-h-[180px] bg-white rounded-[40px] text-8xl shadow-[0_12px_24px_rgba(0,0,0,0.04)] border-2 border-slate-50 flex items-center justify-center transition-all hover:border-orange-100 hover:text-orange-500 active:scale-95 disabled:opacity-20 text-slate-300 font-black"
+              className={`flex-1 aspect-square max-h-[180px] bg-white rounded-[40px] text-8xl shadow-[0_12px_24px_rgba(0,0,0,0.04)] border-2 border-slate-50 flex items-center justify-center transition-all active:scale-95 disabled:opacity-20 text-slate-300 font-black ${
+                isRehabMode
+                  ? "hover:border-sky-100 hover:text-sky-500"
+                  : "hover:border-orange-100 hover:text-orange-500"
+              }`}
             >
               X
             </button>
@@ -505,4 +565,3 @@ export default function Step1Page() {
     </Suspense>
   );
 }
-

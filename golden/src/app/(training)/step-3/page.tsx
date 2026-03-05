@@ -115,7 +115,19 @@ function Step3Content() {
 
   const { sidebarMetrics, updateSidebar } = useTraining();
   const place = (searchParams?.get("place") as PlaceType) || "home";
-  const isRehabMode = searchParams.get("trainMode") === "rehab";
+  const isRehabMode =
+    searchParams.get("trainMode") === "rehab" ||
+    (typeof window !== "undefined" &&
+      sessionStorage.getItem("btt.trainingMode") === "rehab");
+  const accentOutline = isRehabMode
+    ? "bg-white text-sky-600 border border-sky-200 hover:bg-sky-50 transition-all"
+    : trainingButtonStyles.orangeOutline;
+  const accentSoft = isRehabMode
+    ? "bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition-all"
+    : trainingButtonStyles.orangeSoft;
+  const accentSolid = isRehabMode
+    ? "bg-sky-500 text-white border border-sky-500 hover:bg-sky-600 transition-all"
+    : trainingButtonStyles.orangeSolid;
   const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
   const pushStep4OrRehabResult = useCallback(
     (step3Score: number) => {
@@ -680,15 +692,15 @@ function Step3Content() {
   if (!isMounted || !currentItem) return null;
 
   return (
-    <div className="flex flex-col h-full bg-[#FBFBFC] overflow-hidden text-slate-900 font-sans">
+    <div className={`flex flex-col h-full bg-[#ffffff] overflow-hidden text-slate-900 font-sans ${isRehabMode ? "rehab-accent-scope" : ""}`}>
       {/* 상단 진행 프로그레스 바 */}
       <div className="fixed top-0 left-0 w-full h-1 z-[60] bg-slate-100">
         <div
-          className="h-full bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.5)]"
+          className={`h-full ${isRehabMode ? "bg-sky-500 shadow-[0_0_10px_rgba(14,165,233,0.45)]" : "bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.5)]"}`}
           style={{ width: `${((currentIndex + 1) / protocol.length) * 100}%` }}
         />
       </div>
-      <header className="h-16 px-6 border-b border-orange-100 flex justify-between items-center bg-white/90 backdrop-blur-md shrink-0 sticky top-0 z-50">
+      <header className={`h-16 px-6 border-b flex justify-between items-center bg-white/90 backdrop-blur-md shrink-0 sticky top-0 z-50 ${isRehabMode ? "border-sky-100" : "border-orange-100"}`}>
         <div className="flex items-center gap-4">
           <img
             src="/images/logo/logo.png"
@@ -696,7 +708,7 @@ function Step3Content() {
             className="w-10 h-10 rounded-xl object-cover"
           />
           <div>
-            <span className="text-orange-500 font-black text-[10px] uppercase tracking-widest leading-none block">
+            <span className={`font-black text-[10px] uppercase tracking-widest leading-none block ${isRehabMode ? "text-sky-500" : "text-orange-500"}`}>
               Step 03 • Visual-Auditory Association
             </span>
             <h2 className="text-lg font-black text-slate-900 tracking-tight">
@@ -712,7 +724,7 @@ function Step3Content() {
           >
             SKIP
           </button>
-          <div className="bg-orange-50 px-4 py-1.5 rounded-full font-black text-xs text-orange-700 border border-orange-200">
+          <div className={`px-4 py-1.5 rounded-full font-black text-xs border ${isRehabMode ? "bg-sky-50 text-sky-700 border-sky-200" : "bg-orange-50 text-orange-700 border-orange-200"}`}>
             {currentIndex + 1} / {protocol.length}
           </div>
           <button
@@ -731,13 +743,13 @@ function Step3Content() {
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col min-h-[calc(100vh-4rem)] lg:min-h-0 bg-[#FBFBFC] pb-8 lg:pb-0 overflow-y-auto">
+      <main className="flex-1 flex flex-col min-h-[calc(100vh-4rem)] lg:min-h-0 bg-[#ffffff] pb-8 lg:pb-0 overflow-y-auto">
           <div className="w-full max-w-5xl mx-auto px-6 py-4 flex flex-col h-full min-h-0 gap-4">
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 border-b border-slate-100 pb-3 shrink-0">
               <div className="space-y-1">
-                <div className="inline-flex items-center gap-2 px-2 py-0.5 bg-orange-50 rounded-md">
-                  <span className="w-1 h-1 rounded-full bg-orange-500" />
-                  <p className="text-orange-600 font-bold text-[9px] uppercase tracking-wider">
+                <div className={`inline-flex items-center gap-2 px-2 py-0.5 rounded-md ${isRehabMode ? "bg-sky-50" : "bg-orange-50"}`}>
+                  <span className={`w-1 h-1 rounded-full ${isRehabMode ? "bg-sky-500" : "bg-orange-500"}`} />
+                  <p className={`font-bold text-[9px] uppercase tracking-wider ${isRehabMode ? "text-sky-600" : "text-orange-600"}`}>
                     Step 03
                   </p>
                 </div>
@@ -753,13 +765,13 @@ function Step3Content() {
                 disabled={!replayEnabled}
                 className={`group flex items-center gap-2 px-3 py-1.5 rounded-lg border shadow-sm active:scale-95 shrink-0 mb-1 pointer-events-auto ${
                   replayEnabled
-                    ? trainingButtonStyles.orangeSoft
+                    ? accentSoft
                     : `${trainingButtonStyles.slateOutline} opacity-60`
                 }`}
               >
                 <div
                   className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                    replayEnabled ? "bg-orange-500" : "bg-slate-300"
+                    replayEnabled ? (isRehabMode ? "bg-sky-500" : "bg-orange-500") : "bg-slate-300"
                   }`}
                 >
                   <svg
@@ -778,7 +790,7 @@ function Step3Content() {
                 </div>
                 <span
                   className={`text-xs font-black ${
-                    replayEnabled ? "text-orange-700" : "text-slate-400"
+                    replayEnabled ? (isRehabMode ? "text-sky-700" : "text-orange-700") : "text-slate-400"
                   }`}
                 >
                   다시 듣기
@@ -795,7 +807,7 @@ function Step3Content() {
                       onClick={() => handleOptionClick(option.id)}
                       disabled={isSpeaking || isAnswered || !canAnswer || isPreloadingImages}
                       className={`relative z-20 w-full aspect-[4/5] sm:aspect-square lg:h-full rounded-[24px] flex items-center justify-center transition-all border shadow-sm bg-white overflow-hidden pointer-events-auto
-                    ${selectedId === option.id ? (showResult ? "border-emerald-500 ring-4 ring-emerald-50 scale-105" : "border-slate-800 opacity-60 scale-95") : "border-slate-100 hover:border-orange-100 hover:shadow-md"}`}
+                    ${selectedId === option.id ? (showResult ? "border-emerald-500 ring-4 ring-emerald-50 scale-105" : "border-slate-800 opacity-60 scale-95") : isRehabMode ? "border-slate-100 hover:border-sky-100 hover:shadow-md" : "border-slate-100 hover:border-orange-100 hover:shadow-md"}`}
                     >
                       <div className="w-full h-full p-4 flex items-center justify-center pointer-events-none">
                         {isPreloadingImages ? (

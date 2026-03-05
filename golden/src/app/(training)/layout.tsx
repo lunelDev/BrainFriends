@@ -113,7 +113,7 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
   return (
     <div className="h-screen w-full bg-[#F3F4F6] overflow-hidden">
       <div className="w-full h-screen bg-white flex flex-col overflow-hidden relative">
-        <div className="flex-1 flex flex-col overflow-hidden bg-[#FBFBFC]">
+        <div className="flex-1 flex flex-col overflow-hidden bg-[#ffffff]">
           {children}
         </div>
 

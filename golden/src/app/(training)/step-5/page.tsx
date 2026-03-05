@@ -88,7 +88,16 @@ function Step5Content() {
 
   const place = (searchParams.get("place") as PlaceType) || "home";
   const step4Score = searchParams.get("step4") || "0";
-  const isRehabMode = searchParams.get("trainMode") === "rehab";
+  const isRehabMode =
+    searchParams.get("trainMode") === "rehab" ||
+    (typeof window !== "undefined" &&
+      sessionStorage.getItem("btt.trainingMode") === "rehab");
+  const accentOutline = isRehabMode
+    ? "bg-white text-sky-600 border border-sky-200 hover:bg-sky-50 transition-all"
+    : trainingButtonStyles.orangeOutline;
+  const accentSolid = isRehabMode
+    ? "bg-sky-500 text-white border border-sky-500 hover:bg-sky-600 transition-all"
+    : trainingButtonStyles.orangeSolid;
   const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
   const pushStep6OrRehabResult = useCallback(
     (step5Value: number) => {
@@ -796,14 +805,14 @@ function Step5Content() {
   if (!isMounted || !currentItem) return null;
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 overflow-y-auto lg:overflow-hidden text-slate-900 font-sans">
+    <div className={`flex flex-col h-screen bg-slate-50 overflow-y-auto lg:overflow-hidden text-slate-900 font-sans ${isRehabMode ? "rehab-accent-scope" : ""}`}>
       <div className="fixed top-0 left-0 w-full h-1 z-[60] bg-slate-100">
         <div
-          className="h-full bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.45)]"
+          className={`h-full ${isRehabMode ? "bg-sky-500 shadow-[0_0_10px_rgba(14,165,233,0.45)]" : "bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.45)]"}`}
           style={{ width: `${((currentIndex + 1) / texts.length) * 100}%` }}
         />
       </div>
-      <header className="h-16 px-6 border-b border-orange-100 flex justify-between items-center bg-white/90 backdrop-blur-md shrink-0 sticky top-0 z-50">
+      <header className={`h-16 px-6 border-b flex justify-between items-center bg-white/90 backdrop-blur-md shrink-0 sticky top-0 z-50 ${isRehabMode ? "border-sky-100" : "border-orange-100"}`}>
         <div className="flex items-center gap-4">
           <img
             src="/images/logo/logo.png"
@@ -811,7 +820,7 @@ function Step5Content() {
             className="w-10 h-10 rounded-xl object-cover"
           />
           <div>
-            <span className="text-orange-500 font-black text-[10px] uppercase tracking-widest leading-none block">
+            <span className={`font-black text-[10px] uppercase tracking-widest leading-none block ${isRehabMode ? "text-sky-500" : "text-orange-500"}`}>
               Step 05 • Reading Fluency Training
             </span>
             <h2 className="text-lg font-black text-slate-900 tracking-tight">
@@ -827,7 +836,7 @@ function Step5Content() {
           >
             SKIP
           </button>
-          <div className="bg-orange-50 px-4 py-1.5 rounded-full font-black text-xs text-orange-700 border border-orange-200">
+          <div className={`px-4 py-1.5 rounded-full font-black text-xs border ${isRehabMode ? "bg-sky-50 text-sky-700 border-sky-200" : "bg-orange-50 text-orange-700 border-orange-200"}`}>
             {currentIndex + 1} / {texts.length}
           </div>
           <button
@@ -980,7 +989,7 @@ function Step5Content() {
                     <div className="mt-5 flex flex-col gap-3 relative z-[1]">
                       <button
                         onClick={playRecordedAudio}
-                        className={`w-full py-4 rounded-2xl font-black text-sm ${isPlayingAudio ? trainingButtonStyles.orangeSolid : trainingButtonStyles.orangeOutline}`}
+                        className={`w-full py-4 rounded-2xl font-black text-sm ${isPlayingAudio ? accentSolid : accentOutline}`}
                       >
                         {isPlayingAudio
                           ? "목소리 재생 중..."

@@ -90,7 +90,19 @@ function Step2Content() {
   const { sidebarMetrics, updateSidebar, updateRuntimeStatus, resetRuntimeStatus } =
     useTraining();
   const place = (searchParams?.get("place") as PlaceType) || "home";
-  const isRehabMode = searchParams.get("trainMode") === "rehab";
+  const isRehabMode =
+    searchParams.get("trainMode") === "rehab" ||
+    (typeof window !== "undefined" &&
+      sessionStorage.getItem("btt.trainingMode") === "rehab");
+  const accentOutline = isRehabMode
+    ? "bg-white text-sky-600 border border-sky-200 hover:bg-sky-50 transition-all"
+    : trainingButtonStyles.orangeOutline;
+  const accentSoft = isRehabMode
+    ? "bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition-all"
+    : trainingButtonStyles.orangeSoft;
+  const accentSolid = isRehabMode
+    ? "bg-sky-500 text-white border border-sky-500 hover:bg-sky-600 transition-all"
+    : trainingButtonStyles.orangeSolid;
   const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
   const pushStep3OrRehabResult = useCallback(
     (step2Score: number) => {
@@ -1187,16 +1199,16 @@ function Step2Content() {
   if (!isMounted || !currentItem) return null;
 
   return (
-    <div className="flex flex-col h-full bg-[#FBFBFC] overflow-hidden text-slate-900 font-sans relative">
+    <div className={`flex flex-col h-full bg-[#ffffff] overflow-hidden text-slate-900 font-sans relative ${isRehabMode ? "rehab-accent-scope" : ""}`}>
       {/* 상단 진행 프로그레스 바 */}
       <div className="fixed top-0 left-0 w-full h-1 z-[60] bg-slate-100">
         <div
-          className="h-full bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.5)]"
+          className={`h-full ${isRehabMode ? "bg-sky-500 shadow-[0_0_10px_rgba(14,165,233,0.45)]" : "bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.5)]"}`}
           style={{ width: `${((currentIndex + 1) / protocol.length) * 100}%` }}
         />
       </div>
 
-      <header className="h-16 px-6 border-b border-orange-100 flex justify-between items-center bg-white/90 backdrop-blur-md shrink-0 sticky top-0 z-50">
+      <header className={`h-16 px-6 border-b flex justify-between items-center bg-white/90 backdrop-blur-md shrink-0 sticky top-0 z-50 ${isRehabMode ? "border-sky-100" : "border-orange-100"}`}>
         <div className="flex items-center gap-4">
           <img
             src="/images/logo/logo.png"
@@ -1204,7 +1216,7 @@ function Step2Content() {
             className="w-10 h-10 rounded-xl object-cover"
           />
           <div>
-            <span className="text-orange-500 font-black text-[10px] uppercase tracking-widest block leading-none">
+            <span className={`font-black text-[10px] uppercase tracking-widest block leading-none ${isRehabMode ? "text-sky-500" : "text-orange-500"}`}>
               Repetition Training
             </span>
             <h2 className="text-lg font-black text-slate-900 tracking-tight">
@@ -1220,7 +1232,7 @@ function Step2Content() {
           >
             SKIP
           </button>
-          <div className="bg-orange-50 px-4 py-1.5 rounded-full font-black text-xs text-orange-700 border border-orange-200">
+          <div className={`px-4 py-1.5 rounded-full font-black text-xs border ${isRehabMode ? "bg-sky-50 text-sky-700 border-sky-200" : "bg-orange-50 text-orange-700 border-orange-200"}`}>
             {currentIndex + 1} / {protocol.length} 문항
           </div>
           <button
@@ -1333,8 +1345,8 @@ function Step2Content() {
                       }}
                       className={`w-full py-4 rounded-2xl font-black text-sm ${
                         isPlayingAudio
-                          ? trainingButtonStyles.orangeSolid
-                          : trainingButtonStyles.orangeSoft
+                          ? accentSolid
+                          : accentSoft
                       }`}
                     >
                       {isPlayingAudio ? "🔊 재생 중..." : "▶ 내 목소리 듣기"}
@@ -1369,7 +1381,7 @@ function Step2Content() {
                     className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black border ${
                       replayCount >= 1 || isPromptPlaying || isSaving
                         ? trainingButtonStyles.slateMuted
-                        : `${trainingButtonStyles.orangeSoft} shadow-sm`
+                        : `${accentSoft} shadow-sm`
                     }`}
                   >
                     <span>↻</span>
@@ -1413,10 +1425,12 @@ function Step2Content() {
                           <div className="w-8 h-8 border-4 border-[#0B1A3A] border-t-transparent rounded-full animate-spin" />
                         </div>
                       ) : (
-                        <div className="w-12 h-12 lg:w-14 lg:h-14 bg-white rounded-full flex items-center justify-center group-hover:bg-orange-100 transition-colors">
+                        <div className={`w-12 h-12 lg:w-14 lg:h-14 bg-white rounded-full flex items-center justify-center transition-colors ${
+                          isRehabMode ? "group-hover:bg-sky-100" : "group-hover:bg-orange-100"
+                        }`}>
                           <svg
                             viewBox="0 0 24 24"
-                            className="w-6 h-6 lg:w-7 lg:h-7 text-[#0B1A3A] group-hover:text-orange-600"
+                            className={`w-6 h-6 lg:w-7 lg:h-7 text-[#0B1A3A] ${isRehabMode ? "group-hover:text-sky-600" : "group-hover:text-orange-600"}`}
                             fill="none"
                             stroke="currentColor"
                             strokeWidth="2.2"
