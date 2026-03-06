@@ -11,7 +11,6 @@ import React, {
 import { useSearchParams, useRouter } from "next/navigation";
 import { PlaceType } from "@/constants/trainingData";
 import {
-  VISUAL_MATCHING_IMAGE_FILENAME_MAP,
   VISUAL_MATCHING_PROTOCOLS,
   VISUAL_MATCHING_RECOMMENDED_COUNT,
 } from "@/constants/visualTrainingData";
@@ -26,88 +25,35 @@ import {
 } from "@/lib/analysis/articulationAnalyzer";
 import { estimateLipSymmetryFromLandmarks } from "@/lib/analysis/lipMetrics";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
+import {
+  buildImageCandidates,
+  shuffleArray,
+  type Step3VisualOption as VisualOption,
+} from "@/features/steps/step3/utils";
 
 export const dynamic = "force-dynamic";
 const STEP3_TOTAL_QUESTIONS = 10;
+const STEP_RESPONSE_BONUS_THRESHOLD_MS = 6000;
 
-type VisualOption = {
-  id: string;
-  label: string;
-  img?: string;
-  emoji?: string;
-};
+function calculateCompositeScore(
+  results: Array<{ isCorrect: boolean; responseTime?: number }>,
+  totalQuestions: number,
+) {
+  const total = Math.max(1, totalQuestions);
+  const correctCount = results.filter((r) => r.isCorrect).length;
+  const fastCorrectCount = results.filter(
+    (r) =>
+      r.isCorrect &&
+      Number.isFinite(Number(r.responseTime)) &&
+      Number(r.responseTime) <= STEP_RESPONSE_BONUS_THRESHOLD_MS,
+  ).length;
+  const accuracyScore = (correctCount / total) * 100;
+  const speedBonus = (fastCorrectCount / total) * 100;
+  const compositeScore = Number((accuracyScore * 0.8 + speedBonus * 0.2).toFixed(1));
+  return { correctCount, fastCorrectCount, accuracyScore, speedBonus, compositeScore };
+}
 
 let GLOBAL_SPEECH_LOCK: Record<number, boolean> = {};
-const STEP3_IMAGE_BASE_URL = (
-  process.env.NEXT_PUBLIC_STEP3_IMAGE_BASE_URL ||
-  "https://cdn.jsdelivr.net/gh/BUGISU/braintalktalk-assets@main/step3"
-).replace(/\/$/, "");
-
-const toTwemojiSvgUrl = (emoji: string) => {
-  const codePoints = Array.from(emoji).map((char) =>
-    char.codePointAt(0)?.toString(16),
-  );
-  return `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${codePoints.join("-")}.svg`;
-};
-
-const buildNameVariants = (baseName: string) => {
-  const variants = new Set<string>();
-  variants.add(baseName);
-  variants.add(baseName.replace(/-/g, ""));
-  variants.add(baseName.replace(/-/g, "_"));
-  variants.add(baseName.split("-")[0]);
-  return Array.from(variants).filter(Boolean);
-};
-
-const buildImageCandidates = (
-  place: PlaceType,
-  option: VisualOption,
-): string[] => {
-  const candidates: string[] = [];
-
-  if (option.img) candidates.push(option.img);
-
-  const mappedBaseName =
-    VISUAL_MATCHING_IMAGE_FILENAME_MAP[place]?.[option.label];
-  if (mappedBaseName) {
-    for (const nameVariant of buildNameVariants(mappedBaseName)) {
-      candidates.push(
-        `${STEP3_IMAGE_BASE_URL}/${place}/${nameVariant}.png`,
-        `${STEP3_IMAGE_BASE_URL}/${place}/${nameVariant}.jpg`,
-        `${STEP3_IMAGE_BASE_URL}/${place}/${nameVariant}.jpeg`,
-        `${STEP3_IMAGE_BASE_URL}/${place}/${nameVariant}.webp`,
-        `${STEP3_IMAGE_BASE_URL}/${nameVariant}.png`,
-        `${STEP3_IMAGE_BASE_URL}/${nameVariant}.jpg`,
-        `${STEP3_IMAGE_BASE_URL}/${nameVariant}.jpeg`,
-        `${STEP3_IMAGE_BASE_URL}/${nameVariant}.webp`,
-      );
-    }
-  }
-
-  candidates.push(
-    `${STEP3_IMAGE_BASE_URL}/${place}/${encodeURIComponent(option.label)}.png`,
-    `${STEP3_IMAGE_BASE_URL}/${place}/${encodeURIComponent(option.label)}.jpg`,
-    `${STEP3_IMAGE_BASE_URL}/${place}/${encodeURIComponent(option.label)}.jpeg`,
-    `${STEP3_IMAGE_BASE_URL}/${place}/${encodeURIComponent(option.label)}.webp`,
-    `${STEP3_IMAGE_BASE_URL}/${encodeURIComponent(option.label)}.png`,
-    `${STEP3_IMAGE_BASE_URL}/${encodeURIComponent(option.label)}.jpg`,
-    `${STEP3_IMAGE_BASE_URL}/${encodeURIComponent(option.label)}.jpeg`,
-    `${STEP3_IMAGE_BASE_URL}/${encodeURIComponent(option.label)}.webp`,
-  );
-
-  if (option.emoji) candidates.push(toTwemojiSvgUrl(option.emoji));
-
-  return Array.from(new Set(candidates.filter(Boolean)));
-};
-
-const shuffleArray = <T,>(arr: T[]): T[] => {
-  const next = [...arr];
-  for (let i = next.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [next[i], next[j]] = [next[j], next[i]];
-  }
-  return next;
-};
 
 function Step3Content() {
   const router = useRouter();
@@ -181,6 +127,7 @@ function Step3Content() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isAnswered, setIsAnswered] = useState(false);
   const [canAnswer, setCanAnswer] = useState(false);
+  const [questionStartTime, setQuestionStartTime] = useState<number>(0);
   const [isPreloadingImages, setIsPreloadingImages] = useState(false);
   const [resolvedImageMap, setResolvedImageMap] = useState<
     Record<string, string>
@@ -395,10 +342,12 @@ function Step3Content() {
     utterance.onend = () => {
       setIsSpeaking(false);
       setCanAnswer(true);
+      setQuestionStartTime(Date.now());
     };
     utterance.onerror = () => {
       setIsSpeaking(false);
       setCanAnswer(true);
+      setQuestionStartTime(Date.now());
     };
     synth.speak(utterance);
   }, []);
@@ -473,6 +422,12 @@ function Step3Content() {
   const handleOptionClick = (id: string) => {
     if (!canAnswer || isPreloadingImages || selectedId || isAnswered) return;
     const isCorrect = id === currentItem.answerId;
+    const responseTime =
+      questionStartTime > 0 ? Math.max(0, Date.now() - questionStartTime) : 0;
+    const selectedOption = currentItem.options.find((opt) => opt.id === id);
+    const correctOption = currentItem.options.find(
+      (opt) => opt.id === currentItem.answerId,
+    );
     setSelectedId(id);
     setShowResult(isCorrect);
     setIsAnswered(true);
@@ -482,7 +437,11 @@ function Step3Content() {
     const currentResult = {
       text: currentItem.targetWord, // 들려준 단어
       userAnswer: id,
+      userAnswerLabel: selectedOption?.label || id,
+      correctAnswerId: currentItem.answerId,
+      correctAnswerLabel: correctOption?.label || currentItem.targetWord,
       isCorrect: isCorrect,
+      responseTime,
       dataSource: "measured",
       consonantAccuracy: Number(
         (
@@ -592,10 +551,8 @@ function Step3Content() {
         setPlayCount(0);
       } else {
         // ✅ 최종 점수 계산 (10문항 고정 분모)
-        const correctCount = updatedResults.filter((r) => r.isCorrect).length;
-        const avgScore = Math.round(
-          (correctCount / Math.max(1, totalQuestions)) * 100,
-        );
+        const scoring = calculateCompositeScore(updatedResults, totalQuestions);
+        const avgScore = scoring.compositeScore;
 
         // ✅ SessionManager 통합 저장
         try {
@@ -608,8 +565,11 @@ function Step3Content() {
           sm.saveStep3Result({
             items: updatedResults,
             score: avgScore,
-            correctCount,
+            correctCount: scoring.correctCount,
             totalCount: totalQuestions,
+            accuracyScore: scoring.accuracyScore,
+            speedBonusScore: scoring.speedBonus,
+            fastCorrectCount: scoring.fastCorrectCount,
             averageConsonantAccuracy:
               updatedResults.reduce(
                 (sum, row) => sum + Number(row?.consonantAccuracy || 0),
@@ -643,10 +603,16 @@ function Step3Content() {
 
       const demoResults = protocol.map((item) => {
         const isCorrect = Math.random() < 0.72;
+        const responseTime = Number((Math.random() * 5000 + 500).toFixed(0));
+        const wrongOption = item.options.find((opt) => opt.id !== item.answerId);
         return {
           text: item.targetWord,
           userAnswer: isCorrect ? item.answerId : "skip",
+          userAnswerLabel: isCorrect ? item.targetWord : wrongOption?.label || "오답 선택",
+          correctAnswerId: item.answerId,
+          correctAnswerLabel: item.targetWord,
           isCorrect,
+          responseTime,
           dataSource: "demo",
           consonantAccuracy: randomFloat(58, 96),
           vowelAccuracy: randomFloat(58, 96),
@@ -656,9 +622,9 @@ function Step3Content() {
 
       localStorage.setItem("step3_data", JSON.stringify(demoResults));
 
-      const correctCount = demoResults.filter((item) => item.isCorrect).length;
       const totalCount = Math.max(1, demoResults.length);
-      const score = Math.round((correctCount / totalCount) * 100);
+      const scoring = calculateCompositeScore(demoResults, totalCount);
+      const score = scoring.compositeScore;
 
       const patient = loadPatientProfile();
       const sessionManager = new SessionManager(
@@ -668,8 +634,11 @@ function Step3Content() {
       sessionManager.saveStep3Result({
         items: demoResults,
         score,
-        correctCount,
+        correctCount: scoring.correctCount,
         totalCount,
+        accuracyScore: scoring.accuracyScore,
+        speedBonusScore: scoring.speedBonus,
+        fastCorrectCount: scoring.fastCorrectCount,
         averageConsonantAccuracy:
           demoResults.reduce(
             (sum, row) => sum + Number(row?.consonantAccuracy || 0),

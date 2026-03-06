@@ -8,7 +8,6 @@ import {
   TrainingHistoryEntry,
 } from "@/lib/kwab/SessionManager";
 import { REHAB_STEP_LABELS } from "@/lib/results/rehab/constants";
-import { TRAINING_PLACES } from "@/constants/trainingData";
 import {
   buildDetailComparisons,
   buildFacialReport,
@@ -17,6 +16,22 @@ import {
   buildTrendRows,
   countImprovedMetrics,
 } from "@/lib/results/rehab/adapters";
+import { HistorySidebar } from "@/features/report/components/HistorySidebar";
+import { RehabDetailBlocks } from "@/features/rehab-report/components/RehabDetailBlocks";
+import { SelfAssessmentBlocks } from "@/features/result/components/SelfAssessmentBlocks";
+import {
+  formatSelfMetricDisplay,
+  getPlayableText,
+  getSelfItemFeedback,
+  getStepItems,
+  getStepScore,
+  isSyntheticHistoryRow,
+  SELF_LABEL_BY_KEY,
+  shouldShowPlayButton,
+  STEP_ID_BY_KEY,
+  STEP_META,
+  StepKey,
+} from "@/features/report/utils/reportHelpers";
 import {
   Activity,
   BookOpen,
@@ -28,102 +43,6 @@ import {
   Sparkles,
   TrendingUp,
 } from "lucide-react";
-
-const STEP_META = [
-  { key: "step1", label: "1단계 이해" },
-  { key: "step2", label: "2단계 따라 말하기" },
-  { key: "step3", label: "3단계 매칭" },
-  { key: "step4", label: "4단계 유창성" },
-  { key: "step5", label: "5단계 읽기" },
-  { key: "step6", label: "6단계 쓰기" },
-] as const;
-
-type StepKey = (typeof STEP_META)[number]["key"];
-
-const STEP_ID_BY_KEY: Record<StepKey, number> = {
-  step1: 1,
-  step2: 2,
-  step3: 3,
-  step4: 4,
-  step5: 5,
-  step6: 6,
-};
-
-const SELF_LABEL_BY_KEY: Record<StepKey, string> = {
-  step1: "청각 이해",
-  step2: "따라말하기",
-  step3: "단어 명명",
-  step4: "유창성",
-  step5: "읽기",
-  step6: "쓰기",
-};
-
-function getStepItems(row: TrainingHistoryEntry, key: StepKey): any[] {
-  const raw = row.stepDetails?.[key as keyof typeof row.stepDetails];
-  return Array.isArray(raw) ? raw : [];
-}
-
-function getStepScore(row: TrainingHistoryEntry, key: StepKey): number {
-  const raw = row.stepScores?.[key as keyof typeof row.stepScores];
-  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
-  const parsed = Number(raw ?? 0);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function getPlaceLabel(place: string): string {
-  const key = String(place || "").toLowerCase();
-  const found = TRAINING_PLACES.find((p) => p.id === key);
-  return found?.title || place || "-";
-}
-
-function getRehabItemLabel(row: TrainingHistoryEntry): string {
-  const step = Number(row.rehabStep);
-  if (Number.isFinite(step) && step >= 1 && step <= 6) {
-    return REHAB_STEP_LABELS[step as 1 | 2 | 3 | 4 | 5 | 6];
-  }
-  return "반복훈련";
-}
-
-function getRehabRowScore(row: TrainingHistoryEntry): number {
-  const step = Number(row.rehabStep);
-  if (Number.isFinite(step) && step >= 1 && step <= 6) {
-    const key = `step${step}` as StepKey;
-    return getStepScore(row, key);
-  }
-  const scores = Object.values(row.stepScores || {}).map((v) => Number(v) || 0);
-  return scores.length ? Math.max(...scores) : 0;
-}
-
-function formatSelfMetricDisplay(key: StepKey, score: number): string {
-  const safe = Number(score || 0);
-  if (key === "step1" || key === "step3" || key === "step4") {
-    return `${(safe / 10).toFixed(1)}/10`;
-  }
-  return `${safe.toFixed(1)}점`;
-}
-
-function isSyntheticHistoryRow(row: TrainingHistoryEntry): boolean {
-  const historyId = String(row.historyId || "");
-  const sessionId = String(row.sessionId || "");
-  if (historyId.startsWith("mock_") || sessionId.startsWith("mock_session_")) {
-    return true;
-  }
-
-  const allItems = Object.values(row.stepDetails || {})
-    .flatMap((v) => (Array.isArray(v) ? v : []))
-    .filter(Boolean) as Array<Record<string, any>>;
-
-  if (!allItems.length) return false;
-
-  const isSyntheticItem = (item: Record<string, any>) => {
-    const text = String(item?.text || item?.transcript || "").trim();
-    if (text.includes("시연용 더미")) return true;
-    if (text.startsWith("예시 ")) return true;
-    return false;
-  };
-
-  return allItems.every((item) => isSyntheticItem(item));
-}
 
 function ReportContent() {
   const router = useRouter();
@@ -294,6 +213,7 @@ function ReportContent() {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
+    setPlayingId(null);
   };
 
   const playAudio = (url: string, id: string) => {
@@ -347,30 +267,6 @@ function ReportContent() {
     }));
   }, [selected]);
 
-  const selfRadarNodes = useMemo(() => {
-    const center = 170;
-    const radius = 102;
-    const rows = selfProfileRows.length ? selfProfileRows : [];
-    if (!rows.length)
-      return [] as Array<{
-        x: number;
-        y: number;
-        label: string;
-        score: number;
-      }>;
-    return rows.map((row, idx) => {
-      const angle = (Math.PI * 2 * idx) / rows.length - Math.PI / 2;
-      const normalized =
-        Math.max(0, Math.min(100, Number(row.score || 0))) / 100;
-      return {
-        label: row.label,
-        score: Number(row.score || 0),
-        x: center + radius * normalized * Math.cos(angle),
-        y: center + radius * normalized * Math.sin(angle),
-      };
-    });
-  }, [selfProfileRows]);
-
   const selfClinicalImpression = useMemo(() => {
     if (!selfProfileRows.length) return null;
     const strongest = selfProfileRows.reduce((a, b) =>
@@ -408,6 +304,52 @@ function ReportContent() {
     return buildFacialReport(selected, selfPreviousRow);
   }, [selected, selfPreviousRow]);
 
+  const selfStepDetails = useMemo(() => {
+    if (!selfProfileRows.length) return [];
+    return selfProfileRows
+      .map((row) => ({
+        id: STEP_ID_BY_KEY[row.key],
+        title: row.label,
+        display: formatSelfMetricDisplay(row.key, row.score),
+        percent: Number(row.score || 0),
+        metric: formatSelfMetricDisplay(row.key, row.score),
+      }))
+      .sort((a, b) => a.id - b.id);
+  }, [selfProfileRows]);
+
+  const selfSessionData = useMemo(() => {
+    if (!selected || selected.trainingMode === "rehab") return null;
+    return {
+      step1: { items: getStepItems(selected, "step1") },
+      step2: { items: getStepItems(selected, "step2") },
+      step3: { items: getStepItems(selected, "step3") },
+      step4: { items: getStepItems(selected, "step4") },
+      step5: { items: getStepItems(selected, "step5") },
+      step6: { items: getStepItems(selected, "step6") },
+    };
+  }, [selected]);
+
+  const selfFacialForBlocks = useMemo(() => {
+    if (!selfFacialReport) return null;
+    return {
+      overallConsonant: selfFacialReport.consonant,
+      overallVowel: selfFacialReport.vowel,
+      step2Consonant: selfFacialReport.consonant,
+      step2Vowel: selfFacialReport.vowel,
+      step4Consonant: selfFacialReport.consonant,
+      step4Vowel: selfFacialReport.vowel,
+      step5Consonant: selfFacialReport.consonant,
+      step5Vowel: selfFacialReport.vowel,
+      asymmetryRisk: selfFacialReport.asymmetryRisk,
+      asymmetryDelta: selfFacialReport.riskDelta,
+      articulationGap: Number(
+        Math.abs(selfFacialReport.consonant - selfFacialReport.vowel).toFixed(1),
+      ),
+      riskLabel: selfFacialReport.riskLabel,
+      summary: selfFacialReport.summary,
+    };
+  }, [selfFacialReport]);
+
   const selfCurrentScore = useMemo(() => Number(selected?.aq || 0), [selected]);
 
   const selfPreviousScore = useMemo(
@@ -419,47 +361,6 @@ function ReportContent() {
     if (selfPreviousScore === null) return null;
     return Number((selfCurrentScore - selfPreviousScore).toFixed(1));
   }, [selfCurrentScore, selfPreviousScore]);
-
-  const getSelfItemFeedback = (stepId: number, item: any) => {
-    const score = Number(
-      item?.writingScore ??
-        item?.readingScore ??
-        item?.kwabScore ??
-        item?.fluencyScore ??
-        item?.finalScore ??
-        item?.speechScore ??
-        (item?.isCorrect ? 90 : 50),
-    );
-    const good =
-      score >= 80
-        ? "좋았던 점: 수행 흐름이 안정적입니다."
-        : "좋았던 점: 끝까지 과제를 시도했습니다.";
-    const improve =
-      stepId === 6
-        ? "개선점: 획 간격과 시작 위치를 일정하게 맞춰보세요."
-        : "개선점: 핵심 단어를 천천히 또렷하게 반복해보세요.";
-    return { good, improve };
-  };
-
-  const shouldShowPlayButton = (stepId: number, item: any) =>
-    [2, 4, 5].includes(stepId) &&
-    Boolean(
-      item?.audioUrl ||
-      item?.text ||
-      item?.transcript ||
-      item?.targetText ||
-      item?.prompt,
-    );
-
-  const getPlayableText = (item: any) =>
-    String(
-      item?.text ||
-        item?.transcript ||
-        item?.targetText ||
-        item?.targetWord ||
-        item?.prompt ||
-        "음성 데이터가 없습니다.",
-    );
 
   const isRehabContext = modeFilter === "rehab";
   const rehabPrimaryStep = useMemo(() => {
@@ -559,10 +460,86 @@ function ReportContent() {
     return Number((rehabCurrentScore - rehabPreviousScore).toFixed(1));
   }, [rehabCurrentScore, rehabPreviousScore]);
 
+  const rehabImpression = useMemo(() => {
+    if (!rehabPrimaryStep) return null;
+    const metricMap = new Map(rehabDetailComparisons.map((m) => [m.key, m]));
+    if (rehabPrimaryStep.stepId === 1) {
+      const accuracy = metricMap.get("comprehensionAccuracy")?.current ?? null;
+      const speedMs = metricMap.get("decisionSpeed")?.current ?? null;
+      const instantRatio = metricMap.get("instantResponseRatio")?.current ?? null;
+      const accuracyText =
+        accuracy === null ? "측정 없음" : `${Number(accuracy.toFixed(1))}점`;
+      const speedSecText =
+        speedMs === null ? "측정 없음" : `${Number((speedMs / 1000).toFixed(1))}초`;
+      const instantText =
+        instantRatio === null ? "측정 없음" : `${Number(instantRatio.toFixed(1))}점`;
+      const speedComment =
+        speedMs === null
+          ? "응답 속도 데이터가 충분하지 않습니다."
+          : speedMs >= 2500
+            ? "즉각적인 의사소통에는 약간의 망설임이 관찰됩니다."
+            : speedMs >= 1800
+              ? "응답은 가능하나 일부 문항에서 짧은 망설임이 관찰됩니다."
+              : "즉각적인 의사소통이 안정적으로 유지됩니다.";
+      return {
+        summary: `단순 질문(예/아니오)에 대한 이해 점수(${accuracyText})와 판단 속도(${speedSecText})를 기준으로 분석했습니다.`,
+        strength: `이해 점수 ${accuracyText}, 즉각 반응 점수 ${instantText}`,
+        need: speedComment,
+      };
+    }
+    if (rehabPrimaryStep.stepId === 2) {
+      const consonant = metricMap.get("consonant")?.current ?? null;
+      const vowel = metricMap.get("vowel")?.current ?? null;
+      const reaction = metricMap.get("reaction")?.current ?? null;
+      const consonantText =
+        consonant === null ? "측정 없음" : `${Number(consonant.toFixed(1))}점`;
+      const vowelText =
+        vowel === null ? "측정 없음" : `${Number(vowel.toFixed(1))}점`;
+      const reactionText =
+        reaction === null
+          ? "측정 없음"
+          : `${Number((reaction / 1000).toFixed(1))}초`;
+      const speedComment =
+        reaction === null
+          ? "발화 시작 속도 데이터가 부족해 추가 관찰이 필요합니다."
+          : reaction >= 2500
+            ? "발화 시작 전 준비 시간이 길어 문장 시작에서 망설임이 관찰됩니다."
+            : reaction >= 1800
+              ? "문장 시작 속도는 보통 수준이며 일부 문항에서 지연이 관찰됩니다."
+              : "문장 시작 속도가 안정적이며 즉시 산출이 가능합니다.";
+      return {
+        summary: `문장 복창에서 자음 점수(${consonantText})와 모음 점수(${vowelText}), 발화 시작 속도(${reactionText})를 기준으로 분석했습니다.`,
+        strength: `자음/모음 산출 점수는 현재 수준을 유지하고 있습니다.`,
+        need: speedComment,
+      };
+    }
+
+    const trendText =
+      rehabDelta === null
+        ? "이전 기록이 없어 추세 비교는 제한적입니다."
+        : `직전 대비 ${rehabDelta > 0 ? "+" : ""}${rehabDelta.toFixed(1)}점 변화를 보였습니다.`;
+    const topMetric =
+      rehabDetailComparisons.find((m) => m.current !== null) || null;
+    const topMetricText =
+      topMetric && topMetric.current !== null
+        ? `${topMetric.label} ${topMetric.current.toFixed(1)}${topMetric.unit}`
+        : "세부 지표 데이터가 충분하지 않습니다.";
+    return {
+      summary: `${REHAB_STEP_LABELS[rehabPrimaryStep.stepId]} 수행 결과를 이전 동일 훈련과 비교해 분석했습니다.`,
+      strength: `개선 항목 ${rehabImprovedCount}개 · 대표 지표 ${topMetricText}`,
+      need: trendText,
+    };
+  }, [rehabDelta, rehabDetailComparisons, rehabImprovedCount, rehabPrimaryStep]);
+
   const rehabTrendRows = useMemo(() => {
     if (!rehabPrimaryStep) return [];
     return buildTrendRows(rehabRowsByPrimaryStep, rehabPrimaryStep.key);
   }, [rehabPrimaryStep, rehabRowsByPrimaryStep]);
+
+  const rehabFacialReport = useMemo(() => {
+    if (!selected || selected.trainingMode !== "rehab") return null;
+    return buildFacialReport(selected, previousRehabRow);
+  }, [previousRehabRow, selected]);
 
   const rehabTrendChart = useMemo(
     () => buildTrendChart(rehabTrendRows),
@@ -624,299 +601,35 @@ function ReportContent() {
         </button>
       </header>
 
-      <main className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8 grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-4 lg:gap-6">
-        <section
-          className={`bg-white rounded-2xl p-4 border ${
-            isRehabContext ? "border-sky-100" : "border-orange-100"
-          } relative`}
-        >
-          <div className="mb-3 flex items-start justify-between gap-2">
-            <div className="pr-12">
-              <p
-                className={`text-[10px] font-black uppercase tracking-widest ${
-                  isRehabContext ? "text-sky-500" : "text-orange-500"
-                }`}
-              >
-                Patient
-              </p>
-              <p className="text-sm font-bold text-slate-700">
-                {patient?.name || "환자 정보 없음"}
-              </p>
-            </div>
-            <div className="absolute right-4 top-4 flex flex-col items-end gap-1.5">
-              <button
-                type="button"
-                onClick={handleManageIconClick}
-                title={!isSelectionMode ? "수정" : "삭제"}
-                aria-label={!isSelectionMode ? "수정" : "삭제"}
-                className={`h-9 w-9 rounded-lg border transition-colors inline-flex items-center justify-center ${
-                  isSelectionMode
-                    ? "bg-red-50 border-red-200 text-red-700 hover:bg-red-100"
-                    : modeFilter === "rehab"
-                      ? "bg-sky-50 border-sky-200 text-sky-700 hover:bg-sky-100"
-                      : "bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100"
-                }`}
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  {isSelectionMode ? (
-                    <>
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M3 6h18"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M8 6V4h8v2"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M6 6l1 14h10l1-14"
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M4 16.5V20h3.5L18 9.5 14.5 6 4 16.5z"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="m13.5 7 3.5 3.5"
-                      />
-                    </>
-                  )}
-                </svg>
-              </button>
-            </div>
-          </div>
+      <main className="w-full px-4 md:px-6 lg:px-8">
+        <div className="max-w-[1440px] mx-auto grid grid-cols-1 lg:grid-cols-[340px_minmax(0,1076px)] gap-4 lg:gap-6 lg:justify-center py-4 md:py-6 lg:py-8">
+          <HistorySidebar
+          isRehabContext={isRehabContext}
+          patientName={patient?.name || ""}
+          modeFilter={modeFilter}
+          isSelectionMode={isSelectionMode}
+          showDeleteConfirm={showDeleteConfirm}
+          selectedHistoryIds={selectedHistoryIds}
+          filteredHistory={filteredHistory}
+          allRehabSelected={allRehabSelected}
+          selectionCheckedClass={selectionCheckedClass}
+          selectedHistoryId={selected?.historyId ?? null}
+          onManageIconClick={handleManageIconClick}
+          onSetModeFilter={setModeFilter}
+          onDismissDeleteConfirm={() => setShowDeleteConfirm(false)}
+          onConfirmDeleteSelected={handleConfirmDeleteSelected}
+          onToggleSelectAll={handleToggleSelectAll}
+          onToggleHistorySelection={toggleHistorySelection}
+          onSelectHistory={setSelected}
+        />
 
-          <div className="mb-3 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setModeFilter("self")}
-              className={`h-9 rounded-lg border text-sm font-black transition-colors ${
-                modeFilter === "self"
-                  ? "bg-orange-50 border-orange-300 text-orange-700"
-                  : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              자가진단
-            </button>
-            <button
-              type="button"
-              onClick={() => setModeFilter("rehab")}
-              className={`h-9 rounded-lg border text-sm font-black transition-colors ${
-                modeFilter === "rehab"
-                  ? "bg-sky-50 border-sky-300 text-sky-700"
-                  : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              언어재활
-            </button>
-          </div>
-          {isSelectionMode && showDeleteConfirm && (
-            <div className="absolute inset-0 z-30 rounded-2xl bg-slate-900/25 backdrop-blur-[2px] flex items-start justify-center p-4 pt-20">
-              <div className="w-full max-w-[320px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-                <div className="px-4 py-3 bg-gradient-to-r from-red-50 to-rose-50 border-b border-red-100 flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-full bg-red-100 text-red-600 flex items-center justify-center">
-                    <svg
-                      viewBox="0 0 24 24"
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M3 6h18"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M8 6V4h8v2"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M6 6l1 14h10l1-14"
-                      />
-                    </svg>
-                  </span>
-                  <p className="text-sm font-black text-slate-900">
-                    기록 삭제 확인
-                  </p>
-                </div>
-                <div className="px-4 py-3">
-                  <p className="text-sm font-black text-slate-800">
-                    선택한{" "}
-                    <span className="text-red-600">
-                      {selectedHistoryIds.size}개
-                    </span>{" "}
-                    기록을 삭제할까요?
-                  </p>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">
-                    삭제 후에는 복구할 수 없습니다.
-                  </p>
-                </div>
-                <div className="px-4 pb-4 flex items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowDeleteConfirm(false)}
-                    className="h-8 px-3 rounded-lg border border-slate-300 bg-white text-xs font-black text-slate-700 hover:bg-slate-50"
-                  >
-                    취소
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleConfirmDeleteSelected}
-                    className="h-8 px-3 rounded-lg border border-red-300 bg-red-600 text-xs font-black text-white hover:bg-red-700"
-                  >
-                    삭제
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {filteredHistory.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-200 p-4 text-sm font-bold text-slate-500">
-              {modeFilter === "rehab"
-                ? "저장된 언어재활 리포트가 없습니다."
-                : "저장된 자가진단 리포트가 없습니다."}
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-[70vh] overflow-auto pr-1">
-              {isSelectionMode && (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 flex items-center">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleToggleSelectAll}
-                      className={`w-5 h-5 rounded border transition-colors inline-flex items-center justify-center ${
-                        allRehabSelected
-                          ? selectionCheckedClass
-                          : "bg-white border-slate-300 text-transparent"
-                      }`}
-                      aria-label={
-                        allRehabSelected ? "전체 선택 해제" : "전체 선택"
-                      }
-                      title={allRehabSelected ? "전체 선택 해제" : "전체 선택"}
-                    >
-                      <svg
-                        viewBox="0 0 24 24"
-                        className="w-3.5 h-3.5"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="m5 13 4 4L19 7"
-                        />
-                      </svg>
-                    </button>
-                    <p className="text-xs font-black text-slate-700">
-                      {selectedHistoryIds.size}개 선택됨
-                    </p>
-                  </div>
-                </div>
-              )}
-              {filteredHistory.map((row) => (
-                <button
-                  key={row.historyId}
-                  type="button"
-                  onClick={() => {
-                    if (isSelectionMode) {
-                      toggleHistorySelection(row.historyId);
-                      return;
-                    }
-                    setSelected(row);
-                  }}
-                  className={`w-full text-left p-3 rounded-xl border transition-colors ${
-                    selectedHistoryIds.has(row.historyId)
-                      ? "border-red-300 bg-red-50"
-                      : selected?.historyId === row.historyId
-                        ? row.trainingMode === "rehab"
-                          ? "border-sky-300 bg-sky-50"
-                          : "border-orange-300 bg-orange-50"
-                        : "border-slate-200 bg-white hover:bg-slate-50"
-                  }`}
-                >
-                  <div className="flex items-start gap-2">
-                    {isSelectionMode && (
-                      <span
-                        className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center shrink-0 ${
-                          selectedHistoryIds.has(row.historyId)
-                            ? selectionCheckedClass
-                            : "border-slate-300 bg-white text-transparent"
-                        }`}
-                        aria-hidden="true"
-                      >
-                        <svg
-                          viewBox="0 0 24 24"
-                          className="w-3.5 h-3.5"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="3"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="m5 13 4 4L19 7"
-                          />
-                        </svg>
-                      </span>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-black text-slate-800">
-                        {new Date(row.completedAt).toLocaleString("ko-KR")}
-                      </p>
-                      <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-                        <span
-                          className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-black ${
-                            row.trainingMode === "rehab"
-                              ? "bg-sky-100 text-sky-700"
-                              : "bg-orange-100 text-orange-700"
-                          }`}
-                        >
-                          {row.trainingMode === "rehab"
-                            ? "언어재활"
-                            : "자가진단"}
-                        </span>
-                        <p className="text-[11px] font-bold text-slate-600">
-                          {row.trainingMode === "rehab"
-                            ? `장소: ${getPlaceLabel(row.place)} · 훈련: ${getRehabItemLabel(row)} · 점수: ${getRehabRowScore(row).toFixed(1)}점`
-                            : `장소: ${getPlaceLabel(row.place)} · 평가점수: ${Number(row.aq || 0).toFixed(1)}점`}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section
-          className={`bg-white rounded-2xl p-4 md:p-5 border ${
-            selected?.trainingMode === "rehab"
-              ? "border-sky-100"
-              : "border-orange-100"
-          }`}
-        >
+          <section
+            className={`bg-white rounded-2xl p-4 md:p-5 border ${
+              selected?.trainingMode === "rehab"
+                ? "border-sky-100"
+                : "border-orange-100"
+            }`}
+          >
           {!selected ? (
             <div className="rounded-xl border border-dashed border-slate-200 p-6 text-sm font-bold text-slate-500">
               선택된 리포트가 없습니다.
@@ -966,129 +679,88 @@ function ReportContent() {
                 </div>
               </section>
 
-              <section className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-base sm:text-lg md:text-xl font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                    <span className="w-8 h-8 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center">
-                      <Activity className="w-4 h-4 text-sky-600" />
-                    </span>
-                    {rehabPrimaryStep.stepId === 6
-                      ? "이번 쓰기 결과 요약"
-                      : "이번 훈련 세부 항목 비교"}
-                  </h3>
-                  <span className="text-xs font-bold text-slate-500">
-                    개선 항목 {rehabImprovedCount}개
-                  </span>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-slate-100 px-2.5 py-2.5">
-                  <div className="flex flex-wrap items-center gap-2 text-xs leading-relaxed">
-                    {rehabDetailComparisons.map((metric) => {
-                      const hasPrevious = metric.previous !== null;
-                      const diff =
-                        hasPrevious && metric.current !== null
-                          ? Number(
-                              (
-                                metric.current - (metric.previous as number)
-                              ).toFixed(1),
-                            )
-                          : null;
-                      return (
-                        <span
-                          key={metric.key}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-white border border-sky-200 text-slate-600 shadow-sm"
-                        >
-                          <i className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-                          <span className="font-semibold">{metric.label}</span>
-                          <b className="text-slate-900">
-                            {metric.current === null
-                              ? "측정 없음"
-                              : `${metric.current.toFixed(1)}${metric.unit}`}
-                          </b>
-                          <span className="text-slate-400">/</span>
-                          <span className="font-semibold text-slate-500">
-                            {hasPrevious
-                              ? `이전 ${metric.previous?.toFixed(1)}${metric.unit}`
-                              : "이전 없음"}
-                          </span>
-                          <b className="text-sky-600">
-                            {diff === null
-                              ? "-"
-                              : `${diff > 0 ? "+" : ""}${diff.toFixed(1)}${metric.unit}`}
-                          </b>
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              </section>
+              <RehabDetailBlocks
+                safeStep={rehabPrimaryStep.stepId}
+                detailComparisons={rehabDetailComparisons}
+                improvedCount={rehabImprovedCount}
+                impression={rehabImpression}
+                stepResultCards={rehabStepCards}
+                playingIndex={playingId}
+                enableAudioPlayback
+                onToggleAudioPlayback={(item) => {
+                  const id = `step${rehabPrimaryStep.stepId}-${item.index}`;
+                  if (playingId === id) {
+                    stopPlayback();
+                    setPlayingId(null);
+                    return;
+                  }
+                  if (item.audioUrl) {
+                    playAudio(item.audioUrl, id);
+                    return;
+                  }
+                  playSpeechFallback(item.text, id);
+                }}
+              />
 
-              <section className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-3">
-                  <h3 className="text-base sm:text-lg md:text-xl font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                    <span className="w-8 h-8 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center">
-                      <FileText className="w-4 h-4 text-sky-600" />
+              {[2, 4, 5].includes(rehabPrimaryStep.stepId) && rehabFacialReport && (
+                <section className="rounded-2xl border border-slate-200 bg-white p-3 sm:p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                      <span className="w-8 h-8 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center">
+                        <ScanFace className="w-4 h-4 text-sky-600" />
+                      </span>
+                      안면인식 기반 리포트
+                    </h3>
+                    <span className="text-[11px] font-bold text-slate-500">
+                      스크리닝 참고
                     </span>
-                    수행 기록 상세
-                  </h3>
-                  <span className="text-xs font-bold text-slate-500">
-                    Step {rehabPrimaryStep.stepId} · {rehabStepCards.length}{" "}
-                    Activities
-                  </span>
-                </div>
-                <div
-                  className={`grid gap-2 ${rehabStepCards.length === 3 ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3" : "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5"}`}
-                >
-                  {rehabStepCards.map((item) => (
-                    <div
-                      key={`rehab-card-${item.index}`}
-                      className="group bg-white p-3 rounded-lg border border-slate-200 shadow-sm"
-                    >
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-xs font-black text-slate-300 uppercase">
-                          Index {item.index}
-                        </span>
-                        <span
-                          className={`px-1.5 py-0.5 rounded text-[8px] font-black ${
-                            item.isCorrect
-                              ? "bg-emerald-50 text-emerald-500"
-                              : "bg-sky-50 text-sky-700"
-                          }`}
-                        >
-                          {item.isCorrect ? "CORRECT" : "REVIEW"}
-                        </span>
-                      </div>
-                      <p className="text-xs font-bold text-slate-700 leading-snug">
-                        "{item.text}"
-                      </p>
-                      {rehabPrimaryStep.stepId === 6 && item.userImage && (
-                        <div className="aspect-video bg-slate-50 rounded-md mt-2 overflow-hidden border border-slate-100 flex items-center justify-center">
-                          <img
-                            src={item.userImage}
-                            className="max-h-full max-w-full object-contain p-2"
-                            alt="rehab-writing-result"
-                          />
-                        </div>
-                      )}
-                      {(item.feedbackGood || item.feedbackImprove) && (
-                        <div className="mt-2 pt-2 border-t border-slate-100 space-y-1">
-                          {item.feedbackGood && (
-                            <p className="text-[11px] font-semibold text-slate-600 leading-relaxed">
-                              <span className="text-sky-600">좋았던 점:</span>{" "}
-                              {item.feedbackGood}
-                            </p>
-                          )}
-                          {item.feedbackImprove && (
-                            <p className="text-[11px] font-semibold text-slate-500 leading-relaxed">
-                              <span className="text-slate-700">개선점:</span>{" "}
-                              {item.feedbackImprove}
-                            </p>
-                          )}
-                        </div>
-                      )}
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-slate-100 px-2.5 py-2.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-sky-200 text-slate-600 shadow-sm">
+                        <i className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                        자음{" "}
+                        <b className="text-slate-900">
+                          {rehabFacialReport.consonant.toFixed(1)}%
+                        </b>
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-sky-200 text-slate-600 shadow-sm">
+                        <i className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                        모음{" "}
+                        <b className="text-slate-900">
+                          {rehabFacialReport.vowel.toFixed(1)}%
+                        </b>
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-sky-200 text-slate-600 shadow-sm">
+                        <i className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                        비대칭{" "}
+                        <b className="text-slate-900">
+                          {rehabFacialReport.asymmetryRisk.toFixed(1)}%
+                        </b>
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-200 text-slate-600 shadow-sm">
+                        <i className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                        위험도{" "}
+                        <b className="text-slate-900">{rehabFacialReport.riskLabel}</b>
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-200 text-slate-600 shadow-sm">
+                        <i className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                        추이{" "}
+                        <b className="text-slate-900">
+                          {rehabFacialReport.riskDelta === null
+                            ? "N/A"
+                            : `${rehabFacialReport.riskDelta > 0 ? "+" : ""}${rehabFacialReport.riskDelta.toFixed(1)}%p`}
+                        </b>
+                      </span>
                     </div>
-                  ))}
-                </div>
-              </section>
+                  </div>
+
+                  <p className="mt-2.5 text-xs text-slate-600 px-1 leading-relaxed">
+                    {rehabFacialReport.summary}
+                  </p>
+                </section>
+              )}
 
               <section className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="flex items-center justify-between mb-3">
@@ -1220,403 +892,26 @@ function ReportContent() {
                 </div>
               </section>
 
-              <section className="bg-white rounded-[32px] p-4 md:p-5 border border-orange-200 shadow-sm">
-                <h3 className="text-base sm:text-lg md:text-xl font-black text-slate-900 mb-4 uppercase tracking-wider flex items-center gap-2">
-                  <span className="w-8 h-8 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center">
-                    <Activity className="w-4 h-4 text-orange-500" />
-                  </span>
-                  언어 기능 프로파일
-                </h3>
-                <div className="rounded-[24px] border border-orange-200 bg-orange-50/30 p-3 md:p-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="rounded-xl border border-orange-100 bg-white p-2 flex items-center justify-center md:h-[280px]">
-                      <svg
-                        viewBox="0 0 340 340"
-                        className="w-[260px] h-[260px] sm:w-[280px] sm:h-[280px] md:w-[300px] md:h-[300px]"
-                      >
-                        {[0.25, 0.5, 0.75, 1].map((st) => (
-                          <polygon
-                            key={`grid-${st}`}
-                            points={selfProfileRows
-                              .map((_, i) => {
-                                const a = (Math.PI * 2 * i) / 6 - Math.PI / 2;
-                                return `${170 + 102 * st * Math.cos(a)},${170 + 102 * st * Math.sin(a)}`;
-                              })
-                              .join(" ")}
-                            fill="none"
-                            stroke="#E2E8F0"
-                            strokeWidth="2"
-                          />
-                        ))}
-                        {selfRadarNodes.length > 2 && (
-                          <polygon
-                            points={selfRadarNodes
-                              .map((n) => `${n.x},${n.y}`)
-                              .join(" ")}
-                            fill="rgba(249,115,22,0.15)"
-                            stroke="#F97316"
-                            strokeWidth="3"
-                            strokeLinejoin="round"
-                          />
-                        )}
-                        {selfRadarNodes.map((n, idx) => (
-                          <g key={`node-${idx}`}>
-                            <circle cx={n.x} cy={n.y} r="4" fill="#F97316" />
-                          </g>
-                        ))}
-                      </svg>
-                    </div>
-                    <div className="grid grid-cols-2 grid-rows-3 gap-2 md:h-[280px]">
-                      {selfProfileRows.map((row) => (
-                        <div
-                          key={`self-metric-${row.key}`}
-                          className="rounded-xl border border-orange-100 bg-white p-3 flex items-center justify-between"
-                        >
-                          <p className="text-xs font-black text-slate-500">
-                            {row.label}
-                          </p>
-                          <p className="text-xl font-black text-slate-900">
-                            {formatSelfMetricDisplay(row.key, row.score)}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section className="bg-white rounded-2xl p-4 md:p-6 border border-orange-200 shadow-sm">
-                <h3 className="text-base sm:text-lg md:text-xl font-black text-slate-900 mb-4 uppercase tracking-wider flex items-center gap-2 leading-relaxed">
-                  <span className="w-8 h-8 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center">
-                    <FileText className="w-4 h-4 text-orange-500" />
-                  </span>
-                  전문가 임상 소견
-                </h3>
-                <div className="bg-orange-50/40 border border-orange-200 rounded-2xl p-4 md:p-5 space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div className="rounded-xl border border-orange-200 bg-white p-3 md:p-4 min-h-[48px]">
-                      <p className="text-xs md:text-sm font-black text-slate-500 tracking-wide">
-                        잘하고 있는 점
-                      </p>
-                      <p className="mt-1 text-sm md:text-base font-bold text-slate-900 leading-loose">
-                        {selfClinicalImpression?.strongestText}
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-orange-200 bg-white p-3 md:p-4 min-h-[48px]">
-                      <p className="text-xs md:text-sm font-black text-slate-500 tracking-wide">
-                        노력이 필요한 점
-                      </p>
-                      <p className="mt-1 text-sm md:text-base font-bold text-orange-600 leading-loose">
-                        {selfClinicalImpression?.weakestText}
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-orange-200 bg-white p-3 md:p-4 min-h-[48px]">
-                      <p className="text-xs md:text-sm font-black text-slate-500 tracking-wide">
-                        오늘의 응원 권고
-                      </p>
-                      <p className="mt-1 text-sm md:text-base font-bold text-slate-900 leading-loose">
-                        {selfClinicalImpression?.encourageText}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="rounded-xl bg-white border border-orange-200 p-3 md:p-4 flex items-start gap-2.5">
-                      <Sparkles className="w-4 h-4 text-orange-500 mt-1 shrink-0" />
-                      <p className="min-w-0 text-sm md:text-base font-semibold text-slate-800 leading-loose whitespace-pre-line break-words">
-                        {selfClinicalImpression?.summary}
-                      </p>
-                    </div>
-                    <div className="rounded-xl bg-white border border-orange-200 p-3 md:p-4 flex items-start gap-2.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-1 shrink-0" />
-                      <p className="min-w-0 text-sm md:text-base font-semibold text-slate-700 leading-loose whitespace-pre-line break-words">
-                        잘하고 있는 점: {selfClinicalImpression?.strength}
-                      </p>
-                    </div>
-                    <div className="rounded-xl bg-white border border-orange-200 p-3 md:p-4 flex items-start gap-2.5">
-                      <Activity className="w-4 h-4 text-orange-500 mt-1 shrink-0" />
-                      <p className="min-w-0 text-sm md:text-base font-semibold text-slate-700 leading-loose whitespace-pre-line break-words">
-                        노력이 필요한 점: {selfClinicalImpression?.need}
-                      </p>
-                    </div>
-                    <div className="rounded-xl bg-white border border-orange-200 p-3 md:p-4 flex items-start gap-2.5">
-                      <HeartHandshake className="w-4 h-4 text-orange-500 mt-1 shrink-0" />
-                      <p className="min-w-0 text-sm md:text-base font-semibold text-slate-700 leading-loose whitespace-pre-line break-words">
-                        오늘의 응원 권고:{" "}
-                        {selfClinicalImpression?.recommendation}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section className="no-print bg-white rounded-2xl p-5 border border-orange-200 shadow-sm">
-                <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
-                  <div className="space-y-1">
-                    <h3 className="text-base sm:text-lg md:text-xl font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                      <span className="w-8 h-8 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center">
-                        <FileText className="w-4 h-4 text-orange-500" />
-                      </span>
-                      수행 기록 상세
-                    </h3>
-                    <p className="text-sm font-bold text-slate-600">
-                      단계별 항목을 펼쳐 상세 기록을 확인하세요.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setOpenAllAccordions((prev) => !prev)}
-                    className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-sm font-black text-slate-600 hover:bg-slate-50 transition-colors"
-                  >
-                    {openAllAccordions ? "전체닫기" : "전체보기"}
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {availableSteps.map((s) => {
-                    const stepId = STEP_ID_BY_KEY[s.key];
-                    const isOpen = openAllAccordions || openStepId === stepId;
-                    return (
-                      <div
-                        key={`detail-${s.key}`}
-                        className="bg-slate-50/50 rounded-xl border border-slate-100 overflow-hidden"
-                      >
-                        <button
-                          onClick={() => {
-                            if (openAllAccordions) {
-                              setOpenAllAccordions(false);
-                              setOpenStepId(stepId);
-                              return;
-                            }
-                            setOpenStepId(isOpen ? null : stepId);
-                          }}
-                          className="w-full px-4 py-3 bg-white flex items-center justify-between text-left border-b border-slate-100"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full uppercase tracking-widest">
-                              Step 0{stepId}
-                            </span>
-                            <span className="text-xs font-black text-slate-800">
-                              {SELF_LABEL_BY_KEY[s.key]}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-xs font-black text-slate-600">
-                              {s.items.length} Activities
-                            </span>
-                            <span className="text-slate-600 text-xs font-black">
-                              {isOpen ? "▲" : "▼"}
-                            </span>
-                          </div>
-                        </button>
-
-                        {isOpen && (
-                          <div
-                            className={`grid gap-2 p-3 ${
-                              s.items.length === 3
-                                ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3"
-                                : "grid-cols-1 sm:grid-cols-2 md:grid-cols-5"
-                            }`}
-                          >
-                            {s.items.length === 0 ? (
-                              <div className="col-span-full h-20 flex items-center justify-center italic text-xs text-slate-300 font-bold border border-dashed border-slate-200 rounded-xl">
-                                No Data Recorded
-                              </div>
-                            ) : (
-                              s.items.map((it: any, i: number) => {
-                                const pid = `s${stepId}-${i}`;
-                                const feedback = getSelfItemFeedback(
-                                  stepId,
-                                  it,
-                                );
-                                return (
-                                  <div
-                                    key={pid}
-                                    className="group h-full bg-white p-3 rounded-lg border border-slate-200/60 shadow-sm hover:border-orange-200 transition-all flex flex-col"
-                                  >
-                                    <div className="flex justify-between items-center mb-2">
-                                      <span className="text-xs font-black text-slate-300 uppercase">
-                                        Index {i + 1}
-                                      </span>
-                                      <div
-                                        className={`px-1.5 py-0.5 rounded text-[8px] font-black ${it.isCorrect ? "bg-emerald-50 text-emerald-500" : "bg-orange-50 text-orange-700"}`}
-                                      >
-                                        {it.isCorrect ? "CORRECT" : "REVIEW"}
-                                      </div>
-                                    </div>
-
-                                    {stepId === 6 && it.userImage && (
-                                      <div className="aspect-video bg-slate-50 rounded-md mb-2 overflow-hidden border border-slate-100 flex items-center justify-center">
-                                        <img
-                                          src={it.userImage}
-                                          className="max-h-full max-w-full object-contain p-2"
-                                          alt="training-result"
-                                        />
-                                      </div>
-                                    )}
-
-                                    <p className="text-xs font-bold text-slate-600 leading-snug mb-2">
-                                      "
-                                      {it.text ||
-                                        it.targetText ||
-                                        it.targetWord ||
-                                        "..."}
-                                      "
-                                    </p>
-
-                                    <div className="mt-1 pt-2 border-t border-slate-100 space-y-1 mb-2">
-                                      <p className="text-[11px] font-semibold text-slate-600 leading-relaxed">
-                                        <span className="text-orange-600">
-                                          좋았던 점:
-                                        </span>{" "}
-                                        {feedback.good}
-                                      </p>
-                                      <p className="text-[11px] font-semibold text-slate-500 leading-relaxed">
-                                        <span className="text-slate-700">
-                                          개선점:
-                                        </span>{" "}
-                                        {feedback.improve}
-                                      </p>
-                                    </div>
-
-                                    {shouldShowPlayButton(stepId, it) && (
-                                      <button
-                                        onClick={() => {
-                                          if (it.audioUrl) {
-                                            playAudio(it.audioUrl, pid);
-                                          } else {
-                                            playSpeechFallback(
-                                              getPlayableText(it),
-                                              pid,
-                                            );
-                                          }
-                                        }}
-                                        className={`mt-auto w-full py-1.5 rounded-md text-xs font-black flex items-center justify-center gap-2 transition-all ${
-                                          playingId === pid
-                                            ? "bg-orange-600 text-white shadow-sm"
-                                            : "bg-slate-50 text-slate-600 group-hover:bg-orange-50 group-hover:text-slate-900"
-                                        }`}
-                                      >
-                                        {playingId === pid ? (
-                                          <>
-                                            <span>■</span> STOP SOUND
-                                          </>
-                                        ) : (
-                                          <>
-                                            <span>▶</span> PLAY SOUND
-                                          </>
-                                        )}
-                                      </button>
-                                    )}
-                                  </div>
-                                );
-                              })
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-
-              {selfFacialReport && (
-                <section className="no-print bg-white rounded-[32px] p-5 md:p-6 border border-slate-100 shadow-sm">
-                  <h3 className="text-base sm:text-lg md:text-xl font-black text-slate-900 mb-5 uppercase tracking-wider flex items-center gap-2">
-                    <span className="w-8 h-8 rounded-lg bg-orange-50 border border-slate-100 flex items-center justify-center">
-                      <ScanFace className="w-4 h-4 text-orange-500" />
-                    </span>
-                    AI 정밀 분석
-                  </h3>
-                  <div className="grid grid-cols-12 gap-4 md:gap-5">
-                    <div className="col-span-12 md:col-span-6 rounded-2xl border border-slate-100 bg-white p-4 md:p-5">
-                      <div className="flex items-center justify-between mb-4">
-                        <p className="text-sm md:text-base font-black text-slate-800">
-                          안면 기반 자-모음 정확도
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-black text-amber-700">
-                            <MessageSquare className="w-3.5 h-3.5" />
-                            자음
-                          </span>
-                          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-black text-indigo-700">
-                            <BookOpen className="w-3.5 h-3.5" />
-                            모음
-                          </span>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-12 gap-3 md:gap-4">
-                        <div className="col-span-12 sm:col-span-6 rounded-xl border border-slate-100 bg-slate-50/50 p-3 md:p-4">
-                          <p className="text-xs text-slate-500 font-bold">
-                            전체 자음
-                          </p>
-                          <p className="mt-1 text-2xl md:text-3xl font-black text-amber-600 leading-none">
-                            {Math.round(selfFacialReport.consonant)}%
-                          </p>
-                        </div>
-                        <div className="col-span-12 sm:col-span-6 rounded-xl border border-slate-100 bg-slate-50/50 p-3 md:p-4">
-                          <p className="text-xs text-slate-500 font-bold">
-                            전체 모음
-                          </p>
-                          <p className="mt-1 text-2xl md:text-3xl font-black text-indigo-600 leading-none">
-                            {Math.round(selfFacialReport.vowel)}%
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="col-span-12 md:col-span-6 rounded-2xl border border-slate-100 bg-white p-4 md:p-5 min-h-[250px]">
-                      <div className="flex items-start justify-between gap-3">
-                        <p className="text-sm md:text-base font-black text-slate-800">
-                          안면 비대칭 위험도
-                        </p>
-                        <span className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
-                          <ScanFace className="w-4 h-4 text-slate-700" />
-                        </span>
-                      </div>
-                      <div className="mt-4">
-                        <p
-                          className={`text-2xl md:text-3xl font-black leading-none ${
-                            selfFacialReport.asymmetryRisk >= 70
-                              ? "text-red-600"
-                              : selfFacialReport.asymmetryRisk >= 40
-                                ? "text-amber-600"
-                                : "text-emerald-600"
-                          }`}
-                        >
-                          {selfFacialReport.riskLabel}
-                        </p>
-                        <p className="mt-1 text-base font-black text-slate-900">
-                          {Math.round(selfFacialReport.asymmetryRisk)} / 100
-                        </p>
-                      </div>
-                      <div className="mt-4 grid grid-cols-12 gap-2.5">
-                        <div className="col-span-6 rounded-xl border border-slate-100 bg-slate-50/50 p-2.5">
-                          <p className="text-[11px] font-bold text-slate-500">
-                            비대칭
-                          </p>
-                          <p className="text-sm font-black text-slate-900">
-                            {Math.round(selfFacialReport.asymmetryRisk)}
-                          </p>
-                        </div>
-                        <div className="col-span-6 rounded-xl border border-slate-100 bg-slate-50/50 p-2.5">
-                          <p className="text-[11px] font-bold text-slate-500">
-                            불균형
-                          </p>
-                          <p className="text-sm font-black text-slate-900">
-                            {selfFacialReport.riskDelta === null
-                              ? "-"
-                              : selfFacialReport.riskDelta.toFixed(1)}
-                          </p>
-                        </div>
-                      </div>
-                      <p className="mt-4 text-xs sm:text-sm font-bold text-slate-600 leading-relaxed whitespace-pre-line break-words">
-                        {selfFacialReport.summary}
-                      </p>
-                    </div>
-                  </div>
-                </section>
-              )}
+              <SelfAssessmentBlocks
+                stepDetails={selfStepDetails}
+                sessionData={selfSessionData}
+                clinicalImpression={selfClinicalImpression}
+                openAllAccordions={openAllAccordions}
+                openStepId={openStepId}
+                setOpenAllAccordions={setOpenAllAccordions}
+                setOpenStepId={setOpenStepId}
+                getSelfItemFeedback={getSelfItemFeedback}
+                shouldShowPlayButton={shouldShowPlayButton}
+                getPlayableText={getPlayableText}
+                playAudio={playAudio}
+                playSpeechFallback={playSpeechFallback}
+                playingIndex={playingId}
+                facialReport={selfFacialForBlocks}
+              />
             </div>
           )}
-        </section>
+          </section>
+        </div>
       </main>
     </div>
   );

@@ -29,18 +29,15 @@ import {
   getResponsiveSentenceSizeClass,
 } from "@/lib/text/displayText";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
+import {
+  maskPlaceLabels,
+  scoreStep4Response,
+  STEP4_IMAGE_BASE_URL,
+  STEP4_IMAGE_RAW_BASE_URL,
+  toDataUrl,
+} from "@/features/steps/step4/utils";
 
 export const dynamic = "force-dynamic";
-
-// 이미지 경로 설정
-const STEP4_IMAGE_BASE_URL = (
-  process.env.NEXT_PUBLIC_STEP4_IMAGE_BASE_URL ||
-  "https://cdn.jsdelivr.net/gh/BUGISU/braintalktalk-assets@main/step4"
-).replace(/\/$/, "");
-const STEP4_IMAGE_RAW_BASE_URL = (
-  process.env.NEXT_PUBLIC_STEP4_IMAGE_RAW_BASE_URL ||
-  "https://raw.githubusercontent.com/BUGISU/braintalktalk-assets/main/step4"
-).replace(/\/$/, "");
 
 type Phase = "ready" | "recording" | "analyzing" | "review";
 
@@ -53,6 +50,12 @@ type Step4EvalResult = {
   relevantSentenceCount: number;
   totalSentenceCount: number;
   relevanceScore: number;
+  contentComponentScore: number;
+  fluencyComponentScore: number;
+  clarityComponentScore: number;
+  responseStartComponentScore: number;
+  responseStartMs: number | null;
+  finalScore: number;
   speechDuration: number;
   silenceRatio: number;
   averageAmplitude: number;
@@ -76,43 +79,6 @@ type Step4EvalResult = {
     patternMatchPct: number;
   };
 };
-
-function toDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve((reader.result as string) || "");
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
-// 장소 직접 노출 방지를 위한 마스킹 함수
-const STEP4_PLACE_TERMS = [
-  "우리 집",
-  "커피숍",
-  "거실",
-  "주방",
-  "침실",
-  "병원",
-  "카페",
-  "은행",
-  "공원",
-  "마트",
-  "창구",
-  "카운터",
-  "매장",
-];
-function maskPlaceLabels(text: string) {
-  if (!text) return text;
-  const sortedTerms = [...STEP4_PLACE_TERMS].sort(
-    (a, b) => b.length - a.length,
-  );
-  let masked = text;
-  for (const term of sortedTerms) {
-    masked = masked.split(term).join("이곳");
-  }
-  return masked.replace(/(이곳\s*){2,}/g, "이곳 ");
-}
 
 function Step4Content() {
   const router = useRouter();
@@ -181,6 +147,8 @@ function Step4Content() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const analyzerRef = useRef<SpeechAnalyzer | null>(null);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const promptEndedAtRef = useRef<number | null>(null);
+  const recordingStartedAtRef = useRef<number | null>(null);
   const imageCacheRef = useRef<Record<string, string>>({});
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -446,6 +414,7 @@ function Step4Content() {
     if (!window.speechSynthesis) {
       setIsPromptPlaying(false);
       setCanRecord(true);
+      promptEndedAtRef.current = Date.now();
       return;
     }
 
@@ -466,10 +435,12 @@ function Step4Content() {
     utterance.onend = () => {
       setIsPromptPlaying(false);
       setCanRecord(true);
+      promptEndedAtRef.current = Date.now();
     };
     utterance.onerror = () => {
       setIsPromptPlaying(false);
       setCanRecord(true);
+      promptEndedAtRef.current = Date.now();
     };
 
     setTimeout(() => {
@@ -484,6 +455,8 @@ function Step4Content() {
     setShowHint(false);
     setCurrentResult(null);
     setSaveStatusText("");
+    promptEndedAtRef.current = null;
+    recordingStartedAtRef.current = null;
     playInstruction();
   }, [currentIndex, isMounted, playInstruction, currentScenario]);
 
@@ -504,6 +477,7 @@ function Step4Content() {
         count: 0,
       };
       if (!analyzerRef.current) analyzerRef.current = new SpeechAnalyzer();
+      recordingStartedAtRef.current = Date.now();
       await analyzerRef.current.startAnalysis((level) => setAudioLevel(level));
       updateRuntimeStatus({
         recording: true,
@@ -553,11 +527,14 @@ function Step4Content() {
       }
       const transcript = (analysis.transcript || "").trim();
 
-      // 채점 로직 (기존 로직 유지)
+      // STT/발화 메트릭/자모음 분석치를 함께 사용한 종합 채점
       const matched = currentScenario.answerKeywords.filter((kw) =>
         transcript.includes(kw),
       );
-      const score = Math.min(10, Math.round((matched.length / 5) * 10));
+      const responseStartMs =
+        recordingStartedAtRef.current !== null && promptEndedAtRef.current !== null
+          ? Math.max(0, recordingStartedAtRef.current - promptEndedAtRef.current)
+          : null;
       const aggregate = articulationAggregateRef.current;
       const consonantAccuracy =
         aggregate.count > 0
@@ -606,21 +583,40 @@ function Step4Content() {
         consonantAccuracy,
         vowelAccuracy,
       }).score;
+      const speechDurationSec =
+        Number.isFinite(Number(analysis.duration)) && Number(analysis.duration) > 0
+          ? Number(analysis.duration) / 1000
+          : recordingTime;
+      const scored = scoreStep4Response({
+        matchedKeywordCount: matched.length,
+        totalKeywords: currentScenario.answerKeywords.length,
+        transcript,
+        speechDurationSec,
+        consonantAccuracy,
+        vowelAccuracy,
+        responseStartMs,
+      });
 
       const evalResult: Step4EvalResult = {
         situation: currentScenario.situation,
         prompt: currentScenario.prompt,
         transcript,
-        isCorrect: score >= 5,
+        isCorrect: scored.kwabScore >= 5,
         matchedKeywords: Array.from(new Set(matched)),
         relevantSentenceCount: 1,
         totalSentenceCount: 1,
-        relevanceScore: score,
-        speechDuration: recordingTime,
+        relevanceScore: scored.contentScore,
+        contentComponentScore: scored.contentScore,
+        fluencyComponentScore: scored.fluencyScore,
+        clarityComponentScore: scored.clarityScore,
+        responseStartComponentScore: scored.responseStartScore,
+        responseStartMs,
+        finalScore: scored.finalScore,
+        speechDuration: speechDurationSec,
         silenceRatio: 0,
         averageAmplitude: audioLevel,
         peakCount: 0,
-        kwabScore: score,
+        kwabScore: scored.kwabScore,
         rawScore: analysis.pronunciationScore,
         audioUrl: analysis.audioBlob
           ? URL.createObjectURL(analysis.audioBlob)
@@ -682,10 +678,18 @@ function Step4Content() {
                     patternMatchPct: Number(vowelDetail.patternMatchPct.toFixed(1)),
                   },
                   audioUrl: base64Audio,
-                  isCorrect: score >= 5,
-                  fluencyScore: score,
+                  isCorrect: scored.kwabScore >= 5,
+                  contentComponentScore: scored.contentScore,
+                  fluencyComponentScore: scored.fluencyScore,
+                  clarityComponentScore: scored.clarityScore,
+                  responseStartComponentScore: scored.responseStartScore,
+                  responseStartMs,
+                  responseTime: responseStartMs,
+                  finalScore: scored.finalScore,
+                  fluencyScore: scored.kwabScore,
+                  kwabScore: scored.kwabScore,
                   rawScore: analysis.pronunciationScore,
-                  speechDuration: recordingTime,
+                  speechDuration: speechDurationSec,
                   silenceRatio: 0,
                   timestamp: new Date().toLocaleTimeString(),
                 },
@@ -695,7 +699,7 @@ function Step4Content() {
           console.log("[Step4] save:success", {
             index: currentIndex,
             savedCount: next.length,
-            score,
+            score: scored.finalScore,
           });
           setSaveStatusText("녹음 저장 완료");
           updateRuntimeStatus({
@@ -789,15 +793,23 @@ function Step4Content() {
           items: allResults.map((r) => ({
             situation: r.situation,
             prompt: r.prompt,
-            transcript: r.transcript,
-            isCorrect: Boolean(r.isCorrect ?? r.kwabScore >= 5),
-            speechDuration: r.speechDuration,
-            silenceRatio: r.silenceRatio,
-            averageAmplitude: r.averageAmplitude,
-            peakCount: r.peakCount,
-            kwabScore: r.kwabScore,
-            rawScore: r.rawScore,
-            consonantAccuracy: r.consonantAccuracy,
+          transcript: r.transcript,
+          isCorrect: Boolean(r.isCorrect ?? r.kwabScore >= 5),
+          speechDuration: r.speechDuration,
+          responseStartMs: r.responseStartMs,
+          responseTime: r.responseStartMs,
+          silenceRatio: r.silenceRatio,
+          averageAmplitude: r.averageAmplitude,
+          peakCount: r.peakCount,
+          contentComponentScore: r.contentComponentScore,
+          fluencyComponentScore: r.fluencyComponentScore,
+          clarityComponentScore: r.clarityComponentScore,
+          responseStartComponentScore: r.responseStartComponentScore,
+          finalScore: r.finalScore,
+          fluencyScore: r.kwabScore,
+          kwabScore: r.kwabScore,
+          rawScore: r.rawScore,
+          consonantAccuracy: r.consonantAccuracy,
             vowelAccuracy: r.vowelAccuracy,
             articulationWritingConsistency: r.articulationWritingConsistency,
             consonantDetail: r.consonantDetail,
@@ -842,7 +854,8 @@ function Step4Content() {
       }
 
       const demoItems = scenarios.slice(0, 3).map((scenario) => {
-        const kwabScore = randomFloat(5.8, 9.6);
+        const finalScore = randomFloat(58, 96);
+        const kwabScore = Number((finalScore / 10).toFixed(1));
         return {
           situation: scenario.situation,
           prompt: scenario.prompt,
@@ -850,13 +863,19 @@ function Step4Content() {
           matchedKeywords: scenario.answerKeywords.slice(0, 2),
           relevantSentenceCount: 1,
           totalSentenceCount: 1,
-          relevanceScore: randomFloat(5, 10),
+          relevanceScore: randomFloat(55, 95),
+          contentComponentScore: randomFloat(55, 95),
+          fluencyComponentScore: randomFloat(50, 92),
+          clarityComponentScore: randomFloat(62, 96),
+          responseStartComponentScore: randomFloat(60, 100),
+          responseStartMs: randomFloat(900, 7500, 0),
+          finalScore,
           speechDuration: randomFloat(6, 14, 0),
           silenceRatio: randomFloat(0.05, 0.35, 2),
           averageAmplitude: randomFloat(25, 62, 0),
           peakCount: randomFloat(2, 7, 0),
           kwabScore,
-          rawScore: randomFloat(58, 96),
+          rawScore: randomFloat(60, 96),
           articulationWritingConsistency: randomFloat(60, 95),
           isCorrect: kwabScore >= 5,
           timestamp: new Date().toLocaleTimeString(),
@@ -882,9 +901,17 @@ function Step4Content() {
           transcript: item.transcript,
           isCorrect: Boolean(item.isCorrect),
           speechDuration: item.speechDuration,
+          responseStartMs: item.responseStartMs,
+          responseTime: item.responseStartMs,
           silenceRatio: item.silenceRatio,
           averageAmplitude: item.averageAmplitude,
           peakCount: item.peakCount,
+          contentComponentScore: item.contentComponentScore,
+          fluencyComponentScore: item.fluencyComponentScore,
+          clarityComponentScore: item.clarityComponentScore,
+          responseStartComponentScore: item.responseStartComponentScore,
+          finalScore: item.finalScore,
+          fluencyScore: item.kwabScore,
           kwabScore: item.kwabScore,
           rawScore: item.rawScore,
           articulationWritingConsistency: item.articulationWritingConsistency,

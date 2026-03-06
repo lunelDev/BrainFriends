@@ -26,6 +26,10 @@ import {
 import { estimateLipSymmetryFromLandmarks } from "@/lib/analysis/lipMetrics";
 import { addSentenceLineBreaks } from "@/lib/text/displayText";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
+import {
+  blendArticulationAccuracy,
+  getStep5TextSizeClass,
+} from "@/features/steps/step5/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -36,9 +40,14 @@ interface ReadingMetrics {
   isCorrect?: boolean;
   audioUrl: string;
   totalTime: number;
+  responseTime?: number;
+  recognitionResponseMs?: number;
   wordsPerMinute: number;
   pauseCount: number;
   readingScore: number;
+  readingAccuracyScore?: number;
+  fluencyScore?: number;
+  articulationClarityScore?: number;
   consonantAccuracy: number;
   vowelAccuracy: number;
   articulationWritingConsistency?: number;
@@ -57,27 +66,50 @@ interface ReadingMetrics {
   dataSource?: "measured" | "demo";
 }
 
-function getStep5TextSizeClass(text: string): string {
-  const normalizedLength = (text || "").replace(/\s+/g, "").length;
-  if (normalizedLength >= 110) return "text-xs md:text-sm lg:text-base";
-  if (normalizedLength >= 85) return "text-sm md:text-base lg:text-lg";
-  if (normalizedLength >= 60) return "text-base md:text-lg lg:text-xl";
-  if (normalizedLength >= 40) return "text-lg md:text-xl lg:text-2xl";
-  return "text-xl md:text-2xl lg:text-3xl";
-}
-
-function blendArticulationAccuracy(
-  visualAccuracy: number,
-  speechAccuracy?: number,
-): number {
-  if (!Number.isFinite(speechAccuracy) || Number(speechAccuracy) <= 0) {
-    return Math.min(100, Math.max(0, visualAccuracy));
+const calculateTextSimilarityPercent = (expected: string, actual: string) => {
+  const exp = String(expected || "").replace(/\s+/g, "").toLowerCase();
+  const act = String(actual || "").replace(/\s+/g, "").toLowerCase();
+  if (!exp.length && !act.length) return 100;
+  if (!exp.length || !act.length) return 0;
+  const matrix: number[][] = [];
+  for (let i = 0; i <= exp.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= act.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= exp.length; i++) {
+    for (let j = 1; j <= act.length; j++) {
+      const cost = exp[i - 1] === act[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + cost,
+      );
+    }
   }
-  return Math.min(
-    100,
-    Math.max(0, visualAccuracy * 0.2 + Number(speechAccuracy) * 0.8),
-  );
-}
+  const distance = matrix[exp.length][act.length];
+  const maxLength = Math.max(exp.length, act.length);
+  return Math.max(0, Math.min(100, ((maxLength - distance) / maxLength) * 100));
+};
+
+const normalizeTextForLength = (text: string) =>
+  String(text || "")
+    .replace(/\s+/g, "")
+    .replace(/[^\u3131-\u318E\uAC00-\uD7A3a-zA-Z0-9]/g, "");
+
+const calculateReadingCompletenessScore = (expected: string, transcript: string) => {
+  const expectedLen = normalizeTextForLength(expected).length;
+  const actualLen = normalizeTextForLength(transcript).length;
+  if (expectedLen <= 0) return 0;
+  const ratio = Math.min(1, actualLen / expectedLen);
+  return Number((ratio * 100).toFixed(1));
+};
+
+const calculateSpeedStabilityScore = (wpm: number) => {
+  if (!Number.isFinite(wpm) || wpm <= 0) return 0;
+  if (wpm < 40) return 35;
+  if (wpm < 70) return 35 + ((wpm - 40) / 30) * 45; // 35~80
+  if (wpm <= 110) return 100; // 권장 구간
+  if (wpm <= 150) return 100 - ((wpm - 110) / 40) * 40; // 100~60
+  return Math.max(25, 60 - ((wpm - 150) / 30) * 20); // 과속 패널티
+};
 
 function Step5Content() {
   const router = useRouter();
@@ -556,7 +588,35 @@ function Step5Content() {
         consonantAccuracy,
         vowelAccuracy,
       }).score;
-      const readingScore = Math.min(100, Math.round((wpm / 100) * 100));
+      const transcript = String(analysis.transcript || "").trim();
+      const readingAccuracyScore = calculateTextSimilarityPercent(
+        currentItem.text,
+        transcript,
+      );
+      const completenessScore = calculateReadingCompletenessScore(
+        currentItem.text,
+        transcript,
+      );
+      const speedStabilityScore = calculateSpeedStabilityScore(wpm);
+      const gatedFluencyScore = Number(
+        (
+          speedStabilityScore *
+          Math.min(1, completenessScore / 90) *
+          Math.min(1, readingAccuracyScore / 85)
+        ).toFixed(1),
+      );
+      const articulationClarityScore = Number(
+        ((consonantAccuracy + vowelAccuracy) / 2).toFixed(1),
+      );
+      const readingScore = Number(
+        (
+          readingAccuracyScore * 0.45 +
+          completenessScore * 0.25 +
+          articulationClarityScore * 0.2 +
+          gatedFluencyScore * 0.1
+        ).toFixed(1),
+      );
+      const recognitionResponseMs = Math.max(0, Math.round(finalReadingTime * 1000));
 
       updateSidebar({
         consonantAccuracy: consonantAccuracy / 100,
@@ -566,13 +626,18 @@ function Step5Content() {
       const res: ReadingMetrics = {
         place,
         text: currentItem.text,
-        transcript: String(analysis.transcript || "").trim(),
-        isCorrect: readingScore >= 60,
+        transcript,
+        isCorrect: readingScore >= 70,
         audioUrl: audioBlob ? URL.createObjectURL(audioBlob) : "",
         totalTime: finalReadingTime,
+        responseTime: recognitionResponseMs,
+        recognitionResponseMs,
         wordsPerMinute: wpm,
         pauseCount: 0,
         readingScore,
+        readingAccuracyScore: Number(readingAccuracyScore.toFixed(1)),
+        fluencyScore: gatedFluencyScore,
+        articulationClarityScore,
         consonantAccuracy: Number(consonantAccuracy.toFixed(1)),
         vowelAccuracy: Number(vowelAccuracy.toFixed(1)),
         articulationWritingConsistency: Number(
@@ -711,8 +776,9 @@ function Step5Content() {
             (sum, row) => sum + Number(row.articulationWritingConsistency || 0),
             0,
           ) / Math.max(1, updatedResults.length);
+        const correctAnswers = updatedResults.filter((row) => row.isCorrect).length;
         sm.saveStep5Result({
-          correctAnswers: updatedResults.length,
+          correctAnswers,
           totalQuestions: texts.length,
           timestamp: Date.now(),
           averageConsonantAccuracy,
@@ -743,18 +809,41 @@ function Step5Content() {
       const demoResults: ReadingMetrics[] = texts.map((item) => {
         const totalTime = randomFloat(7, 16, 0);
         const wordsPerMinute = randomFloat(45, 130, 0);
-        const readingScore = randomFloat(58, 96, 0);
+        const readingAccuracyScore = randomFloat(62, 98, 1);
+        const completenessScore = randomFloat(70, 100, 1);
+        const articulationClarityScore = randomFloat(58, 96, 1);
+        const speedStabilityScore = calculateSpeedStabilityScore(wordsPerMinute);
+        const fluencyScore = Number(
+          (
+            speedStabilityScore *
+            Math.min(1, completenessScore / 90) *
+            Math.min(1, readingAccuracyScore / 85)
+          ).toFixed(1),
+        );
+        const readingScore = Number(
+          (
+            readingAccuracyScore * 0.45 +
+            completenessScore * 0.25 +
+            articulationClarityScore * 0.2 +
+            fluencyScore * 0.1
+          ).toFixed(1),
+        );
 
         return {
           place,
           text: item.text,
           transcript: item.text,
-          isCorrect: readingScore >= 60,
+          isCorrect: readingScore >= 70,
           audioUrl: "",
           totalTime,
+          responseTime: Math.round(totalTime * 1000),
+          recognitionResponseMs: Math.round(totalTime * 1000),
           wordsPerMinute,
           pauseCount: randomFloat(0, 4, 0),
           readingScore,
+          readingAccuracyScore,
+          fluencyScore,
+          articulationClarityScore,
           consonantAccuracy: randomFloat(58, 96),
           vowelAccuracy: randomFloat(58, 96),
           articulationWritingConsistency: randomFloat(60, 95),
@@ -774,7 +863,7 @@ function Step5Content() {
         place,
       );
       sm.saveStep5Result({
-        correctAnswers: demoResults.length,
+        correctAnswers: demoResults.filter((row) => row.isCorrect).length,
         totalQuestions: texts.length,
         timestamp: Date.now(),
         averageConsonantAccuracy:
@@ -973,7 +1062,7 @@ function Step5Content() {
                           읽기
                         </span>
                         <span className="text-3xl lg:text-4xl font-black text-orange-500 tracking-tight">
-                          {currentResult.readingScore}%
+                          {currentResult.readingScore.toFixed(1)}점
                         </span>
                       </div>
                       <div className="flex-1 min-w-0">
@@ -1037,7 +1126,7 @@ function Step5Content() {
             showTracking={showTracking}
             onToggleTracking={() => setShowTracking((prev) => !prev)}
             scoreLabel="현재 상태"
-            scoreValue={currentResult ? `${currentResult.readingScore}%` : "-"}
+            scoreValue={currentResult ? `${currentResult.readingScore.toFixed(1)}점` : "-"}
           />
         </aside>
       </div>

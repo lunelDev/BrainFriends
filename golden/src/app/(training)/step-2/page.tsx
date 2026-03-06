@@ -28,60 +28,18 @@ import {
   getResponsiveSentenceSizeClass,
 } from "@/lib/text/displayText";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
+import {
+  blendArticulationAccuracy,
+  getResultSentenceSizeClass,
+  getSttErrorMessage,
+  isQuotaExceededError,
+} from "@/features/steps/step2/utils";
 
 export const dynamic = "force-dynamic";
 
 const STEP2_AUDIO_STORAGE_KEY = "step2_recorded_audios";
 const STEP2_MAX_STORED_AUDIO_ITEMS = 10;
 const STEP2_MAX_AUDIO_URL_CHARS = 1_500_000;
-
-function isQuotaExceededError(error: unknown): boolean {
-  if (error instanceof DOMException) {
-    return error.name === "QuotaExceededError" || error.code === 22;
-  }
-  if (typeof error === "object" && error !== null && "name" in error) {
-    return (error as { name?: string }).name === "QuotaExceededError";
-  }
-  return false;
-}
-
-function getResultSentenceSizeClass(text: string): string {
-  const normalizedLength = (text || "").replace(/\s+/g, "").length;
-  if (normalizedLength >= 56) return "text-sm md:text-base";
-  if (normalizedLength >= 36) return "text-base md:text-lg";
-  return "text-lg md:text-xl";
-}
-
-function blendArticulationAccuracy(
-  visualAccuracy: number,
-  speechAccuracy?: number,
-): number {
-  if (!Number.isFinite(speechAccuracy) || Number(speechAccuracy) <= 0) {
-    return Math.min(100, Math.max(0, visualAccuracy));
-  }
-  return Math.min(
-    100,
-    Math.max(0, visualAccuracy * 0.2 + Number(speechAccuracy) * 0.8),
-  );
-}
-
-function getSttErrorMessage(reason?: string): string {
-  const raw = String(reason || "").trim();
-  if (!raw) return "음성 인식에 실패했습니다. 잠시 후 다시 시도해 주세요.";
-  if (raw.includes("upstream_429")) {
-    return "음성 인식 API 한도(429)로 실패했습니다. 결제/쿼터/요금제를 확인해 주세요.";
-  }
-  if (raw.includes("missing_api_key")) {
-    return "서버 API 키가 설정되지 않았습니다. 관리자에게 문의해 주세요.";
-  }
-  if (raw.includes("upstream_401")) {
-    return "API 인증에 실패했습니다(401). 서버 키를 확인해 주세요.";
-  }
-  if (raw.includes("upstream_403")) {
-    return "API 권한 오류(403)입니다. 계정 권한을 확인해 주세요.";
-  }
-  return `음성 인식 실패(${raw}). 네트워크/마이크 권한을 확인해 주세요.`;
-}
 
 function Step2Content() {
   const router = useRouter();
@@ -132,6 +90,8 @@ function Step2Content() {
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const analyzerRef = useRef<SpeechAnalyzer | null>(null);
   const audioInputStreamRef = useRef<MediaStream | null>(null);
+  const recordingStartedAtRef = useRef<number | null>(null);
+  const speechOnsetMsRef = useRef<number | null>(null);
 
   const [isMounted, setIsMounted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -149,6 +109,8 @@ function Step2Content() {
 
   const [audioLevel, setAudioLevel] = useState(0);
   const [resultScore, setResultScore] = useState<number | null>(null);
+  const [resultConsonantAccuracy, setResultConsonantAccuracy] = useState<number | null>(null);
+  const [resultVowelAccuracy, setResultVowelAccuracy] = useState<number | null>(null);
   const [transcript, setTranscript] = useState("");
   const [isSttExpanded, setIsSttExpanded] = useState(false);
   const [reviewAudioUrl, setReviewAudioUrl] = useState<string | null>(null);
@@ -523,12 +485,16 @@ function Step2Content() {
       count: 0,
     };
     setResultScore(null);
+    setResultConsonantAccuracy(null);
+    setResultVowelAccuracy(null);
     setTranscript("");
     setIsSttExpanded(false);
     setIsRecording(true);
     setIsRecorderReady(false);
     setStatusText("문장을 끝까지 말씀하신 후\n정지 버튼을 눌러주세요.");
     setCanRecord(true);
+    recordingStartedAtRef.current = Date.now();
+    speechOnsetMsRef.current = null;
     setReviewAudioUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return null;
@@ -543,7 +509,16 @@ function Step2Content() {
     try {
       if (!analyzerRef.current) analyzerRef.current = new SpeechAnalyzer();
       await analyzerRef.current.startAnalysis(
-        (level) => setAudioLevel(level),
+        (level) => {
+          setAudioLevel(level);
+          if (
+            speechOnsetMsRef.current === null &&
+            recordingStartedAtRef.current !== null &&
+            level >= 12
+          ) {
+            speechOnsetMsRef.current = Date.now() - recordingStartedAtRef.current;
+          }
+        },
         audioInputStreamRef.current || undefined,
       );
       setIsRecorderReady(true);
@@ -707,6 +682,8 @@ function Step2Content() {
     if (currentIndex < protocol.length - 1) {
       setCurrentIndex((prev) => prev + 1);
       setResultScore(null);
+      setResultConsonantAccuracy(null);
+      setResultVowelAccuracy(null);
       setTranscript("");
       setReviewAudioUrl(null);
       setCanRecord(false);
@@ -724,9 +701,9 @@ function Step2Content() {
             ? analysisResults.reduce((a, b) => a + b.faceScore, 0) /
               analysisResults.length
             : 0;
-        const avgPronunciation =
+        const avgFinalScore =
           analysisResults.length > 0
-            ? analysisResults.reduce((a, b) => a + b.speechScore, 0) /
+            ? analysisResults.reduce((a, b) => a + (b.finalScore ?? 0), 0) /
               analysisResults.length
             : 0;
         const avgConsonantAccuracy =
@@ -768,9 +745,10 @@ function Step2Content() {
               : undefined,
             dataSource: row.dataSource === "demo" ? "demo" : "measured",
             audioLevel: Number(row.audioLevel ?? 0),
+            responseTime: Number(row.responseTime ?? 0),
           })),
           averageSymmetry: avgSymmetry,
-          averagePronunciation: avgPronunciation,
+          averagePronunciation: avgFinalScore,
           averageConsonantAccuracy: avgConsonantAccuracy,
           averageVowelAccuracy: avgVowelAccuracy,
           timestamp: Date.now(),
@@ -811,7 +789,9 @@ function Step2Content() {
         const faceScore = randomFloat(60, 94);
         const consonantAccuracy = randomFloat(58, 96);
         const vowelAccuracy = randomFloat(58, 96);
-        const finalScore = Number((speechScore * 0.6 + faceScore * 0.4).toFixed(1));
+        const finalScore = Number(
+          ((consonantAccuracy + vowelAccuracy) / 2).toFixed(1),
+        );
         return {
           text: item.text,
           finalScore,
@@ -819,6 +799,7 @@ function Step2Content() {
           faceScore,
           consonantAccuracy,
           vowelAccuracy,
+          responseTime: randomFloat(900, 2200),
           dataSource: "demo",
           isCorrect: finalScore >= 60,
           timestamp: new Date().toLocaleTimeString(),
@@ -835,8 +816,8 @@ function Step2Content() {
       const averageSymmetry =
         demoItems.reduce((acc, curr) => acc + curr.faceScore, 0) /
         Math.max(1, demoItems.length);
-      const averagePronunciation =
-        demoItems.reduce((acc, curr) => acc + curr.speechScore, 0) /
+      const averageFinalScore =
+        demoItems.reduce((acc, curr) => acc + curr.finalScore, 0) /
         Math.max(1, demoItems.length);
       const averageConsonantAccuracy =
         demoItems.reduce((acc, curr) => acc + curr.consonantAccuracy, 0) /
@@ -856,9 +837,10 @@ function Step2Content() {
           vowelAccuracy: item.vowelAccuracy,
           dataSource: "demo",
           audioLevel: 35,
+          responseTime: Number(item.responseTime ?? 0),
         })),
         averageSymmetry,
-        averagePronunciation,
+        averagePronunciation: averageFinalScore,
         averageConsonantAccuracy,
         averageVowelAccuracy,
         timestamp: Date.now(),
@@ -900,6 +882,8 @@ function Step2Content() {
         if (result.errorReason) {
           setTranscript("");
           setResultScore(null);
+          setResultConsonantAccuracy(null);
+          setResultVowelAccuracy(null);
           setStatusText(getSttErrorMessage(result.errorReason));
           setCanRecord(true);
           setIsSaving(false);
@@ -958,18 +942,17 @@ function Step2Content() {
                 patternMatchPct:
                   liveArticulationRef.current.vowelDetails.patternMatchPct,
               };
-        const consonantAccuracy = blendArticulationAccuracy(
-          visualConsonantAccuracy,
-          result.details?.consonantAccuracy,
-        );
-        const vowelAccuracy = blendArticulationAccuracy(
-          visualVowelAccuracy,
-          result.details?.vowelAccuracy,
-        );
-        let finalScore =
-          speechScore >= 85 || faceScore >= 85
-            ? Math.max(speechScore, faceScore)
-            : speechScore * 0.6 + faceScore * 0.4;
+        const speechConsonantAccuracy = Number(result.details?.consonantAccuracy);
+        const speechVowelAccuracy = Number(result.details?.vowelAccuracy);
+        const responseTimeMs = speechOnsetMsRef.current;
+
+        const consonantAccuracy = Number.isFinite(speechConsonantAccuracy)
+          ? Math.max(0, Math.min(100, speechConsonantAccuracy))
+          : blendArticulationAccuracy(visualConsonantAccuracy);
+        const vowelAccuracy = Number.isFinite(speechVowelAccuracy)
+          ? Math.max(0, Math.min(100, speechVowelAccuracy))
+          : blendArticulationAccuracy(visualVowelAccuracy);
+        const finalScore = Number(((consonantAccuracy + vowelAccuracy) / 2).toFixed(1));
 
         updateSidebar({
           consonantAccuracy: consonantAccuracy / 100,
@@ -982,6 +965,8 @@ function Step2Content() {
         });
         setTranscript(result.transcript || "");
         setResultScore(Number(finalScore.toFixed(1)));
+        setResultConsonantAccuracy(Number(consonantAccuracy.toFixed(1)));
+        setResultVowelAccuracy(Number(vowelAccuracy.toFixed(1)));
         setAnalysisResults((prev) => [
           ...prev,
           {
@@ -1009,6 +994,7 @@ function Step2Content() {
             },
             dataSource: "measured",
             audioLevel: audioLevel,
+            responseTime: responseTimeMs,
           },
         ]);
         articulationAggregateRef.current = {
@@ -1075,6 +1061,7 @@ function Step2Content() {
                 },
                 dataSource: "measured",
                 timestamp: new Date().toLocaleTimeString(),
+                responseTime: responseTimeMs,
               };
 
               // localStorage 용량 초과 시 항목 수를 줄이지 않고,
@@ -1208,23 +1195,27 @@ function Step2Content() {
         />
       </div>
 
-      <header className={`h-16 px-6 border-b flex justify-between items-center bg-white/90 backdrop-blur-md shrink-0 sticky top-0 z-50 ${isRehabMode ? "border-sky-100" : "border-orange-100"}`}>
-        <div className="flex items-center gap-4">
+      <header
+        className={`min-h-16 px-3 sm:px-6 py-2 sm:py-0 border-b flex flex-wrap sm:flex-nowrap justify-between items-center gap-2 bg-white/90 backdrop-blur-md shrink-0 sticky top-0 z-50 ${
+          isRehabMode ? "border-sky-100" : "border-orange-100"
+        }`}
+      >
+        <div className="flex items-center gap-3 min-w-0">
           <img
             src="/images/logo/logo.png"
             alt="GOLDEN logo"
-            className="w-10 h-10 rounded-xl object-cover"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover shrink-0"
           />
-          <div>
+          <div className="min-w-0">
             <span className={`font-black text-[10px] uppercase tracking-widest block leading-none ${isRehabMode ? "text-sky-500" : "text-orange-500"}`}>
               Repetition Training
             </span>
-            <h2 className="text-lg font-black text-slate-900 tracking-tight">
+            <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight truncate">
               문장 복창 훈련
             </h2>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 ml-auto">
           <button
             type="button"
             onClick={handleSkipStep}
@@ -1289,41 +1280,107 @@ function Step2Content() {
 
             {/* 결과 리포트 카드 */}
             {resultScore !== null && (
-              <div className="w-full bg-gradient-to-br from-white via-orange-50/40 to-white rounded-[32px] p-6 shadow-xl border border-orange-100/70 relative overflow-hidden">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(251,146,60,0.12),transparent_45%)] pointer-events-none" />
-                <div className="relative z-[1] flex items-center gap-6 mb-5">
-                  <div className="border-r border-orange-100 pr-6 text-center">
-                    <span className="text-[10px] font-black text-orange-400 uppercase block mb-1">
-                      정확도
+              <div
+                className={`w-full rounded-[32px] p-6 shadow-xl border relative overflow-hidden ${
+                  isRehabMode
+                    ? "bg-gradient-to-br from-white via-sky-50/50 to-white border-sky-100/70"
+                    : "bg-gradient-to-br from-white via-orange-50/40 to-white border-orange-100/70"
+                }`}
+              >
+                <div
+                  className={`absolute inset-0 pointer-events-none ${
+                    isRehabMode
+                      ? "bg-[radial-gradient(circle_at_80%_20%,rgba(14,165,233,0.12),transparent_45%)]"
+                      : "bg-[radial-gradient(circle_at_80%_20%,rgba(251,146,60,0.12),transparent_45%)]"
+                  }`}
+                />
+                <div className="relative z-[1] grid grid-cols-1 sm:grid-cols-[auto_minmax(0,1fr)] items-stretch gap-3 sm:gap-6 mb-5">
+                  <div
+                    className={`text-center sm:text-left sm:min-w-[120px] sm:pr-4 sm:border-r rounded-2xl sm:rounded-none py-2 sm:py-0 ${
+                      isRehabMode ? "sm:border-sky-100" : "sm:border-orange-100"
+                    }`}
+                  >
+                    <span
+                      className={`text-[10px] font-black uppercase block mb-1 ${
+                        isRehabMode ? "text-sky-400" : "text-orange-400"
+                      }`}
+                    >
+                      발음 정확도
                     </span>
-                    <span className="text-3xl md:text-4xl font-black text-orange-500">
-                      {resultScore}%
+                    <span
+                      className={`text-3xl md:text-4xl font-black ${
+                        isRehabMode ? "text-sky-500" : "text-orange-500"
+                      }`}
+                    >
+                      {resultScore}점
                     </span>
                   </div>
-                  <div className="flex-1 min-w-0 rounded-2xl border border-orange-100/70 bg-white/85 p-3">
+                  <div
+                    className={`min-w-0 rounded-2xl border bg-white/85 p-3 ${
+                      isRehabMode ? "border-sky-100/70" : "border-orange-100/70"
+                    }`}
+                  >
                     <p className="text-[10px] font-black text-slate-400 uppercase mb-1">
-                      인식된 결과
+                      정답 문장
                     </p>
                     <p
-                      className={`${getResultSentenceSizeClass((transcript || "").trim() || "인식 실패")} font-bold text-slate-700 italic leading-relaxed ${
+                      className={`${getResultSentenceSizeClass((currentItem.text || "").trim() || "정답 없음")} font-bold text-slate-700 leading-relaxed ${
                         isSttExpanded
                           ? "break-words whitespace-normal"
                           : "whitespace-nowrap overflow-hidden text-ellipsis"
                       }`}
                     >
-                      {(transcript || "").trim()
-                        ? `"${transcript}"`
-                        : "인식 결과가 없습니다. 마이크 권한/주변 소음을 확인 후 다시 시도해 주세요."}
+                      {(currentItem.text || "").trim()
+                        ? `"${currentItem.text}"`
+                        : "정답 문장을 불러오지 못했습니다."}
                     </p>
-                    {(transcript || "").length > 26 && (
+                    {(currentItem.text || "").length > 26 && (
                       <button
                         type="button"
                         onClick={() => setIsSttExpanded((prev) => !prev)}
-                        className="mt-1 text-[11px] font-black text-orange-500 hover:text-orange-600"
+                        className={`mt-1 text-[11px] font-black ${
+                          isRehabMode
+                            ? "text-sky-500 hover:text-sky-600"
+                            : "text-orange-500 hover:text-orange-600"
+                        }`}
                       >
                         {isSttExpanded ? "접기" : "전체보기"}
                       </button>
                     )}
+                    <div
+                      className={`mt-2 pt-2 border-t ${
+                        isRehabMode ? "border-sky-100/70" : "border-orange-100/70"
+                      }`}
+                    >
+                      <p className="text-[10px] font-black text-slate-400 uppercase mb-1">
+                        인식된 발화
+                      </p>
+                      <p className="text-sm font-semibold text-slate-600 italic leading-relaxed break-words whitespace-normal">
+                        {(transcript || "").trim()
+                          ? `"${transcript}"`
+                          : "인식 결과가 없습니다. 마이크 권한/주변 소음을 확인 후 다시 시도해 주세요."}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-black border ${
+                            isRehabMode
+                              ? "bg-sky-50 text-sky-700 border-sky-200"
+                              : "bg-orange-50 text-orange-700 border-orange-200"
+                          }`}
+                        >
+                          자음 {resultConsonantAccuracy?.toFixed(1) ?? "-"}점
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-black border ${
+                            isRehabMode
+                              ? "bg-sky-50 text-sky-700 border-sky-200"
+                              : "bg-orange-50 text-orange-700 border-orange-200"
+                          }`}
+                        >
+                          모음 {resultVowelAccuracy?.toFixed(1) ?? "-"}점
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1392,8 +1449,16 @@ function Step2Content() {
                     {/* 녹음 중 파동 효과 */}
                     {isRecording && (
                       <>
-                        <div className="absolute inset-0 bg-orange-400 rounded-full animate-ping" />
-                        <div className="absolute inset-0 bg-orange-200 rounded-full animate-pulse" />
+                        <div
+                          className={`absolute inset-0 rounded-full animate-ping ${
+                            isRehabMode ? "bg-sky-400" : "bg-orange-400"
+                          }`}
+                        />
+                        <div
+                          className={`absolute inset-0 rounded-full animate-pulse ${
+                            isRehabMode ? "bg-sky-200" : "bg-orange-200"
+                          }`}
+                        />
                       </>
                     )}
 
@@ -1460,7 +1525,7 @@ function Step2Content() {
           </div>
         </main>
 
-        <aside className="w-full lg:w-[380px] border-l border-slate-50 bg-white shrink-0 flex flex-col order-2">
+        <aside className="w-full lg:w-[380px] border-t lg:border-t-0 lg:border-l border-slate-50 bg-white shrink-0 flex flex-col order-2">
           <AnalysisSidebar
             videoRef={videoRef}
             canvasRef={canvasRef}
@@ -1489,7 +1554,7 @@ function Step2Content() {
             showTracking={showTracking}
             onToggleTracking={() => setShowTracking(!showTracking)}
             scoreLabel="실시간 대칭도"
-            scoreValue={resultScore ? `${resultScore}%` : undefined}
+            scoreValue={resultScore ? `${resultScore}점` : undefined}
           />
         </aside>
       </div>

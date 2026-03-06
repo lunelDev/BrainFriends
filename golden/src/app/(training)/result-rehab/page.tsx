@@ -16,7 +16,8 @@ import {
   buildTrendRows,
   countImprovedMetrics,
 } from "@/lib/results/rehab/adapters";
-import { Activity, FileText, ScanFace, TrendingUp } from "lucide-react";
+import { RehabDetailBlocks } from "@/features/rehab-report/components/RehabDetailBlocks";
+import { ScanFace, TrendingUp } from "lucide-react";
 
 function ResultRehabPage() {
   const router = useRouter();
@@ -84,12 +85,9 @@ function ResultRehabPage() {
 
   const trendChart = useMemo(() => buildTrendChart(trendRows), [trendRows]);
 
-  const latestSessionRow = historyRows.length ? historyRows[0] : null;
-  const previousSessionRow = historyRows.length > 1 ? historyRows[1] : null;
-
   const facialReport = useMemo(
-    () => buildFacialReport(latestSessionRow, previousSessionRow),
-    [latestSessionRow, previousSessionRow],
+    () => buildFacialReport(latestStepRow, previousStepRow),
+    [latestStepRow, previousStepRow],
   );
 
   const detailComparisons = useMemo(
@@ -101,6 +99,81 @@ function ResultRehabPage() {
     () => countImprovedMetrics(detailComparisons),
     [detailComparisons],
   );
+
+  const rehabImpression = useMemo(() => {
+    const metricMap = new Map(detailComparisons.map((m) => [m.key, m]));
+
+    if (safeStep === 1) {
+      const accuracy = metricMap.get("comprehensionAccuracy")?.current ?? null;
+      const speedMs = metricMap.get("decisionSpeed")?.current ?? null;
+      const instantRatio =
+        metricMap.get("instantResponseRatio")?.current ?? null;
+      const accuracyText =
+        accuracy === null ? "측정 없음" : `${Number(accuracy.toFixed(1))}점`;
+      const speedSecText =
+        speedMs === null
+          ? "측정 없음"
+          : `${Number((speedMs / 1000).toFixed(1))}초`;
+      const instantText =
+        instantRatio === null
+          ? "측정 없음"
+          : `${Number(instantRatio.toFixed(1))}점`;
+      const speedComment =
+        speedMs === null
+          ? "응답 속도 데이터가 충분하지 않습니다."
+          : speedMs >= 2500
+            ? "즉각적인 의사소통에는 약간의 망설임이 관찰됩니다."
+            : speedMs >= 1800
+              ? "응답은 가능하나 일부 문항에서 짧은 망설임이 관찰됩니다."
+              : "즉각적인 의사소통이 안정적으로 유지됩니다.";
+      return {
+        summary: `단순 질문(예/아니오)에 대한 이해 점수(${accuracyText})와 판단 속도(${speedSecText})를 기준으로 분석했습니다.`,
+        strength: `이해 점수 ${accuracyText}, 즉각 반응 점수 ${instantText}`,
+        need: speedComment,
+      };
+    }
+    if (safeStep === 2) {
+      const consonant = metricMap.get("consonant")?.current ?? null;
+      const vowel = metricMap.get("vowel")?.current ?? null;
+      const reaction = metricMap.get("reaction")?.current ?? null;
+      const consonantText =
+        consonant === null ? "측정 없음" : `${Number(consonant.toFixed(1))}점`;
+      const vowelText =
+        vowel === null ? "측정 없음" : `${Number(vowel.toFixed(1))}점`;
+      const reactionText =
+        reaction === null
+          ? "측정 없음"
+          : `${Number((reaction / 1000).toFixed(1))}초`;
+      const speedComment =
+        reaction === null
+          ? "발화 시작 속도 데이터가 부족해 추가 관찰이 필요합니다."
+          : reaction >= 2500
+            ? "발화 시작 전 준비 시간이 길어 문장 시작에서 망설임이 관찰됩니다."
+            : reaction >= 1800
+              ? "문장 시작 속도는 보통 수준이며 일부 문항에서 지연이 관찰됩니다."
+              : "문장 시작 속도가 안정적이며 즉시 산출이 가능합니다.";
+      return {
+        summary: `문장 복창에서 자음 점수(${consonantText})와 모음 점수(${vowelText}), 발화 시작 속도(${reactionText})를 기준으로 분석했습니다.`,
+        strength: `자음/모음 산출 점수는 현재 수준을 유지하고 있습니다.`,
+        need: speedComment,
+      };
+    }
+
+    const trendText =
+      delta === null
+        ? "이전 기록이 없어 추세 비교는 제한적입니다."
+        : `직전 대비 ${delta > 0 ? "+" : ""}${delta.toFixed(1)}점 변화를 보였습니다.`;
+    const topMetric = detailComparisons.find((m) => m.current !== null) || null;
+    const topMetricText =
+      topMetric && topMetric.current !== null
+        ? `${topMetric.label} ${topMetric.current.toFixed(1)}${topMetric.unit}`
+        : "세부 지표 데이터가 충분하지 않습니다.";
+    return {
+      summary: `${REHAB_STEP_LABELS[safeStep]} 수행 결과를 이전 동일 훈련과 비교해 분석했습니다.`,
+      strength: `개선 항목 ${improvedCount}개 · 대표 지표 ${topMetricText}`,
+      need: trendText,
+    };
+  }, [delta, detailComparisons, improvedCount, safeStep]);
 
   const stepResultCards = useMemo(
     () => buildStepResultCards(safeStep, latestStepRow, detailKey),
@@ -149,7 +222,7 @@ function ResultRehabPage() {
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 overflow-x-hidden">
       <header className="no-print h-16 px-4 sm:px-6 border-b border-sky-100 flex items-center justify-between bg-white sticky top-0 z-40">
-        <div className="max-w-4xl mx-auto w-full flex items-center justify-between min-w-0">
+        <div className="max-w-[1076px] mx-auto w-full flex items-center justify-between min-w-0">
           <div className="flex items-center gap-3">
             <img
               src="/images/logo/logo.png"
@@ -197,7 +270,7 @@ function ResultRehabPage() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-3 sm:px-6 py-5 sm:py-8 pb-10 sm:pb-8 space-y-4 sm:space-y-5">
+      <main className="w-full max-w-[1076px] mx-auto px-4 sm:px-6 lg:px-0 py-5 sm:py-8 pb-24 sm:pb-15 space-y-4 sm:space-y-5">
         <section className="rounded-2xl bg-gradient-to-r from-sky-600 to-sky-500 text-white p-5 sm:p-6 shadow-sm">
           <p className="text-xs sm:text-sm font-black opacity-90">
             Step {safeStep} · {REHAB_STEP_LABELS[safeStep]}
@@ -242,210 +315,29 @@ function ResultRehabPage() {
             </p>
           </div>
         </section>
+        <RehabDetailBlocks
+          safeStep={safeStep}
+          detailComparisons={detailComparisons}
+          improvedCount={improvedCount}
+          impression={rehabImpression}
+          stepResultCards={stepResultCards}
+          playingIndex={playingIndex}
+          enableAudioPlayback
+          onToggleAudioPlayback={(item) => {
+            const id = `step${safeStep}-${item.index}`;
+            if (playingIndex === id) {
+              stopPlayback();
+              return;
+            }
+            if (item.audioUrl) {
+              playAudio(item.audioUrl, id);
+              return;
+            }
+            playSpeechFallback(item.text, id);
+          }}
+        />
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-              <span className="w-8 h-8 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center">
-                <Activity className="w-4 h-4 text-sky-600" />
-              </span>
-              {safeStep === 6
-                ? "이번 쓰기 결과 요약"
-                : "이번 훈련 세부 항목 비교"}
-            </h3>
-            <span className="text-[11px] font-bold text-slate-500">
-              개선 항목 {improvedCount}개
-            </span>
-          </div>
-          {detailComparisons.length === 0 ? (
-            <p className="text-sm text-slate-500 font-semibold py-2">
-              세부 비교 데이터가 없습니다.
-            </p>
-          ) : (
-            <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-slate-100 px-2.5 py-2.5">
-              <div className="flex flex-wrap items-center gap-2 text-xs leading-relaxed">
-                {detailComparisons.map((metric) => {
-                  const hasPrevious = metric.previous !== null;
-                  const diff =
-                    hasPrevious && metric.current !== null
-                      ? Number(
-                          (
-                            metric.current - (metric.previous as number)
-                          ).toFixed(1),
-                        )
-                      : null;
-                  const improved =
-                    diff === null
-                      ? false
-                      : metric.higherBetter
-                        ? diff > 0
-                        : diff < 0;
-                  const isConsonant = metric.key.includes("consonant");
-                  const isVowel = metric.key.includes("vowel");
-                  const isSymmetry = metric.key.includes("symmetry");
-                  const isSpeed =
-                    metric.key.includes("reaction") ||
-                    metric.key.includes("readingTime") ||
-                    metric.key.includes("duration") ||
-                    metric.key.includes("silence");
-                  const dotColor =
-                    isConsonant || isVowel || isSymmetry || isSpeed
-                      ? "bg-sky-400"
-                      : "bg-slate-400";
-                  const borderColor =
-                    isConsonant || isVowel || isSymmetry || isSpeed
-                      ? "border-sky-200"
-                      : "border-slate-200";
-                  return (
-                    <span
-                      key={metric.key}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-white border ${borderColor} text-slate-600 shadow-sm`}
-                    >
-                      <i className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
-                      <span className="font-semibold">{metric.label}</span>
-                      <b className="text-slate-900">
-                        {metric.current === null
-                          ? "측정 없음"
-                          : `${metric.current.toFixed(1)}${metric.unit}`}
-                      </b>
-                      <span className="text-slate-400">/</span>
-                      <span className="font-semibold text-slate-500">
-                        {hasPrevious
-                          ? `이전 ${metric.previous?.toFixed(1)}${metric.unit}`
-                          : "이전 없음"}
-                      </span>
-                      <b
-                        className={`${
-                          diff === null
-                            ? "text-slate-500"
-                            : improved
-                              ? "text-sky-600"
-                              : "text-sky-600"
-                        }`}
-                      >
-                        {diff === null
-                          ? "-"
-                          : `${diff > 0 ? "+" : ""}${diff.toFixed(1)}${metric.unit}`}
-                      </b>
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5">
-          <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-3">
-            <h3 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-              <span className="w-8 h-8 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center">
-                <FileText className="w-4 h-4 text-sky-600" />
-              </span>
-              수행 기록 상세
-            </h3>
-            <span className="text-[11px] font-bold text-slate-500">
-              Step {safeStep} · {stepResultCards.length} Activities
-            </span>
-          </div>
-
-          {stepResultCards.length === 0 ? (
-            <p className="text-sm text-slate-500 font-semibold py-2">
-              기록된 문항 데이터가 없습니다.
-            </p>
-          ) : (
-            <div
-              className={`grid gap-2 ${
-                stepResultCards.length === 3
-                  ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3"
-                  : "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5"
-              }`}
-            >
-              {stepResultCards.map((item) => (
-                <div
-                  key={`step-result-${item.index}`}
-                  className="group h-full bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex flex-col"
-                >
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-xs font-black text-slate-300 uppercase">
-                      Index {item.index}
-                    </span>
-                    <span
-                      className={`px-1.5 py-0.5 rounded text-[8px] font-black ${
-                        item.isCorrect
-                          ? "bg-emerald-50 text-emerald-500"
-                          : "bg-sky-50 text-sky-700"
-                      }`}
-                    >
-                      {item.isCorrect ? "CORRECT" : "REVIEW"}
-                    </span>
-                  </div>
-                  <p className="text-xs font-bold text-slate-700 leading-snug">
-                    "{item.text}"
-                  </p>
-                  {safeStep === 6 && item.userImage && (
-                    <div className="aspect-video bg-slate-50 rounded-md mt-2 overflow-hidden border border-slate-100 flex items-center justify-center">
-                      <img
-                        src={item.userImage}
-                        className="max-h-full max-w-full object-contain p-2"
-                        alt="rehab-writing-result"
-                      />
-                    </div>
-                  )}
-                  {(item.feedbackGood || item.feedbackImprove) && (
-                    <div className="mt-2 pt-2 border-t border-slate-100 space-y-1">
-                      {item.feedbackGood && (
-                        <p className="text-[11px] font-semibold text-slate-600 leading-relaxed">
-                          <span className="text-sky-600">좋았던 점:</span>{" "}
-                          {item.feedbackGood}
-                        </p>
-                      )}
-                      {item.feedbackImprove && (
-                        <p className="text-[11px] font-semibold text-slate-500 leading-relaxed">
-                          <span className="text-slate-700">개선점:</span>{" "}
-                          {item.feedbackImprove}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  {safeStep === 2 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const id = `step2-${item.index}`;
-                        if (playingIndex === id) {
-                          stopPlayback();
-                          return;
-                        }
-                        if (item.audioUrl) {
-                          playAudio(item.audioUrl, id);
-                          return;
-                        }
-                        playSpeechFallback(item.text, id);
-                      }}
-                      className={`mt-auto w-full py-1.5 rounded-md text-xs font-black flex items-center justify-center gap-2 transition-all ${
-                        playingIndex === `step2-${item.index}`
-                          ? "bg-slate-900 text-white"
-                          : "bg-slate-50 text-slate-600 group-hover:bg-sky-50 group-hover:text-slate-900"
-                      }`}
-                    >
-                      {playingIndex === `step2-${item.index}` ? (
-                        <>
-                          <span>■</span> STOP SOUND
-                        </>
-                      ) : (
-                        <>
-                          <span>▶</span> PLAY SOUND
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {facialReport && (
+        {[2, 4, 5].includes(safeStep) && facialReport && (
           <section className="rounded-2xl border border-slate-200 bg-white p-3 sm:p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
@@ -460,7 +352,7 @@ function ResultRehabPage() {
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-slate-100 px-2.5 py-2.5">
-              <div className="flex flex-wrap items-center gap-2 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 text-xs">
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-sky-200 text-slate-600 shadow-sm">
                   <i className="w-1.5 h-1.5 rounded-full bg-sky-400" />
                   자음{" "}
@@ -511,7 +403,9 @@ function ResultRehabPage() {
               <span className="w-8 h-8 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center">
                 <TrendingUp className="w-4 h-4 text-sky-600" />
               </span>
-              <span className="text-sky-600">{REHAB_STEP_LABELS[safeStep]}</span>{" "}
+              <span className="text-sky-600">
+                {REHAB_STEP_LABELS[safeStep]}
+              </span>{" "}
               변화 추이
             </h3>
             <span className="text-sm font-bold text-slate-500">

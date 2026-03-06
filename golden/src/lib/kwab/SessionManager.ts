@@ -28,6 +28,10 @@ export interface Step1Result {
   correctAnswers: number;
   totalQuestions: number;
   averageResponseTime: number; // ms
+  score?: number; // 0-100 종합점수 (정확도 80 + 속도 20)
+  accuracyScore?: number; // 0-100
+  speedBonusScore?: number; // 0-100
+  fastCorrectCount?: number; // 기준 시간 내 정답 수
   timestamp: number;
   items: Array<{
     question: string;
@@ -75,6 +79,9 @@ export interface Step3Result {
   score: number; // 0-100 점수
   correctCount: number; // 맞은 개수 (기존 correctAnswers 대신 사용)
   totalCount: number; // 전체 개수 (기존 totalQuestions 대신 사용)
+  accuracyScore?: number; // 0-100
+  speedBonusScore?: number; // 0-100
+  fastCorrectCount?: number; // 기준 시간 내 정답 수
   averageConsonantAccuracy?: number;
   averageVowelAccuracy?: number;
   timestamp: number;
@@ -87,6 +94,14 @@ export interface Step4Result {
     prompt: string;
     transcript?: string;
     isCorrect?: boolean;
+    contentComponentScore?: number; // 0~100
+    fluencyComponentScore?: number; // 0~100
+    clarityComponentScore?: number; // 0~100
+    responseStartComponentScore?: number; // 0~100
+    responseStartMs?: number | null;
+    responseTime?: number | null; // 공통 반응시간 필드 호환
+    finalScore?: number; // 0~100
+    fluencyScore?: number; // 0~10 (기존 호환)
     speechDuration: number;
     silenceRatio: number;
     averageAmplitude: number;
@@ -330,8 +345,10 @@ export class SessionManager {
   }
 
   finalizeSessionAndSaveHistory(mode: TrainingMode = "self", rehabStep?: number) {
-    if (!this.session.completedAt) {
-      this.session.completedAt = Date.now();
+    // 재활 결과는 매 회차를 독립 기록으로 남기기 위해 완료 시각/세션 ID를 갱신한다.
+    this.session.completedAt = Date.now();
+    if (mode === "rehab") {
+      this.session.sessionId = `session_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     }
     this.updateKWABScores();
     this.saveSession();
@@ -409,7 +426,7 @@ export class SessionManager {
       return { totalScore: 0 };
     }
 
-    // 발음 정확도 평균을 100점 만점으로 변환
+    // Step2 종합점수(finalScore) 평균을 100점 만점으로 사용
     const totalScore = Math.round(step2.averagePronunciation);
     return { totalScore: Math.min(totalScore, 100) };
   }
@@ -520,10 +537,12 @@ export class SessionManager {
 
   private getStepScoresForHistory() {
     const step1 = this.session.step1
-      ? Math.round(
-          (this.session.step1.correctAnswers / this.session.step1.totalQuestions) *
-            100,
-        )
+      ? Number.isFinite(Number(this.session.step1.score))
+        ? Math.round(Number(this.session.step1.score))
+        : Math.round(
+            (this.session.step1.correctAnswers / this.session.step1.totalQuestions) *
+              100,
+          )
       : 0;
     const step2 = this.session.step2
       ? Math.round(this.session.step2.averagePronunciation)
@@ -570,9 +589,15 @@ export class SessionManager {
     const step1Rows = readArray("step1_data");
     const step2Rows = readArray("step2_recorded_audios");
     const step3Rows = readArray("step3_data");
-    const step4Rows = readArray("step4_recorded_audios");
+    const step4RowsRaw = readArray("step4_recorded_audios");
     const step5Rows = readArray("step5_recorded_data");
     const step6Rows = readArray("step6_recorded_data");
+    const step4Rows =
+      step4RowsRaw.length > 0
+        ? step4RowsRaw
+        : Array.isArray(this.session.step4?.items)
+          ? this.session.step4!.items
+          : [];
 
     const avg = (arr: number[]) =>
       arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;

@@ -9,15 +9,31 @@ import React, {
 } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 
-import { REHAB_PROTOCOLS } from "@/constants/auditoryTrainingData";
 import { PlaceType } from "@/constants/trainingData";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { loadPatientProfile } from "@/lib/patientStorage";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
+import { buildStep1TrainingData } from "@/features/steps/step1/utils";
 
 let GLOBAL_SPEECH_LOCK: Record<number, boolean> = {};
+const STEP_RESPONSE_BONUS_THRESHOLD_MS = 6000;
+
+function calculateCompositeScore(
+  results: Array<{ isCorrect: boolean; responseTime: number }>,
+  totalQuestions: number,
+) {
+  const total = Math.max(1, totalQuestions);
+  const correctCount = results.filter((r) => r.isCorrect).length;
+  const fastCorrectCount = results.filter(
+    (r) => r.isCorrect && Number(r.responseTime) <= STEP_RESPONSE_BONUS_THRESHOLD_MS,
+  ).length;
+  const accuracyScore = (correctCount / total) * 100;
+  const speedBonus = (fastCorrectCount / total) * 100;
+  const compositeScore = Number((accuracyScore * 0.8 + speedBonus * 0.2).toFixed(1));
+  return { correctCount, fastCorrectCount, accuracyScore, speedBonus, compositeScore };
+}
 
 function Step1Content() {
   const router = useRouter();
@@ -42,12 +58,12 @@ function Step1Content() {
   const [isHomeExitModalOpen, setIsHomeExitModalOpen] = useState(false);
 
   const pushRehabResult = useCallback(
-    (step1ScorePercent: number) => {
+    (step1Score: number) => {
       const params = new URLSearchParams({
         place: placeParam,
         trainMode: "rehab",
         targetStep: String(rehabTargetStep || 1),
-        step1: String(step1ScorePercent),
+        step1: String(step1Score),
         step2: "0",
         step3: "0",
         step4: "0",
@@ -75,13 +91,7 @@ function Step1Content() {
   }, [placeParam]);
 
   const trainingData = useMemo(() => {
-    const protocol = REHAB_PROTOCOLS[placeParam] || REHAB_PROTOCOLS.home;
-    const combined = [
-      ...protocol.basic,
-      ...protocol.intermediate,
-      ...protocol.advanced,
-    ];
-    return combined.sort(() => Math.random() - 0.5).slice(0, 10);
+    return buildStep1TrainingData(placeParam);
   }, [placeParam]);
 
   const currentItem = trainingData[currentIndex];
@@ -166,11 +176,16 @@ function Step1Content() {
           responseTime: r.responseTime,
         }));
 
+        const scoring = calculateCompositeScore(results, results.length);
         const step1Data = {
-          correctAnswers: results.filter((r) => r.isCorrect).length,
+          correctAnswers: scoring.correctCount,
           totalQuestions: results.length,
           averageResponseTime:
             results.reduce((a, b) => a + b.responseTime, 0) / results.length,
+          score: scoring.compositeScore,
+          accuracyScore: scoring.accuracyScore,
+          speedBonusScore: scoring.speedBonus,
+          fastCorrectCount: scoring.fastCorrectCount,
           timestamp: Date.now(),
           items: formattedForSession,
         };
@@ -203,9 +218,8 @@ function Step1Content() {
         };
       });
 
-      const finalScore = demoResults.filter(
-        (result) => result.isCorrect,
-      ).length;
+      const finalScore = demoResults.filter((result) => result.isCorrect).length;
+      const scoring = calculateCompositeScore(demoResults, demoResults.length);
       saveStep1Results(demoResults, finalScore);
 
       const patient = loadPatientProfile();
@@ -214,20 +228,21 @@ function Step1Content() {
         placeParam,
       );
       sessionManager.saveStep1Result({
-        correctAnswers: finalScore,
+        correctAnswers: scoring.correctCount,
         totalQuestions: demoResults.length,
         averageResponseTime:
           demoResults.reduce((acc, curr) => acc + curr.responseTime, 0) /
           Math.max(1, demoResults.length),
+        score: scoring.compositeScore,
+        accuracyScore: scoring.accuracyScore,
+        speedBonusScore: scoring.speedBonus,
+        fastCorrectCount: scoring.fastCorrectCount,
         timestamp: Date.now(),
         items: demoResults,
       });
 
       if (isRehabMode && rehabTargetStep === 1) {
-        const scorePercent = Math.round(
-          (finalScore / Math.max(1, demoResults.length)) * 100,
-        );
-        pushRehabResult(scorePercent);
+        pushRehabResult(scoring.compositeScore);
       } else {
         router.push(`/step-2?step1=${finalScore}&place=${placeParam}`);
       }
@@ -300,10 +315,11 @@ function Step1Content() {
             `🚀 Step 2로 이동 (step1=${finalScore}, place=${placeParam})`,
           );
           if (isRehabMode && rehabTargetStep === 1) {
-            const scorePercent = Math.round(
-              (finalScore / Math.max(1, trainingData.length)) * 100,
+            const scoring = calculateCompositeScore(
+              updatedResults,
+              trainingData.length,
             );
-            pushRehabResult(scorePercent);
+            pushRehabResult(scoring.compositeScore);
           } else {
             router.push(`/step-2?step1=${finalScore}&place=${placeParam}`);
           }
@@ -350,11 +366,7 @@ function Step1Content() {
 
   useEffect(() => {
     if (!isMounted || timeLeft === null || isSpeaking) return;
-    if (timeLeft <= 0) {
-      console.warn("⏰ 시간 초과!");
-      handleAnswer(null);
-      return;
-    }
+    if (timeLeft <= 0) return;
     const timer = setInterval(
       () => setTimeLeft((prev) => (prev && prev > 0 ? prev - 1 : 0)),
       1000,
