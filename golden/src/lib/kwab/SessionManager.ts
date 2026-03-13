@@ -18,12 +18,17 @@ import {
   WritingResult,
 } from "./KWABScoring";
 import { localStoreAdapter } from "@/lib/storage/adapters";
-
+import type { VersionSnapshot } from "@/lib/analysis/versioning";
+import {
+  appendClientClinicalAuditLog,
+  buildClientStepAuditLog,
+} from "@/lib/audit/clientAuditTrail";
 // ============================================================================
 // 1. Step별 결과 타입
 // ============================================================================
 
 export interface Step1Result {
+  versionSnapshot?: VersionSnapshot;
   // 청각 이해 (O/X 문제)
   correctAnswers: number;
   totalQuestions: number;
@@ -43,6 +48,7 @@ export interface Step1Result {
 }
 
 export interface Step2Result {
+  versionSnapshot?: VersionSnapshot;
   // 복창 훈련
   items: Array<{
     text: string;
@@ -75,6 +81,7 @@ export interface Step2Result {
 }
 
 export interface Step3Result {
+  versionSnapshot?: VersionSnapshot;
   items: any[]; // 상세 데이터 보존용
   score: number; // 0-100 점수
   correctCount: number; // 맞은 개수 (기존 correctAnswers 대신 사용)
@@ -88,6 +95,7 @@ export interface Step3Result {
 }
 
 export interface Step4Result {
+  versionSnapshot?: VersionSnapshot;
   // 유창성 학습 (자발화 유창성 평가)
   items: Array<{
     situation: string;
@@ -134,6 +142,7 @@ export interface Step4Result {
 }
 
 export interface Step5Result {
+  versionSnapshot?: VersionSnapshot;
   // 읽기 훈련
   correctAnswers: number;
   totalQuestions: number;
@@ -168,6 +177,7 @@ export interface Step5Result {
   }>;
 }
 export interface Step6Result {
+  versionSnapshot?: VersionSnapshot;
   //쓰기학습
   completedTasks: number;
   totalTasks: number;
@@ -218,6 +228,7 @@ const HISTORY_STORAGE_PREFIX = "kwab_training_history";
 export type TrainingMode = "self" | "rehab" | "sing";
 
 export interface SingHistoryResult {
+  versionSnapshot?: VersionSnapshot;
   song: string;
   score: number;
   finalJitter: string;
@@ -299,6 +310,14 @@ export interface TrainingHistoryEntry {
     articulationFaceMatchSummary: string;
     timelineCurrentAsymmetry: number;
   };
+  stepVersionSnapshots?: {
+    step1?: VersionSnapshot;
+    step2?: VersionSnapshot;
+    step3?: VersionSnapshot;
+    step4?: VersionSnapshot;
+    step5?: VersionSnapshot;
+    step6?: VersionSnapshot;
+  };
 }
 
 export class SessionManager {
@@ -324,6 +343,27 @@ export class SessionManager {
     }
   }
 
+  private appendStepAuditLog(
+    pipelineStage: "step1" | "step2" | "step3" | "step4" | "step5" | "step6",
+    versionSnapshot: VersionSnapshot | undefined,
+    finalScore: number | null,
+    featureValues: Record<string, number | string | boolean | null>,
+    inputKind: "voice" | "writing" | "choice" | "multimodal" | "unknown",
+  ) {
+    appendClientClinicalAuditLog(
+      buildClientStepAuditLog({
+        patientPseudonymId: this.session.patientKey,
+        sessionId: this.session.sessionId,
+        pipelineStage,
+        place: this.session.place,
+        inputKind,
+        finalScore,
+        featureValues,
+        versionSnapshot,
+      }),
+    );
+  }
+
   // ========================================================================
   // Step별 결과 저장
   // ========================================================================
@@ -332,30 +372,92 @@ export class SessionManager {
     this.session.step1 = result;
     this.updateKWABScores();
     this.saveSession();
+    this.appendStepAuditLog(
+      "step1",
+      result.versionSnapshot,
+      result.score ?? null,
+      {
+        correct_answers: result.correctAnswers,
+        total_questions: result.totalQuestions,
+        average_response_time_ms: result.averageResponseTime,
+        fast_correct_count: result.fastCorrectCount ?? null,
+      },
+      "choice",
+    );
   }
 
   saveStep2Result(result: Step2Result) {
     this.session.step2 = result;
     this.updateKWABScores();
     this.saveSession();
+    this.appendStepAuditLog(
+      "step2",
+      result.versionSnapshot,
+      result.averagePronunciation ?? null,
+      {
+        average_symmetry: result.averageSymmetry,
+        average_pronunciation: result.averagePronunciation,
+        average_consonant_accuracy: result.averageConsonantAccuracy ?? null,
+        average_vowel_accuracy: result.averageVowelAccuracy ?? null,
+      },
+      "multimodal",
+    );
   }
 
   saveStep3Result(result: Step3Result) {
     this.session.step3 = result;
     this.updateKWABScores();
     this.saveSession();
+    this.appendStepAuditLog(
+      "step3",
+      result.versionSnapshot,
+      result.score ?? null,
+      {
+        correct_count: result.correctCount,
+        total_count: result.totalCount,
+        average_consonant_accuracy: result.averageConsonantAccuracy ?? null,
+        average_vowel_accuracy: result.averageVowelAccuracy ?? null,
+      },
+      "choice",
+    );
   }
 
   saveStep4Result(result: Step4Result) {
     this.session.step4 = result;
     this.updateKWABScores();
     this.saveSession();
+    this.appendStepAuditLog(
+      "step4",
+      result.versionSnapshot,
+      result.score ?? null,
+      {
+        average_kwab_score: result.averageKwabScore,
+        total_scenarios: result.totalScenarios,
+        average_articulation_writing_consistency:
+          result.averageArticulationWritingConsistency ?? null,
+      },
+      "multimodal",
+    );
   }
 
   saveStep5Result(result: Step5Result) {
     this.session.step5 = result;
     this.updateKWABScores();
     this.saveSession();
+    this.appendStepAuditLog(
+      "step5",
+      result.versionSnapshot,
+      result.correctAnswers,
+      {
+        correct_answers: result.correctAnswers,
+        total_questions: result.totalQuestions,
+        average_consonant_accuracy: result.averageConsonantAccuracy ?? null,
+        average_vowel_accuracy: result.averageVowelAccuracy ?? null,
+        average_articulation_writing_consistency:
+          result.averageArticulationWritingConsistency ?? null,
+      },
+      "multimodal",
+    );
   }
 
   saveStep6Result(result: Step6Result, mode: TrainingMode = "self") {
@@ -363,6 +465,17 @@ export class SessionManager {
     this.session.completedAt = Date.now();
     this.updateKWABScores();
     this.saveSession();
+    this.appendStepAuditLog(
+      "step6",
+      result.versionSnapshot,
+      result.accuracy ?? null,
+      {
+        completed_tasks: result.completedTasks,
+        total_tasks: result.totalTasks,
+        accuracy: result.accuracy,
+      },
+      "writing",
+    );
     this.saveHistoryEntry(mode);
   }
 
@@ -708,6 +821,24 @@ export class SessionManager {
       });
     }
 
+    const fullStepVersionSnapshots: NonNullable<TrainingHistoryEntry["stepVersionSnapshots"]> = {
+      step1: this.session.step1?.versionSnapshot,
+      step2: this.session.step2?.versionSnapshot,
+      step3: this.session.step3?.versionSnapshot,
+      step4: this.session.step4?.versionSnapshot,
+      step5: this.session.step5?.versionSnapshot,
+      step6: this.session.step6?.versionSnapshot,
+    };
+    const stepVersionSnapshots =
+      mode === "rehab" && normalizedRehabStep
+        ? (() => {
+            const rehabKey = `step${normalizedRehabStep}` as keyof typeof fullStepVersionSnapshots;
+            return {
+              [rehabKey]: fullStepVersionSnapshots[rehabKey],
+            };
+          })()
+        : fullStepVersionSnapshots;
+
     const entry: TrainingHistoryEntry = {
       historyId: `history_${Date.now()}`,
       sessionId: this.session.sessionId,
@@ -769,6 +900,7 @@ export class SessionManager {
           ),
         },
       },
+      stepVersionSnapshots,
       facialAnalysisSnapshot: {
         asymmetryRisk: Number(asymmetryRisk.toFixed(1)),
         articulationGap: Number(articulationGap.toFixed(1)),
@@ -1182,5 +1314,4 @@ export function useSessionManager(patient: PatientProfile, place: string) {
     saveStep6: (result: Step6Result) => manager.saveStep6Result(result),
   };
 }
-
 

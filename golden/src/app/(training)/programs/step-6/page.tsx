@@ -15,9 +15,14 @@ import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { loadPatientProfile } from "@/lib/patientStorage";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
+import {
+  dataUrlToBlob,
+  uploadClinicalMedia,
+} from "@/lib/client/clinicalMediaUpload";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import { calculateHangulStrokeCount } from "@/lib/text/hangulStroke";
 import { calculateArticulationWritingConsistency } from "@/lib/analysis/articulationAnalyzer";
+import { buildVersionSnapshot } from "@/lib/analysis/versioning";
 import {
   calculateShapeSimilarityPct,
   getTracingGuideFontSize,
@@ -53,6 +58,7 @@ function Step6Content() {
     searchParams.get("trainMode") === "rehab" ||
     (typeof window !== "undefined" &&
       sessionStorage.getItem("btt.trainingMode") === "rehab");
+  const clinicalTrainingType = isRehabMode ? "speech-rehab" : "self-assessment";
   const accentOutline = isRehabMode
     ? "bg-white text-sky-600 border border-sky-200 hover:bg-sky-50 transition-all"
     : trainingButtonStyles.orangeOutline;
@@ -437,6 +443,26 @@ function Step6Content() {
       }
 
       console.log("Step 6 데이터 저장", newEntry);
+      const patient = loadPatientProfile();
+      if (patient && imageData) {
+        dataUrlToBlob(imageData)
+          .then((imageBlob) =>
+            uploadClinicalMedia({
+              patient,
+              sourceSessionKey: patient.sessionId,
+              trainingType: clinicalTrainingType,
+              stepNo: 6,
+              mediaType: "image",
+              captureRole: "step6-image",
+              labelSegment: currentWord.answer,
+              blob: imageBlob,
+              fileExtension: "jpg",
+            }),
+          )
+          .catch((uploadError) => {
+            console.error("[Step6] failed to upload clinical image", uploadError);
+          });
+      }
 
       setCorrectCount((prev) => prev + 1);
       setPraiseMessage(
@@ -543,6 +569,7 @@ function Step6Content() {
             articulationWritingConsistency:
               consistencyByWord.get(word.answer) ?? 0,
           })),
+          versionSnapshot: buildVersionSnapshot("step6"),
           },
           isRehabMode && rehabTargetStep === 6 ? "rehab" : "self",
         );
@@ -641,6 +668,7 @@ function Step6Content() {
             item.articulationWritingConsistency || 0,
           ),
         })),
+        versionSnapshot: buildVersionSnapshot("step6"),
         },
         isRehabMode && rehabTargetStep === 6 ? "rehab" : "self",
       );

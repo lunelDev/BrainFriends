@@ -25,6 +25,7 @@ import {
 } from "@/lib/analysis/articulationAnalyzer";
 import { estimateLipSymmetryFromLandmarks } from "@/lib/analysis/lipMetrics";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
+import { buildVersionSnapshot } from "@/lib/analysis/versioning";
 import {
   buildImageCandidates,
   shuffleArray,
@@ -669,6 +670,7 @@ function Step3Content() {
                 0,
               ) / Math.max(1, updatedResults.length),
             timestamp: Date.now(),
+            versionSnapshot: buildVersionSnapshot("step3"),
           });
 
           console.log("✅ Step 3 SessionManager 저장 완료");
@@ -746,6 +748,7 @@ function Step3Content() {
             0,
           ) / Math.max(1, demoResults.length),
         timestamp: Date.now(),
+        versionSnapshot: buildVersionSnapshot("step3"),
       });
       if (typeof window !== "undefined") {
         sessionStorage.removeItem(`${STEP3_PROTOCOL_KEY_PREFIX}:${place}`);

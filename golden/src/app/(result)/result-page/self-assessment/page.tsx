@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect, useMemo, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -23,6 +23,7 @@ import {
   shouldShowPlayButton,
 } from "@/features/result/utils/resultHelpers";
 import { SelfAssessmentBlocks } from "@/features/result/components/SelfAssessmentBlocks";
+import { persistTrainingHistoryToDatabase } from "@/lib/client/clinicalResultsApi";
 import {
   Trophy,
   Database,
@@ -42,6 +43,10 @@ function ResultContent() {
   const [selectedHistory, setSelectedHistory] =
     useState<TrainingHistoryEntry | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
+  const [dbSaveState, setDbSaveState] = useState<
+    "idle" | "saving" | "saved" | "failed" | "local_only"
+  >("idle");
+  const persistedHistoryIdRef = useRef<string | null>(null);
 
   const place = useMemo(
     () => (searchParams.get("place") as PlaceType) || "home",
@@ -208,6 +213,8 @@ function ResultContent() {
   }, [latestAndPreviousHistory, sessionData]);
 
 
+  const currentHistoryEntry = latestAndPreviousHistory.current;
+
   const previousHistory = useMemo(() => {
     if (!patientForHistory) return [];
     const all = SessionManager.getHistoryFor(patientForHistory)
@@ -305,6 +312,25 @@ function ResultContent() {
       console.error("Result finalize/save history failed:", e);
     }
   }, [currentTrainingMode, patientProfile, place]);
+
+
+  useEffect(() => {
+    if (!patientProfile || !currentHistoryEntry) return;
+    if (persistedHistoryIdRef.current === currentHistoryEntry.historyId) return;
+
+    persistedHistoryIdRef.current = currentHistoryEntry.historyId;
+    setDbSaveState("saving");
+
+    void persistTrainingHistoryToDatabase(patientProfile, currentHistoryEntry)
+      .then((response) => {
+        setDbSaveState(response.skipped ? "local_only" : "saved");
+      })
+      .catch((error) => {
+        console.error("[result-self] failed to persist clinical result", error);
+        setDbSaveState("failed");
+        persistedHistoryIdRef.current = null;
+      });
+  }, [currentHistoryEntry, patientProfile]);
 
   const handleExportData = () => {
     if (!sessionData) return;
@@ -510,6 +536,13 @@ function ResultContent() {
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
+              <div className="px-3 py-2 rounded-xl border border-orange-200 bg-orange-50 text-[11px] sm:text-xs font-bold text-orange-700">
+                {dbSaveState === "saving" && "DB Sync In Progress"}
+                {dbSaveState === "saved" && "DB Sync Complete"}
+                {dbSaveState === "local_only" && "DB Not Configured - Local backup kept"}
+                {dbSaveState === "failed" && "DB Sync Failed - Local backup kept"}
+                {dbSaveState === "idle" && "DB Sync Pending"}
+              </div>
               <button
                 onClick={handleExportData}
                 className="px-3 sm:px-4 py-2 bg-white text-slate-900 border border-orange-200 rounded-xl text-[11px] sm:text-xs font-bold shadow-sm hover:bg-orange-50 active:scale-95 transition-all inline-flex items-center gap-1.5"
@@ -696,3 +729,4 @@ export default function ResultPage() {
     </Suspense>
   );
 }
+

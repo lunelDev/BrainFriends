@@ -17,14 +17,19 @@ import {
   countImprovedMetrics,
 } from "@/lib/results/rehab/adapters";
 import { RehabDetailBlocks } from "@/features/rehab-report/components/RehabDetailBlocks";
-import { ScanFace, TrendingUp } from "lucide-react";
+import { persistTrainingHistoryToDatabase } from "@/lib/client/clinicalResultsApi";
+import { Database, ScanFace, TrendingUp } from "lucide-react";
 
 function ResultRehabPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [historyRows, setHistoryRows] = useState<TrainingHistoryEntry[]>([]);
   const [playingIndex, setPlayingIndex] = useState<string | null>(null);
+  const [dbSaveState, setDbSaveState] = useState<
+    "idle" | "saving" | "saved" | "failed" | "local_only"
+  >("idle");
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const persistedHistoryIdRef = useRef<string | null>(null);
 
   const place = (searchParams.get("place") || "home").toLowerCase();
   const targetStep = Number(searchParams.get("targetStep") || "1");
@@ -70,6 +75,25 @@ function ResultRehabPage() {
 
   const previousStepRow = stepRows.length > 1 ? stepRows[1] : null;
   const latestStepRow = stepRows.length ? stepRows[0] : null;
+
+  useEffect(() => {
+    if (!patient || !latestStepRow) return;
+    if (persistedHistoryIdRef.current === latestStepRow.historyId) return;
+
+    persistedHistoryIdRef.current = latestStepRow.historyId;
+    setDbSaveState("saving");
+
+    void persistTrainingHistoryToDatabase(patient, latestStepRow)
+      .then((response) => {
+        setDbSaveState(response.skipped ? "local_only" : "saved");
+      })
+      .catch((error) => {
+        console.error("[result-rehab] failed to persist clinical result", error);
+        setDbSaveState("failed");
+        persistedHistoryIdRef.current = null;
+      });
+  }, [latestStepRow, patient]);
+
   const previousScore = previousStepRow
     ? Number(previousStepRow.stepScores?.[stepKey] ?? 0)
     : null;
@@ -236,37 +260,47 @@ function ResultRehabPage() {
               <h1 className="text-lg font-black">반복훈련 결과 리포트</h1>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => router.push("/select-page/speech-rehab")}
-            aria-label="홈으로 이동"
-            title="홈"
-            className="w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition-colors flex items-center justify-center"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
+          <div className="flex items-center gap-3">
+            <div className="px-3 py-2 rounded-xl border border-sky-200 bg-sky-50 text-[11px] sm:text-xs font-bold text-sky-700 inline-flex items-center gap-1.5">
+              <Database className="w-3.5 h-3.5 text-sky-500" />
+              {dbSaveState === "saving" && "DB Sync In Progress"}
+              {dbSaveState === "saved" && "DB Sync Complete"}
+              {dbSaveState === "local_only" && "DB Not Configured - Local backup kept"}
+              {dbSaveState === "failed" && "DB Sync Failed - Local backup kept"}
+              {dbSaveState === "idle" && "DB Sync Pending"}
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push("/select-page/speech-rehab")}
+              aria-label="홈으로 이동"
+              title="홈"
+              className="w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition-colors flex items-center justify-center"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M3 10.5 12 3l9 7.5"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M5.5 9.5V21h13V9.5"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M10 21v-5h4v5"
-              />
-            </svg>
-          </button>
+              <svg
+                viewBox="0 0 24 24"
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M3 10.5 12 3l9 7.5"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M5.5 9.5V21h13V9.5"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M10 21v-5h4v5"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -504,3 +538,4 @@ export default function ResultRehabPageWithSuspense() {
     </Suspense>
   );
 }
+

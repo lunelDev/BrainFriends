@@ -18,12 +18,14 @@ import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { loadPatientProfile } from "@/lib/patientStorage";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
+import { uploadClinicalMedia } from "@/lib/client/clinicalMediaUpload";
 import {
   analyzeArticulation,
   calculateArticulationWritingConsistency,
   createInitialArticulationAnalyzerState,
 } from "@/lib/analysis/articulationAnalyzer";
 import { estimateLipSymmetryFromLandmarks } from "@/lib/analysis/lipMetrics";
+import { buildVersionSnapshot } from "@/lib/analysis/versioning";
 import {
   addSentenceLineBreaks,
   getResponsiveSentenceSizeClass,
@@ -111,6 +113,7 @@ function Step4Content() {
   const accentSolid = isRehabMode
     ? "bg-sky-500 text-white border border-sky-500 hover:bg-sky-600 transition-all"
     : trainingButtonStyles.orangeSolid;
+  const clinicalTrainingType = isRehabMode ? "speech-rehab" : "self-assessment";
   const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
   const pushStep5OrRehabResult = useCallback(
     (step4Value: number) => {
@@ -893,6 +896,23 @@ function Step4Content() {
             savedCount: next.length,
             score: scored.finalScore,
           });
+          const patient = loadPatientProfile();
+          if (patient) {
+            uploadClinicalMedia({
+              patient,
+              sourceSessionKey: patient.sessionId,
+              trainingType: clinicalTrainingType,
+              stepNo: 4,
+              mediaType: "audio",
+              captureRole: "step4-audio",
+              labelSegment: currentScenario.situation,
+              blob: analysis.audioBlob,
+              fileExtension: analysis.audioBlob.type.includes("mpeg") ? "mp3" : "webm",
+              durationMs: Math.round(speechDurationSec * 1000),
+            }).catch((uploadError) => {
+              console.error("[Step4] failed to upload clinical audio", uploadError);
+            });
+          }
           setSaveStatusText("녹음 저장 완료");
           updateRuntimeStatus({
             pageError: false,
@@ -1044,6 +1064,7 @@ function Step4Content() {
                 ) / allResults.length
               : 0,
           timestamp: Date.now(),
+          versionSnapshot: buildVersionSnapshot("step4"),
         });
         console.log("[Step4] session:save:success", {
           totalScenarios: allResults.length,
@@ -1146,6 +1167,7 @@ function Step4Content() {
             0,
           ) / Math.max(1, demoItems.length),
         timestamp: Date.now(),
+        versionSnapshot: buildVersionSnapshot("step4"),
       });
 
       pushStep5OrRehabResult(score);

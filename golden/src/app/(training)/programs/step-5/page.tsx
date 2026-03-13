@@ -18,12 +18,14 @@ import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { loadPatientProfile } from "@/lib/patientStorage";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
+import { uploadClinicalMedia } from "@/lib/client/clinicalMediaUpload";
 import {
   analyzeArticulation,
   calculateArticulationWritingConsistency,
   createInitialArticulationAnalyzerState,
 } from "@/lib/analysis/articulationAnalyzer";
 import { estimateLipSymmetryFromLandmarks } from "@/lib/analysis/lipMetrics";
+import { buildVersionSnapshot } from "@/lib/analysis/versioning";
 import { addSentenceLineBreaks } from "@/lib/text/displayText";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import {
@@ -142,6 +144,7 @@ function Step5Content() {
     searchParams.get("trainMode") === "rehab" ||
     (typeof window !== "undefined" &&
       sessionStorage.getItem("btt.trainingMode") === "rehab");
+  const clinicalTrainingType = isRehabMode ? "speech-rehab" : "self-assessment";
   const accentOutline = isRehabMode
     ? "bg-white text-sky-600 border border-sky-200 hover:bg-sky-50 transition-all"
     : trainingButtonStyles.orangeOutline;
@@ -837,6 +840,23 @@ function Step5Content() {
                 .slice(0, texts.length);
               localStorage.setItem(STEP5_STORAGE_KEY, JSON.stringify(next));
               saveResumeMeta(STEP5_STORAGE_KEY, stepSignature, next.length);
+              const patient = loadPatientProfile();
+              if (patient) {
+                uploadClinicalMedia({
+                  patient,
+                  sourceSessionKey: patient.sessionId,
+                  trainingType: clinicalTrainingType,
+                  stepNo: 5,
+                  mediaType: "audio",
+                  captureRole: "step5-audio",
+                  labelSegment: currentItem.text,
+                  blob: audioBlob,
+                  fileExtension: audioBlob.type.includes("mpeg") ? "mp3" : "webm",
+                  durationMs: recognitionResponseMs,
+                }).catch((uploadError) => {
+                  console.error("[Step5] failed to upload clinical audio", uploadError);
+                });
+              }
               updateRuntimeStatus({
                 pageError: false,
                 needsRetry: false,
@@ -980,6 +1000,7 @@ function Step5Content() {
           averageVowelAccuracy,
           averageArticulationWritingConsistency,
           items: updatedResults as any,
+          versionSnapshot: buildVersionSnapshot("step5"),
         });
       } catch (error) {
         console.error(error);
@@ -1076,6 +1097,7 @@ function Step5Content() {
             0,
           ) / Math.max(1, demoResults.length),
         items: demoResults as any,
+        versionSnapshot: buildVersionSnapshot("step5"),
       });
 
       const avg = Math.round(

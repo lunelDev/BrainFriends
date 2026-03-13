@@ -12,6 +12,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { PlaceType } from "@/constants/trainingData";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { loadPatientProfile } from "@/lib/patientStorage";
+import { buildVersionSnapshot } from "@/lib/analysis/versioning";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
@@ -252,6 +253,7 @@ function Step1Content() {
           fastCorrectCount: scoring.fastCorrectCount,
           timestamp: Date.now(),
           items: formattedForSession,
+          versionSnapshot: buildVersionSnapshot("step1"),
         };
 
         sessionManager.saveStep1Result(step1Data);
@@ -303,6 +305,7 @@ function Step1Content() {
         fastCorrectCount: scoring.fastCorrectCount,
         timestamp: Date.now(),
         items: demoResults,
+        versionSnapshot: buildVersionSnapshot("step1"),
       });
 
       if (isRehabMode && rehabTargetStep === 1) {

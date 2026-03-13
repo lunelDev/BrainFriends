@@ -20,6 +20,9 @@ import {
 } from "@/features/sing-training/data/songs";
 import { SongKey, SyllableCue } from "@/features/sing-training/types";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
+import { buildVersionSnapshot, type VersionSnapshot } from "@/lib/analysis/versioning";
+import { loadPatientProfile } from "@/lib/patientStorage";
+import { dataUrlToBlob, uploadClinicalMedia } from "@/lib/client/clinicalMediaUpload";
 
 type Phase = "select" | "ready" | "countdown" | "singing" | "result";
 
@@ -40,12 +43,18 @@ type SingResultEnvelope = {
   comment: string;
   rankings: RankRow[];
   completedAt: number;
+  reviewAudioUrl?: string | null;
+  reviewAudioMediaId?: string | null;
+  reviewAudioObjectKey?: string | null;
+  reviewAudioUploadState?: "uploaded" | "failed" | "not_recorded";
+  reviewAudioUploadError?: string | null;
   governance: {
     catalogVersion: string;
     analysisVersion: string;
     requirementIds: string[];
     failureModes: string[];
   };
+  versionSnapshot: VersionSnapshot;
 };
 
 const LYRIC_LEAD_OFFSET_SEC = 0.28;
@@ -120,6 +129,8 @@ function BrainSingPageContent() {
   const sideVideoRef = useRef<HTMLVideoElement | null>(null);
   const songAudioRef = useRef<HTMLAudioElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
   const clockTimerRef = useRef<number | null>(null);
   const countdownTimerRef = useRef<number | null>(null);
   const singingTimerRef = useRef<number | null>(null);
@@ -222,6 +233,15 @@ function BrainSingPageContent() {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.ondataavailable = null;
+      mediaRecorderRef.current.onstop = null;
+      if (mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      mediaRecorderRef.current = null;
+    }
+    recordedChunksRef.current = [];
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
@@ -253,6 +273,83 @@ function BrainSingPageContent() {
       songAudioRef.current.onended = null;
       songAudioRef.current.pause();
     }
+  };
+
+  const blobToDataUrl = (blob: Blob) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === "string") {
+          resolve(reader.result);
+          return;
+        }
+        reject(new Error("failed_to_read_recording"));
+      };
+      reader.onerror = () =>
+        reject(reader.error ?? new Error("failed_to_read_recording"));
+      reader.readAsDataURL(blob);
+    });
+
+  const startVoiceRecording = () => {
+    const stream = streamRef.current;
+    if (!stream || typeof MediaRecorder === "undefined") return;
+    const audioTracks = stream.getAudioTracks();
+    if (!audioTracks.length) return;
+
+    recordedChunksRef.current = [];
+
+    try {
+      const recorder = new MediaRecorder(new MediaStream(audioTracks));
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
+        }
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+    } catch (error) {
+      console.warn("[brain-sing] voice recording start failed", error);
+      mediaRecorderRef.current = null;
+      recordedChunksRef.current = [];
+    }
+  };
+
+  const stopVoiceRecording = async () => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder) return null;
+
+    if (recorder.state === "inactive") {
+      mediaRecorderRef.current = null;
+      if (!recordedChunksRef.current.length) return null;
+      const blob = new Blob(recordedChunksRef.current, {
+        type: recorder.mimeType || "audio/webm",
+      });
+      recordedChunksRef.current = [];
+      return blobToDataUrl(blob);
+    }
+
+    return new Promise<string | null>((resolve) => {
+      recorder.onstop = async () => {
+        try {
+          if (!recordedChunksRef.current.length) {
+            resolve(null);
+            return;
+          }
+          const blob = new Blob(recordedChunksRef.current, {
+            type: recorder.mimeType || "audio/webm",
+          });
+          const dataUrl = await blobToDataUrl(blob);
+          resolve(dataUrl);
+        } catch (error) {
+          console.warn("[brain-sing] voice recording finalize failed", error);
+          resolve(null);
+        } finally {
+          recordedChunksRef.current = [];
+          mediaRecorderRef.current = null;
+        }
+      };
+      recorder.stop();
+    });
   };
 
   useEffect(() => {
@@ -340,8 +437,39 @@ function BrainSingPageContent() {
     }
   };
 
-  const finishSinging = (jitterData: number[], siData: number[]) => {
+  const finishSinging = async (jitterData: number[], siData: number[]) => {
     stopAnalysisLoopKeepingCamera();
+    const reviewAudioUrl = await stopVoiceRecording();
+    const patient = loadPatientProfile();
+    let uploadedReviewAudio: {
+      mediaId: string;
+      objectKey: string;
+    } | null = null;
+    let reviewAudioUploadState: "uploaded" | "failed" | "not_recorded" =
+      reviewAudioUrl ? "failed" : "not_recorded";
+    let reviewAudioUploadError: string | null = null;
+
+    if (reviewAudioUrl && patient) {
+      try {
+        const reviewAudioBlob = await dataUrlToBlob(reviewAudioUrl);
+        uploadedReviewAudio = await uploadClinicalMedia({
+          patient,
+          sourceSessionKey: patient.sessionId,
+          trainingType: "sing-training",
+          mediaType: "audio",
+          captureRole: "review-audio",
+          labelSegment: song,
+          blob: reviewAudioBlob,
+          fileExtension: reviewAudioBlob.type.includes("mpeg") ? "mp3" : "webm",
+        });
+        reviewAudioUploadState = "uploaded";
+      } catch (error) {
+        console.error("[sing-training] failed to upload review audio", error);
+        reviewAudioUploadState = "failed";
+        reviewAudioUploadError =
+          error instanceof Error ? error.message : "failed_to_upload_review_audio";
+      }
+    }
 
     const avgJ =
       jitterData.length > 0
@@ -389,6 +517,11 @@ function BrainSingPageContent() {
           comment: finalComment,
           rankings: rows,
           completedAt: Date.now(),
+          reviewAudioUrl,
+          reviewAudioMediaId: uploadedReviewAudio?.mediaId ?? null,
+          reviewAudioObjectKey: uploadedReviewAudio?.objectKey ?? null,
+          reviewAudioUploadState,
+          reviewAudioUploadError,
           governance: {
             catalogVersion:
               currentSong.governance.catalogVersion ?? SING_TRAINING_CATALOG_VERSION,
@@ -397,6 +530,15 @@ function BrainSingPageContent() {
             requirementIds: currentSong.governance.requirementIds,
             failureModes: currentSong.governance.failureModes,
           },
+          versionSnapshot: buildVersionSnapshot("sing", {
+            algorithm_version:
+              currentSong.governance.analysisVersion ?? SING_TRAINING_ANALYSIS_VERSION,
+            model_version:
+              currentSong.governance.analysisVersion ?? SING_TRAINING_ANALYSIS_VERSION,
+            requirements: currentSong.governance.requirementIds,
+            config_version:
+              currentSong.governance.catalogVersion ?? SING_TRAINING_CATALOG_VERSION,
+          }),
         } satisfies SingResultEnvelope),
       );
     }
@@ -420,6 +562,7 @@ function BrainSingPageContent() {
     setJitterHistory([]);
     setSiHistory([]);
     setLyricFillPct(0);
+    startVoiceRecording();
 
     const hasReliableAudioDuration = audioReady && songDurationSec > 0;
     const finishAtSec = hasReliableAudioDuration
@@ -442,7 +585,7 @@ function BrainSingPageContent() {
         window.clearTimeout(finishTimerRef.current);
         finishTimerRef.current = null;
       }
-      finishSinging(jitterData, siData);
+      void finishSinging(jitterData, siData);
     };
 
     finishTimerRef.current = window.setTimeout(
@@ -779,5 +922,7 @@ function ResultStat({ title, value }: { title: string; value: string }) {
     </div>
   );
 }
+
+
 
 

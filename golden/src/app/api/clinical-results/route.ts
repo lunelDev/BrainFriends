@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
 import type { PatientProfile } from "@/lib/patientStorage";
-import {
-  saveSingResultToDatabase,
-  type PersistedSingResult,
-} from "@/lib/server/singResultsDb";
+import type { TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
+import { saveTrainingHistoryToDatabase } from "@/lib/server/clinicalResultsDb";
 import {
   appendClinicalAuditLog,
-  buildSingTrainingAuditLog,
+  buildTrainingHistoryAuditLog,
 } from "@/lib/server/auditLog";
 
 export const runtime = "nodejs";
@@ -14,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 type RequestBody = {
   patient?: PatientProfile | null;
-  result?: PersistedSingResult | null;
+  historyEntry?: TrainingHistoryEntry | null;
 };
 
 function isValidPatient(
@@ -23,11 +21,14 @@ function isValidPatient(
   return Boolean(patient?.name?.trim() && patient?.gender && patient?.age);
 }
 
-function isValidResult(
-  result: PersistedSingResult | null | undefined,
-): result is PersistedSingResult {
+function isValidHistoryEntry(
+  entry: TrainingHistoryEntry | null | undefined,
+): entry is TrainingHistoryEntry {
   return Boolean(
-    result?.song && Number.isFinite(Number(result?.score)) && result?.completedAt,
+    entry?.historyId &&
+      entry?.sessionId &&
+      Number.isFinite(Number(entry?.completedAt)) &&
+      Number.isFinite(Number(entry?.aq)),
   );
 }
 
@@ -36,102 +37,80 @@ export async function POST(req: Request) {
 
   if (!isValidPatient(body.patient)) {
     await appendClinicalAuditLog(
-      buildSingTrainingAuditLog({
+      buildTrainingHistoryAuditLog({
         request: req,
         patient: body.patient ?? null,
         status: "rejected",
-        result: body.result
-          ? {
-              song: body.result.song,
-              score: Number(body.result.score),
-              finalJitter: body.result.finalJitter,
-              finalSi: body.result.finalSi,
-              rtLatency: body.result.rtLatency,
-              reviewAudioUrl: undefined,
-              versionSnapshot: body.result.versionSnapshot,
-            }
-          : null,
+        historyEntry: body.historyEntry ?? null,
         failureReason: "invalid_patient_payload",
         storageTargets: ["data/audit/clinical-events.ndjson"],
       }),
     );
+
     return NextResponse.json(
       { ok: false, error: "invalid_patient_payload" },
       { status: 400 },
     );
   }
 
-  if (!isValidResult(body.result)) {
+  if (!isValidHistoryEntry(body.historyEntry)) {
     await appendClinicalAuditLog(
-      buildSingTrainingAuditLog({
+      buildTrainingHistoryAuditLog({
         request: req,
         patient: body.patient,
         status: "rejected",
-        result: null,
-        failureReason: "invalid_result_payload",
+        historyEntry: null,
+        failureReason: "invalid_history_entry_payload",
         storageTargets: ["data/audit/clinical-events.ndjson"],
       }),
     );
+
     return NextResponse.json(
-      { ok: false, error: "invalid_result_payload" },
+      { ok: false, error: "invalid_history_entry_payload" },
       { status: 400 },
     );
   }
 
   try {
-    const saved = await saveSingResultToDatabase({
+    const saved = await saveTrainingHistoryToDatabase({
       patient: body.patient,
-      result: body.result,
+      historyEntry: body.historyEntry,
     });
 
     await appendClinicalAuditLog(
-      buildSingTrainingAuditLog({
+      buildTrainingHistoryAuditLog({
         request: req,
         patient: body.patient,
         sessionId: saved.sessionId,
         status: "success",
-        result: {
-          song: body.result.song,
-          score: body.result.score,
-          finalJitter: body.result.finalJitter,
-          finalSi: body.result.finalSi,
-          rtLatency: body.result.rtLatency,
-          reviewAudioUrl: undefined,
-          versionSnapshot: body.result.versionSnapshot,
-        },
+        historyEntry: body.historyEntry,
         storageTargets: [
           "postgres:patient_pii",
           "postgres:patient_pseudonym_map",
           "postgres:clinical_sessions",
-          "postgres:sing_results",
+          "postgres:language_training_results",
           "data/audit/clinical-events.ndjson",
         ],
       }),
     );
 
-    return NextResponse.json({ ok: true, saved, ranking: saved.ranking });
+    return NextResponse.json({ ok: true, saved });
   } catch (error: any) {
-    console.error("[sing-results] failed to persist", error);
+    console.error("[clinical-results] failed to persist", error);
+
     if (error?.message === "missing_database_url") {
       await appendClinicalAuditLog(
-        buildSingTrainingAuditLog({
+        buildTrainingHistoryAuditLog({
           request: req,
           patient: body.patient,
           sessionId: body.patient.sessionId,
           status: "skipped",
-          result: {
-            song: body.result.song,
-            score: body.result.score,
-            finalJitter: body.result.finalJitter,
-            finalSi: body.result.finalSi,
-            rtLatency: body.result.rtLatency,
-            reviewAudioUrl: undefined,
-            versionSnapshot: body.result.versionSnapshot,
-          },
+          historyEntry: body.historyEntry,
           failureReason: "missing_database_url",
           storageTargets: ["data/audit/clinical-events.ndjson"],
         }),
       );
+
       return NextResponse.json(
         {
           ok: true,
@@ -143,21 +122,13 @@ export async function POST(req: Request) {
     }
 
     await appendClinicalAuditLog(
-      buildSingTrainingAuditLog({
+      buildTrainingHistoryAuditLog({
         request: req,
         patient: body.patient,
         sessionId: body.patient.sessionId,
         status: "failed",
-        result: {
-          song: body.result.song,
-          score: body.result.score,
-          finalJitter: body.result.finalJitter,
-          finalSi: body.result.finalSi,
-          rtLatency: body.result.rtLatency,
-          reviewAudioUrl: undefined,
-          versionSnapshot: body.result.versionSnapshot,
-        },
-        failureReason: error?.message || "failed_to_persist_sing_result",
+        historyEntry: body.historyEntry,
+        failureReason: error?.message || "failed_to_persist_clinical_result",
         storageTargets: ["data/audit/clinical-events.ndjson"],
       }),
     );
@@ -165,10 +136,9 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         ok: false,
-        error: error?.message || "failed_to_persist_sing_result",
+        error: error?.message || "failed_to_persist_clinical_result",
       },
       { status: 500 },
     );
   }
 }
-

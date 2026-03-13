@@ -18,11 +18,13 @@ import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { loadPatientProfile } from "@/lib/patientStorage";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
+import { uploadClinicalMedia } from "@/lib/client/clinicalMediaUpload";
 import {
   analyzeArticulation,
   createInitialArticulationAnalyzerState,
 } from "@/lib/analysis/articulationAnalyzer";
 import { estimateLipSymmetryFromLandmarks } from "@/lib/analysis/lipMetrics";
+import { buildVersionSnapshot } from "@/lib/analysis/versioning";
 import {
   addSentenceLineBreaks,
   getResponsiveSentenceSizeClass,
@@ -71,6 +73,7 @@ function Step2Content() {
   const accentSolid = isRehabMode
     ? "bg-sky-500 text-white border border-sky-500 hover:bg-sky-600 transition-all"
     : trainingButtonStyles.orangeSolid;
+  const clinicalTrainingType = isRehabMode ? "speech-rehab" : "self-assessment";
   const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
   const pushStep3OrRehabResult = useCallback(
     (step2Score: number) => {
@@ -861,6 +864,7 @@ function Step2Content() {
           averageConsonantAccuracy: avgConsonantAccuracy,
           averageVowelAccuracy: avgVowelAccuracy,
           timestamp: Date.now(),
+          versionSnapshot: buildVersionSnapshot("step2"),
         });
       } catch (error) {
         console.error("Save Error:", error);
@@ -957,6 +961,7 @@ function Step2Content() {
         averageConsonantAccuracy,
         averageVowelAccuracy,
         timestamp: Date.now(),
+        versionSnapshot: buildVersionSnapshot("step2"),
       });
 
       const step2Score = Math.round(
@@ -1242,6 +1247,23 @@ function Step2Content() {
                   savedCount: candidate.length,
                   score: Number(finalScore.toFixed(1)),
                 });
+                const patient = loadPatientProfile();
+                if (patient) {
+                  uploadClinicalMedia({
+                    patient,
+                    sourceSessionKey: patient.sessionId,
+                    trainingType: clinicalTrainingType,
+                    stepNo: 2,
+                    mediaType: "audio",
+                    captureRole: "step2-audio",
+                    labelSegment: currentItem.text,
+                    blob: audioBlob,
+                    fileExtension: audioBlob.type.includes("mpeg") ? "mp3" : "webm",
+                    durationMs: responseTimeMs,
+                  }).catch((uploadError) => {
+                    console.error("[Step2] failed to upload clinical audio", uploadError);
+                  });
+                }
                 setReviewAudioUrl(URL.createObjectURL(audioBlob));
                 updateRuntimeStatus({
                   pageError: false,
