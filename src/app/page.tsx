@@ -53,6 +53,13 @@ export default function LoginPage() {
 
   const moveAfterPermission = async (patient: PatientProfile) => {
     bootstrapPatient(patient);
+    if (patient.userRole === "admin") {
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem("btt.trialMode");
+      }
+      router.replace("/select-page/mode");
+      return;
+    }
     let hasSelfDiagnosisHistory = false;
 
     try {
@@ -359,6 +366,13 @@ export default function LoginPage() {
                   const granted = await requestPermissions();
                   if (!granted) return;
                   setShowPermissionModal(false);
+                  if (pendingPatient.userRole === "admin") {
+                    if (typeof window !== "undefined") {
+                      window.sessionStorage.removeItem("btt.trialMode");
+                    }
+                    router.replace("/select-page/mode");
+                    return;
+                  }
                   let hasSelfDiagnosisHistory = false;
                   try {
                     const response = await fetch("/api/onboarding/status", {
