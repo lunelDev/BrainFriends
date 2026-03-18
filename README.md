@@ -243,14 +243,14 @@ Not intended use:
 - reading/fluency/repetition/writing consistency scoring
 - 세션 저장 및 결과 표시
 
-## AI Models and Technical Stack
+## Current Models and Technical Stack
 
-현재 프로젝트에서 핵심 분석 경로에 사용되는 기술 스택은 아래와 같다.
+현재 프로젝트에서 실제로 사용 중인 모델/기술 스택은 아래와 같다.
 
 | Area | Technology / Model | Current Use |
 | --- | --- | --- |
 | Face landmark / facial asymmetry | MediaPipe Face Landmarker (`@mediapipe/tasks-vision`) | 자가진단, 언어재활, 노래방의 공통 얼굴 랜드마크 추적 및 대칭/구강 feature extraction |
-| Speech-to-text | OpenAI `whisper-1` | 음성 전사(STT) 경로. `NEXT_PUBLIC_DEV_MODE=true` 이면 테스트 응답을 반환할 수 있음 |
+| Speech-to-text | OpenAI `whisper-1` | 현재 사용 중인 음성 전사(STT) 경로. `NEXT_PUBLIC_DEV_MODE=true` 이면 테스트 응답을 반환할 수 있음 |
 | OCR | `tesseract.js` | 이미지 텍스트 추출 관련 기능용 라이브러리 포함 |
 | Browser ML runtime | WebAssembly + MediaPipe Tasks Vision | 브라우저 측 얼굴 분석 실행 환경 |
 | Rule-based scoring | Project-local scoring logic | step별 점수, AQ, 노래방 점수, 임상 요약값 계산 |
@@ -320,6 +320,11 @@ Not intended use:
 - browser/device 차이 검증 가능
 - threshold 변경 영향 검증 가능
 - 실패 모드별 방어 로직 검증 가능
+
+현재 관리자 화면의 리포트 검증 KPI는 정식 임상 검증값이 아니라 내부 추정 참고치입니다.
+- `분석 정확도(추정)`: 문항 점수, 발음 점수, transcript 유사도 등 앱 내부 채점값 평균
+- `임상적 상관성(추정)`: AQ/step 점수와 내부 proxy clinical score 간 상관계수
+- `반복측정 신뢰도 ICC(추정)`: 동일 표본에서 앱 점수와 proxy score 간 ICC 추정치
 
 ## Known Regulatory Gaps
 
@@ -511,4 +516,3 @@ Not intended use:
 
 이 소프트웨어는 현재 허가 준비를 고려한 개발 단계의 시스템입니다.
 의료적 판단과 최종 임상 결정은 반드시 자격을 갖춘 전문가의 책임 하에 이루어져야 합니다.
-

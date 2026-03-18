@@ -9,7 +9,6 @@ type Hemiplegia = "Y" | "N";
 type Hemianopsia = "NONE" | "RIGHT" | "LEFT";
 
 type SignupForm = {
-  userRole: "patient" | "admin";
   loginId: string;
   name: string;
   birthDate: string;
@@ -53,7 +52,6 @@ export default function SignupPage() {
     checkedValue: "",
   });
   const [form, setForm] = useState<SignupForm>({
-    userRole: "patient",
     loginId: "",
     name: "",
     birthDate: "",
@@ -74,8 +72,6 @@ export default function SignupPage() {
       : form.password === form.confirmPassword
         ? "match"
         : "mismatch";
-  const isAdminSignup = form.userRole === "admin";
-
   const updateForm = (key: keyof SignupForm, value: string) => {
     if (key === "loginId") {
       setLoginIdStatus({
@@ -144,8 +140,7 @@ export default function SignupPage() {
       !/^\d{4}$/.test(form.phoneLast4) ||
       form.password.length < 6 ||
       form.password !== form.confirmPassword ||
-      (!isAdminSignup &&
-        (!form.educationYears || form.gender === "U" || !form.onsetDate))
+      (!form.educationYears || form.gender === "U" || !form.onsetDate)
     ) {
       setError("입력값을 확인해 주세요. 비밀번호는 6자 이상이어야 합니다.");
       return;
@@ -165,7 +160,7 @@ export default function SignupPage() {
       return;
     }
 
-    if (!isAdminSignup && form.onsetDate > todayLocalDate) {
+    if (form.onsetDate > todayLocalDate) {
       setError("발병일은 오늘 이후 날짜를 선택할 수 없습니다.");
       return;
     }
@@ -177,11 +172,11 @@ export default function SignupPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
-          educationYears: isAdminSignup ? undefined : Number(form.educationYears),
-          onsetDate: isAdminSignup ? undefined : form.onsetDate,
-          hemiplegia: isAdminSignup ? undefined : form.hemiplegia,
-          hemianopsia: isAdminSignup ? undefined : form.hemianopsia,
-          gender: isAdminSignup ? undefined : form.gender,
+          educationYears: Number(form.educationYears),
+          onsetDate: form.onsetDate,
+          hemiplegia: form.hemiplegia,
+          hemianopsia: form.hemianopsia,
+          gender: form.gender,
         }),
       });
       const payload = await response.json().catch(() => null);
@@ -212,49 +207,12 @@ export default function SignupPage() {
               회원가입
             </h1>
             <p className="mt-2 text-sm font-medium text-slate-500">
-              역할을 선택한 뒤 기본정보와 로그인 정보를 등록합니다.
+              기본정보와 로그인 정보를 등록합니다.
             </p>
           </div>
           <Link href="/" className="text-sm font-bold text-slate-500 hover:text-slate-700">
             로그인으로
           </Link>
-        </div>
-
-        <div className="mt-8 grid grid-cols-2 gap-3 rounded-[24px] bg-slate-50 p-2">
-          <button
-            type="button"
-            onClick={() => updateForm("userRole", "patient")}
-            className={`rounded-[18px] px-4 py-4 text-left transition ${
-              form.userRole === "patient"
-                ? "bg-white shadow-sm ring-1 ring-orange-200"
-                : "bg-transparent hover:bg-white/70"
-            }`}
-          >
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-500">
-              Patient
-            </p>
-            <p className="mt-2 text-base font-black text-slate-900">사용자 회원가입</p>
-            <p className="mt-1 text-xs font-semibold text-slate-500">
-              훈련과 결과 확인을 위한 기본 사용자 계정입니다.
-            </p>
-          </button>
-          <button
-            type="button"
-            onClick={() => updateForm("userRole", "admin")}
-            className={`rounded-[18px] px-4 py-4 text-left transition ${
-              form.userRole === "admin"
-                ? "bg-white shadow-sm ring-1 ring-orange-200"
-                : "bg-transparent hover:bg-white/70"
-            }`}
-          >
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-500">
-              Admin
-            </p>
-            <p className="mt-2 text-base font-black text-slate-900">관리자 회원가입</p>
-            <p className="mt-1 text-xs font-semibold text-slate-500">
-              사용자 리포트와 전체 로그를 확인하는 관리자 계정입니다.
-            </p>
-          </button>
         </div>
 
         <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -328,19 +286,17 @@ export default function SignupPage() {
               placeholder="1234"
             />
           </Field>
-          {!isAdminSignup ? (
-            <Field label="교육년수 *">
-              <input
-                className="input-style"
-                inputMode="numeric"
-                value={form.educationYears}
-                onChange={(e) =>
-                  updateForm("educationYears", e.target.value.replace(/\D/g, ""))
-                }
-                placeholder="예: 12"
-              />
-            </Field>
-          ) : null}
+          <Field label="교육년수 *">
+            <input
+              className="input-style"
+              inputMode="numeric"
+              value={form.educationYears}
+              onChange={(e) =>
+                updateForm("educationYears", e.target.value.replace(/\D/g, ""))
+              }
+              placeholder="예: 12"
+            />
+          </Field>
           <Field label="비밀번호 *">
             <div className="relative">
               <input
@@ -387,84 +343,78 @@ export default function SignupPage() {
               </p>
             ) : null}
           </Field>
-          {!isAdminSignup ? (
-            <>
-              <Field label="성별 *">
-                <div className="flex rounded-2xl bg-slate-100 p-1">
-                  {(["M", "F"] as const).map((gender) => (
-                    <button
-                      key={gender}
-                      type="button"
-                      onClick={() => updateForm("gender", gender)}
-                      className={`h-12 flex-1 rounded-xl text-sm font-black ${
-                        form.gender === gender
-                          ? "bg-white text-slate-900 shadow-sm"
-                          : "text-slate-400"
-                      }`}
-                    >
-                      {gender === "M" ? "남성" : "여성"}
-                    </button>
-                  ))}
-                </div>
-              </Field>
-              <Field label="발병일 *">
-                <input
-                  className="input-style"
-                  type="date"
-                  max={todayLocalDate}
-                  value={form.onsetDate}
-                  onChange={(e) => updateForm("onsetDate", e.target.value)}
-                />
-              </Field>
-            </>
-          ) : null}
-          {!isAdminSignup ? (
-            <>
-              <Field label="편마비 유무 *">
-                <div className="flex gap-2">
-                  {[
-                    { key: "Y", label: "있음" },
-                    { key: "N", label: "없음" },
-                  ].map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => updateForm("hemiplegia", item.key)}
-                      className={`h-12 flex-1 rounded-2xl border text-sm font-black ${
-                        form.hemiplegia === item.key
-                          ? "border-orange-300 bg-orange-50 text-slate-900"
-                          : "border-slate-200 bg-white text-slate-500"
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </Field>
-              <Field label="반맹증(시야 결손) *">
-                <div className="flex gap-2">
-                  {[
-                    { key: "NONE", label: "없음" },
-                    { key: "LEFT", label: "좌측" },
-                    { key: "RIGHT", label: "우측" },
-                  ].map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => updateForm("hemianopsia", item.key)}
-                      className={`h-12 flex-1 rounded-2xl border text-xs font-black ${
-                        form.hemianopsia === item.key
-                          ? "border-orange-300 bg-orange-50 text-slate-900"
-                          : "border-slate-200 bg-white text-slate-500"
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </Field>
-            </>
-          ) : null}
+          <Field label="성별 *">
+            <div className="flex rounded-2xl bg-slate-100 p-1">
+              {(["M", "F"] as const).map((gender) => (
+                <button
+                  key={gender}
+                  type="button"
+                  onClick={() => updateForm("gender", gender)}
+                  className={`h-12 flex-1 rounded-xl text-sm font-black ${
+                    form.gender === gender
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-400"
+                  }`}
+                >
+                  {gender === "M" ? "남성" : "여성"}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field label="발병일 *">
+            <input
+              className="input-style"
+              type="date"
+              max={todayLocalDate}
+              value={form.onsetDate}
+              onChange={(e) => updateForm("onsetDate", e.target.value)}
+            />
+          </Field>
+          <>
+            <Field label="편마비 유무 *">
+              <div className="flex gap-2">
+                {[
+                  { key: "Y", label: "있음" },
+                  { key: "N", label: "없음" },
+                ].map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => updateForm("hemiplegia", item.key)}
+                    className={`h-12 flex-1 rounded-2xl border text-sm font-black ${
+                      form.hemiplegia === item.key
+                        ? "border-orange-300 bg-orange-50 text-slate-900"
+                        : "border-slate-200 bg-white text-slate-500"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <Field label="반맹증(시야 결손) *">
+              <div className="flex gap-2">
+                {[
+                  { key: "NONE", label: "없음" },
+                  { key: "LEFT", label: "좌측" },
+                  { key: "RIGHT", label: "우측" },
+                ].map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => updateForm("hemianopsia", item.key)}
+                    className={`h-12 flex-1 rounded-2xl border text-xs font-black ${
+                      form.hemianopsia === item.key
+                        ? "border-orange-300 bg-orange-50 text-slate-900"
+                        : "border-slate-200 bg-white text-slate-500"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          </>
         </div>
 
         {error ? <p className="mt-5 text-sm font-bold text-red-500">{error}</p> : null}

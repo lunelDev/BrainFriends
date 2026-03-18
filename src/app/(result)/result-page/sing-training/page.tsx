@@ -45,6 +45,7 @@ type SingResult = {
   lyricAccuracy?: string;
   transcript?: string;
   metricSource?: "measured" | "demo";
+  measurementReason?: string | null;
   comment: string;
   rankings: RankRow[];
   completedAt: number;
@@ -110,6 +111,7 @@ function buildFallbackSingResult(
     lyricAccuracy: "--",
     transcript: "",
     metricSource: "demo",
+    measurementReason: "저장된 측정 결과가 없어 화면 확인용 기본 결과를 표시합니다.",
     comment:
       "음성 또는 안면 측정 데이터가 충분하지 않아 임상 결과를 확정할 수 없습니다. 화면 확인용 결과만 표시되며 서버 저장은 수행되지 않습니다.",
     rankings: EMPTY_RANKINGS,
@@ -333,6 +335,7 @@ export default function SingTrainingResultPage() {
             lyricAccuracy: parsed.lyricAccuracy,
             transcript: parsed.transcript,
             comment: parsed.comment,
+            measurementReason: parsed.measurementReason,
             rankings: parsed.rankings,
             governance: parsed.governance,
             versionSnapshot: parsed.versionSnapshot,
@@ -373,6 +376,7 @@ export default function SingTrainingResultPage() {
           lyricAccuracy: latestSing.singResult.lyricAccuracy,
           transcript: latestSing.singResult.transcript,
           comment: latestSing.singResult.comment,
+          measurementReason: latestSing.singResult.measurementReason,
           rankings: latestSing.singResult.rankings ?? [],
           completedAt: latestSing.completedAt,
           governance: latestSing.singResult.governance,
@@ -512,7 +516,7 @@ export default function SingTrainingResultPage() {
   const maskedAge = patient?.age ? `${patient.age}세 기준` : "동일 연령대 기준";
   const vitalityComment =
     !isMeasuredResult
-      ? "측정 데이터가 충분하지 않아 화면 확인용 결과만 표시합니다."
+      ? result.measurementReason || "측정 데이터가 충분하지 않아 화면 확인용 결과만 표시합니다."
       : result.score >= 90
       ? "자음·모음 산출과 가사 재현이 매우 안정적으로 확인되었습니다."
       : "발화 산출과 가사 추종이 전반적으로 안정적인 흐름을 보였습니다.";
@@ -670,7 +674,7 @@ export default function SingTrainingResultPage() {
                 <p>
                   {isMeasuredResult
                     ? `자음과 모음 산출 점수를 기반으로 보면 발화 명료도가 안정적이었고, 가사 흐름을 따라가는 수행도도 양호했습니다. 보조 지표로 안면 대칭과 반응 속도도 함께 확인했습니다.`
-                    : "마이크 입력 또는 안면 추적 데이터가 부족하면 임상 결과를 확정할 수 없습니다. 곡 재생과 결과 UI는 확인할 수 있지만, 서버 저장과 레포트 반영은 수행되지 않습니다."}
+                    : `${result.measurementReason || "마이크 입력 또는 안면 추적 데이터가 부족하면 임상 결과를 확정할 수 없습니다."} 곡 재생과 결과 UI는 확인할 수 있지만, 서버 저장과 레포트 반영은 수행되지 않습니다.`}
                 </p>
                 <p>{result.comment}</p>
                 <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">

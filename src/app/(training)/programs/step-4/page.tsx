@@ -13,6 +13,7 @@ import { PlaceType } from "@/constants/trainingData";
 import { FLUENCY_SCENARIOS } from "@/constants/fluencyData";
 import { SpeechAnalyzer } from "@/lib/speech/SpeechAnalyzer";
 import { AnalysisSidebar } from "@/components/training/AnalysisSidebar";
+import { RuntimeStatusBanner } from "@/components/training/RuntimeStatusBanner";
 import { useTraining } from "../../TrainingContext";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { SessionManager } from "@/lib/kwab/SessionManager";
@@ -1225,6 +1226,9 @@ function Step4Content() {
 
       <div className="flex flex-1 flex-col lg:flex-row min-h-0 overflow-hidden">
         <main className="flex-1 flex flex-col min-h-[calc(100vh-4rem)] lg:min-h-0 relative p-3 sm:p-4 lg:p-8 pb-24 sm:pb-10 lg:pb-8 order-1 overflow-y-auto lg:overflow-hidden">
+          <div className="max-w-5xl w-full mx-auto mb-3 sm:mb-4 lg:mb-5">
+            <RuntimeStatusBanner />
+          </div>
           <div
             className={`max-w-5xl w-full min-h-0 mx-auto grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8 ${
               phase === "review" ? "items-start" : "h-full items-stretch"

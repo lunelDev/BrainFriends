@@ -79,6 +79,11 @@ export default function LoginPage() {
   };
 
   const routeAfterAuth = (patient: Parameters<typeof replacePatientProfile>[0]) => {
+    if (patient.userRole === "admin") {
+      replacePatientProfile(patient);
+      router.replace("/select-page/mode");
+      return;
+    }
     setPendingPatient(patient);
     setShowPermissionModal(true);
   };

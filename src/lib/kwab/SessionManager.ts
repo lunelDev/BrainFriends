@@ -252,6 +252,7 @@ export interface SingHistoryResult {
   finalVowel?: string;
   lyricAccuracy?: string;
   transcript?: string;
+  measurementReason?: string | null;
   comment: string;
   governance?: {
     catalogVersion: string;

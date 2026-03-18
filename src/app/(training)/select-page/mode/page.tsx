@@ -92,30 +92,15 @@ export default function ModeSelectPage() {
               </span>
             </div>
           </div>
-          <div className="flex items-center justify-end gap-2 sm:gap-3 flex-wrap">
-            {isAdmin ? (
-              <>
-                <button
-                  onClick={() => router.push("/tools/training-usage-admin")}
-                  className="h-8 sm:h-9 min-w-[132px] px-3 sm:px-4 rounded-full text-[11px] sm:text-xs font-black shadow-sm border bg-white text-slate-700 border-slate-200 hover:bg-slate-100 transition-all"
-                >
-                  전체 사용자 타임라인
-                </button>
-                <button
-                  onClick={() => router.push("/tools/admin-reports")}
-                  className="h-8 sm:h-9 min-w-[116px] px-3 sm:px-4 rounded-full text-[11px] sm:text-xs font-black shadow-sm border bg-white text-slate-700 border-slate-200 hover:bg-slate-100 transition-all"
-                >
-                  사용자 리포트
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => router.push("/tools/training-usage-timeline")}
-                className="h-8 sm:h-9 min-w-[112px] px-3 sm:px-4 rounded-full text-[11px] sm:text-xs font-black shadow-sm border bg-white text-slate-700 border-slate-200 hover:bg-slate-100 transition-all"
-              >
-                사용 타임라인
-              </button>
-            )}
+        <div className="flex items-center justify-end gap-2 sm:gap-3 flex-wrap">
+          {isAdmin ? (
+            <button
+              onClick={() => router.push("/tools/admin-reports")}
+              className="h-8 sm:h-9 min-w-[132px] px-3 sm:px-4 rounded-full text-[11px] sm:text-xs font-black shadow-sm border bg-white text-slate-700 border-slate-200 hover:bg-slate-100 transition-all"
+            >
+              전체 사용자 리포트
+            </button>
+          ) : null}
             <button
               onClick={logout}
               className="h-8 sm:h-9 min-w-[90px] sm:min-w-[98px] px-3 sm:px-4 rounded-full text-[11px] sm:text-xs font-black shadow-sm border bg-white text-slate-700 border-slate-200 hover:bg-slate-100 transition-all"

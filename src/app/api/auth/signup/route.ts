@@ -15,7 +15,6 @@ export async function POST(req: Request) {
 
   try {
     const created = await createAccount({
-      userRole: body.userRole === "admin" ? "admin" : "patient",
       loginId: String(body.loginId ?? ""),
       name: String(body.name ?? ""),
       birthDate: String(body.birthDate ?? ""),

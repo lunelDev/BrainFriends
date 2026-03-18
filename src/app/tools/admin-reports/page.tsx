@@ -1,6 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { ReportDeveloperKpiPanel } from "@/components/training/ReportDeveloperKpiPanel";
+import {
+  buildAggregateEstimatedValidationMetrics,
+  getEstimatedKpiSummary,
+} from "@/features/report/utils/validationEstimates";
+import {
+  getRehabRowScore,
+} from "@/features/report/utils/reportHelpers";
 
 type PatientSummary = {
   patientId: string;
@@ -35,7 +44,9 @@ type HistoryEntry = {
 };
 
 export default function AdminReportsPage() {
+  const router = useRouter();
   const [patients, setPatients] = useState<PatientSummary[]>([]);
+  const [validationSampleEntries, setValidationSampleEntries] = useState<HistoryEntry[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
@@ -58,7 +69,11 @@ export default function AdminReportsPage() {
         }
         if (cancelled) return;
         const rows = Array.isArray(payload.patients) ? payload.patients : [];
+        const sampleRows = Array.isArray(payload.validationSampleEntries)
+          ? payload.validationSampleEntries
+          : [];
         setPatients(rows);
+        setValidationSampleEntries(sampleRows);
         setSelectedPatientId(rows[0]?.patientId ?? null);
       })
       .catch((error) => {
@@ -122,10 +137,58 @@ export default function AdminReportsPage() {
     );
   }, [patients, search]);
 
+  const estimatedKpiMetrics = useMemo(() => {
+    return buildAggregateEstimatedValidationMetrics(validationSampleEntries as any);
+  }, [validationSampleEntries]);
+
+  const estimatedKpiSummary = useMemo(
+    () => getEstimatedKpiSummary(estimatedKpiMetrics),
+    [estimatedKpiMetrics],
+  );
+
+  const getEntryTitle = (entry: HistoryEntry) => {
+    if (entry.trainingMode === "sing") {
+      return `노래 훈련 · ${entry.singResult?.song ?? "-"}`;
+    }
+    if (entry.trainingMode === "rehab") {
+      return `언어 재활 · step ${entry.rehabStep ?? "-"}`;
+    }
+    return "자가 진단";
+  };
+
+  const getEntryScorePill = (entry: HistoryEntry) => {
+    if (entry.trainingMode === "sing") {
+      return `노래 점수 ${entry.singResult?.score ?? entry.aq}`;
+    }
+    if (entry.trainingMode === "rehab") {
+      return `재활 점수 ${getRehabRowScore(entry as any).toFixed(1)}`;
+    }
+    return `AQ ${Number(entry.aq ?? 0).toFixed(1)}`;
+  };
+
+  const getEntrySummaryLine = (entry: HistoryEntry) => {
+    if (entry.trainingMode === "sing" && entry.singResult) {
+      return `곡 ${entry.singResult.song ?? "-"} · 점수 ${entry.singResult.score ?? 0} · jitter ${entry.singResult.finalJitter} · symmetry ${entry.singResult.finalSi} · latency ${entry.singResult.rtLatency}`;
+    }
+
+    if (entry.trainingMode === "rehab") {
+      const rehabStep = Number(entry.rehabStep || 0);
+      const rehabStepScore =
+        rehabStep >= 1 && rehabStep <= 6
+          ? entry.stepScores[`step${rehabStep}`] ?? 0
+          : 0;
+      return `대상 step ${entry.rehabStep ?? "-"} · 재활 점수 ${getRehabRowScore(entry as any).toFixed(1)} · 해당 step 점수 ${rehabStepScore}`;
+    }
+
+    return `종합 AQ ${Number(entry.aq ?? 0).toFixed(1)} · step1 ${entry.stepScores.step1 ?? 0} · step2 ${entry.stepScores.step2 ?? 0} · step3 ${entry.stepScores.step3 ?? 0} · step4 ${entry.stepScores.step4 ?? 0} · step5 ${entry.stepScores.step5 ?? 0} · step6 ${entry.stepScores.step6 ?? 0}`;
+  };
+
   return (
     <main className="min-h-screen bg-[#f8fafc] px-4 py-8 sm:px-6">
       <div className="mx-auto max-w-7xl">
         <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <div className="flex items-center justify-between gap-3">
+            <div>
           <p className="text-[11px] font-black uppercase tracking-[0.24em] text-orange-500">
             Admin Reports
           </p>
@@ -135,6 +198,15 @@ export default function AdminReportsPage() {
           <p className="mt-2 text-sm font-medium text-slate-500">
             사용자별 self-assessment, rehab, sing 결과를 관리자 화면에서 조회합니다.
           </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push("/select-page/mode")}
+              className="shrink-0 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-50"
+            >
+              뒤로 가기
+            </button>
+          </div>
         </section>
 
         {isForbidden ? (
@@ -144,8 +216,8 @@ export default function AdminReportsPage() {
         ) : null}
 
         {!isForbidden ? (
-        <section className="mt-6 grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
-          <aside className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="mt-6 grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+          <aside className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
             <label className="block">
               <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
                 Patient Search
@@ -169,7 +241,7 @@ export default function AdminReportsPage() {
                     key={patient.patientId}
                     type="button"
                     onClick={() => setSelectedPatientId(patient.patientId)}
-                    className={`w-full rounded-2xl border p-4 text-left transition ${
+                    className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
                       selectedPatientId === patient.patientId
                         ? "border-orange-300 bg-orange-50"
                         : "border-slate-200 bg-slate-50 hover:bg-white"
@@ -188,7 +260,7 @@ export default function AdminReportsPage() {
             </div>
           </aside>
 
-          <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+          <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
             {!selectedPatientId ? (
               <p className="text-sm font-bold text-slate-500">선택된 사용자가 없습니다.</p>
             ) : isLoadingDetail ? (
@@ -202,23 +274,25 @@ export default function AdminReportsPage() {
                   <SummaryCard label="가명 ID" value={selectedPatient?.patientPseudonymId ?? "-"} mono />
                 </div>
 
-                <div className="mt-6 space-y-4">
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-[12px] font-semibold text-slate-600">
+                  검증 표본: 전체 사용자 {validationSampleEntries.length}건 기준
+                </div>
+
+                <div className="mt-6 overflow-hidden rounded-[22px] border border-slate-200">
                   {!entries.length ? (
-                    <p className="text-sm font-bold text-slate-500">저장된 리포트가 없습니다.</p>
+                    <div className="bg-white px-4 py-6 text-sm font-bold text-slate-500">
+                      저장된 리포트가 없습니다.
+                    </div>
                   ) : (
-                    entries.map((entry) => (
+                    entries.map((entry, index) => (
                       <article
                         key={entry.historyId}
-                        className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                        className={`bg-white px-4 py-4 ${index !== entries.length - 1 ? "border-b border-slate-200" : ""}`}
                       >
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
-                            <p className="text-sm font-black text-slate-900">
-                              {entry.trainingMode === "sing"
-                                ? `노래 훈련 · ${entry.singResult?.song ?? "-"}`
-                                : entry.trainingMode === "rehab"
-                                  ? `언어 재활 · step ${entry.rehabStep ?? "-"}`
-                                  : "자가 진단"}
+                        <div className="grid gap-3 xl:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto] xl:items-center">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-black text-slate-900">
+                              {getEntryTitle(entry)}
                             </p>
                             <p className="mt-1 text-xs font-bold text-slate-500">
                               {new Intl.DateTimeFormat("ko-KR", {
@@ -227,29 +301,14 @@ export default function AdminReportsPage() {
                               }).format(new Date(entry.completedAt))}
                             </p>
                           </div>
-                          <div className="flex flex-wrap gap-2 text-[11px] font-black">
+                          <p className="min-w-0 text-sm font-semibold leading-relaxed text-slate-600">
+                            {getEntrySummaryLine(entry)}
+                          </p>
+                          <div className="flex flex-wrap gap-2 text-[11px] font-black xl:justify-end">
                             <Badge>{entry.trainingMode}</Badge>
-                            <Badge>{entry.trainingMode === "sing" ? `score ${entry.singResult?.score ?? entry.aq}` : `AQ ${entry.aq}`}</Badge>
+                            <Badge>{getEntryScorePill(entry)}</Badge>
                           </div>
                         </div>
-
-                        {entry.trainingMode === "sing" && entry.singResult ? (
-                          <div className="mt-3 grid gap-2 text-xs font-semibold text-slate-600 sm:grid-cols-2">
-                            <p>jitter: {entry.singResult.finalJitter}</p>
-                            <p>symmetry: {entry.singResult.finalSi}</p>
-                            <p>latency: {entry.singResult.rtLatency}</p>
-                            <p className="sm:col-span-2">comment: {entry.singResult.comment || "-"}</p>
-                          </div>
-                        ) : (
-                          <div className="mt-3 grid gap-2 text-xs font-semibold text-slate-600 sm:grid-cols-3">
-                            <p>step1: {entry.stepScores.step1 ?? 0}</p>
-                            <p>step2: {entry.stepScores.step2 ?? 0}</p>
-                            <p>step3: {entry.stepScores.step3 ?? 0}</p>
-                            <p>step4: {entry.stepScores.step4 ?? 0}</p>
-                            <p>step5: {entry.stepScores.step5 ?? 0}</p>
-                            <p>step6: {entry.stepScores.step6 ?? 0}</p>
-                          </div>
-                        )}
                       </article>
                     ))
                   )}
@@ -260,6 +319,12 @@ export default function AdminReportsPage() {
         </section>
         ) : null}
       </div>
+      <ReportDeveloperKpiPanel
+        metrics={estimatedKpiMetrics}
+        passCount={estimatedKpiSummary.passCount}
+        failCount={estimatedKpiSummary.failCount}
+        pendingCount={estimatedKpiSummary.pendingCount}
+      />
     </main>
   );
 }

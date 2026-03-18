@@ -15,6 +15,7 @@ import { SPEECH_REPETITION_PROTOCOLS } from "@/constants/speechTrainingData";
 import { PlaceType } from "@/constants/trainingData";
 import { AnalysisSidebar } from "@/components/training/AnalysisSidebar";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
+import { RuntimeStatusBanner } from "@/components/training/RuntimeStatusBanner";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { loadPatientProfile } from "@/lib/patientStorage";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
@@ -1374,6 +1375,7 @@ function Step2Content() {
               resultScore === null ? "h-full justify-center" : "justify-start pb-6"
             }`}
           >
+            <RuntimeStatusBanner />
             {/* 메인 텍스트 영역 */}
             <div
               className={`w-full rounded-[40px] p-8 lg:p-12 text-center transition-colors duration-150 ${

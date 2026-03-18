@@ -2,7 +2,6 @@
 
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
 import { REHAB_STEP_LABELS } from "@/lib/results/rehab/constants";
 import {
@@ -51,9 +50,10 @@ import {
 function ReportContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { patient } = useTrainingSession();
+  const [isHydrated, setIsHydrated] = useState(false);
   const [history, setHistory] = useState<TrainingHistoryEntry[]>([]);
   const [selected, setSelected] = useState<TrainingHistoryEntry | null>(null);
+  const [serverPatientName, setServerPatientName] = useState("");
   const modeFromQuery = searchParams.get("mode");
   const initialMode: "self" | "rehab" | "sing" =
     modeFromQuery === "rehab"
@@ -77,20 +77,20 @@ function ReportContent() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
     setModeFilter(initialMode);
   }, [initialMode]);
 
   useEffect(() => {
-    if (!patient) {
-      setHistory([]);
-      setSelected(null);
-      return;
-    }
     let cancelled = false;
 
-    const applyRows = (rows: TrainingHistoryEntry[]) => {
+    const applyRows = (rows: TrainingHistoryEntry[], patientName?: string) => {
       if (cancelled) return;
       setHistory(rows);
+      setServerPatientName(String(patientName || rows[0]?.patientName || ""));
       const preferredRows =
         initialMode === "rehab"
           ? rows.filter((r) => r.trainingMode === "rehab")
@@ -109,7 +109,7 @@ function ReportContent() {
         const rows = Array.isArray(payload?.entries)
           ? (payload.entries as TrainingHistoryEntry[])
           : [];
-        applyRows(rows);
+        applyRows(rows, payload?.patient?.name);
       })
       .catch(() => {
         applyRows([]);
@@ -118,7 +118,7 @@ function ReportContent() {
     return () => {
       cancelled = true;
     };
-  }, [initialMode, patient]);
+  }, [initialMode]);
 
   const filteredHistory = useMemo(
     () => {
@@ -187,7 +187,6 @@ function ReportContent() {
   }, [filteredHistory, isSelectionMode]);
 
   const reloadHistory = () => {
-    if (!patient) return;
     void fetch("/api/history/me", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error("failed_to_load_server_history");
@@ -198,9 +197,11 @@ function ReportContent() {
           ? (payload.entries as TrainingHistoryEntry[])
           : [];
         setHistory(rows);
+        setServerPatientName(String(payload?.patient?.name || rows[0]?.patientName || ""));
       })
       .catch(() => {
         setHistory([]);
+        setServerPatientName("");
       });
   };
 
@@ -230,7 +231,7 @@ function ReportContent() {
   };
 
   const handleConfirmDeleteSelected = () => {
-    if (!patient || selectedHistoryIds.size === 0 || isDeletingHistory) return;
+    if (selectedHistoryIds.size === 0 || isDeletingHistory) return;
     const selectedRows = filteredHistory.filter((row) =>
       selectedHistoryIds.has(row.historyId),
     );
@@ -670,7 +671,19 @@ function ReportContent() {
       ? "bg-sky-500 border-sky-500 text-white"
       : modeFilter === "sing"
         ? "bg-emerald-500 border-emerald-500 text-white"
-      : "bg-orange-500 border-orange-500 text-white";
+        : "bg-orange-500 border-orange-500 text-white";
+
+  if (!isHydrated) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <div className="mx-auto max-w-[1440px] px-4 py-6 md:px-6 lg:px-8">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm font-bold text-slate-500 shadow-sm">
+            리포트 불러오는 중...
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -734,7 +747,7 @@ function ReportContent() {
           <HistorySidebar
           isRehabContext={isRehabContext}
           isSingContext={isSingContext}
-          patientName={patient?.name || ""}
+          patientName={serverPatientName}
           modeFilter={modeFilter}
           sortOrder={sortOrder}
           rehabStepFilter={rehabStepFilter}
@@ -1185,36 +1198,6 @@ function ReportContent() {
         </div>
       </main>
 
-      {selected && selected.trainingMode !== "sing" && (
-        <footer className="no-print sticky bottom-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur-md">
-          <div className="max-w-[1440px] mx-auto px-4 md:px-6 lg:px-8 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-                Report Validation KPI
-              </span>
-              <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-700">
-                PASS {estimatedKpiSummary.passCount} · FAIL {estimatedKpiSummary.failCount} · PENDING {estimatedKpiSummary.pendingCount}
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-[11px]">
-              {estimatedKpiMetrics.map((metric) => (
-                <span
-                  key={`footer-${metric.key}`}
-                  className={`inline-flex items-center rounded-full border px-2 py-0.5 font-bold ${
-                    metric.status === "PASS"
-                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                      : metric.status === "FAIL"
-                        ? "bg-red-50 text-red-700 border-red-200"
-                        : "bg-slate-100 text-slate-600 border-slate-200"
-                  }`}
-                >
-                  {metric.label}: {metric.value === null ? "N/A" : `${metric.value}${metric.unit}`} ({metric.status})
-                </span>
-              ))}
-            </div>
-          </div>
-        </footer>
-      )}
     </div>
   );
 }

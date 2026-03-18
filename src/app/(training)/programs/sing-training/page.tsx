@@ -50,6 +50,7 @@ type SingResultEnvelope = {
   lyricAccuracy?: string;
   transcript?: string;
   metricSource?: "measured" | "demo";
+  measurementReason?: string | null;
   comment: string;
   rankings: RankRow[];
   completedAt: number;
@@ -139,6 +140,41 @@ function normalizeLyricsForAnalysis(text: string) {
     .replace(/\s+/g, " ")
     .replace(/[~"'.,!?]/g, "")
     .trim();
+}
+
+function describeSingMeasurementReason(params: {
+  pronunciationErrorReason: string | null;
+  hasMeasuredFace: boolean;
+  faceSampleCount: number;
+}) {
+  if (params.pronunciationErrorReason === "dev_mode_mock") {
+    return "개발 모드가 켜져 있어 실제 STT를 호출하지 않았습니다.";
+  }
+
+  if (params.pronunciationErrorReason === "missing_audio_blob") {
+    return "녹음 오디오가 생성되지 않아 발음 분석을 수행하지 못했습니다.";
+  }
+
+  if (params.pronunciationErrorReason === "insufficient_transcript") {
+    return "전사된 가사 길이가 너무 짧아 자음·모음 분석을 확정하지 못했습니다.";
+  }
+
+  if (
+    params.pronunciationErrorReason &&
+    params.pronunciationErrorReason !== "stt_unknown_error"
+  ) {
+    return `발음 분석 중 오류가 발생했습니다: ${params.pronunciationErrorReason}`;
+  }
+
+  if (params.pronunciationErrorReason === "stt_unknown_error") {
+    return "STT 응답을 해석하지 못해 발음 분석을 확정하지 못했습니다.";
+  }
+
+  if (!params.hasMeasuredFace) {
+    return `안면 추적 샘플이 부족합니다. 현재 수집 프레임 ${params.faceSampleCount}개`;
+  }
+
+  return "발음 또는 안면 측정 데이터가 충분하지 않습니다.";
 }
 
 function buildExpectedSongLyrics(songKey: SongKey) {
@@ -756,6 +792,14 @@ function BrainSingPageContent() {
       pronunciation.lyricAccuracy == null
         ? "--"
         : pronunciation.lyricAccuracy.toFixed(1);
+    const measurementReason = hasMeasuredPronunciation
+      ? null
+      : describeSingMeasurementReason({
+          pronunciationErrorReason: pronunciation.errorReason,
+          hasMeasuredFace,
+          faceSampleCount: siData.length,
+        });
+
     const finalComment =
       metricSource === "measured"
         ? buildMeasuredComment({
@@ -766,9 +810,7 @@ function BrainSingPageContent() {
             vowelAccuracy: pronunciation.vowelAccuracy ?? 0,
             lyricAccuracy: pronunciation.lyricAccuracy ?? 0,
           })
-        : pronunciation.errorReason === "dev_mode_mock"
-          ? "개발 모드에서는 실제 STT를 호출하지 않기 때문에 자음·모음 분석 결과를 확정하지 않습니다."
-          : "자음·모음 또는 안면 측정 데이터가 충분하지 않아 노래방 점수는 로컬 참고용으로만 표시됩니다.";
+        : `${measurementReason ?? "자음·모음 또는 안면 측정 데이터가 충분하지 않아 노래방 점수는 로컬 참고용으로만 표시됩니다."} 화면 확인용 결과만 표시됩니다.`;
 
     setFinalScore(score);
     setFinalJitter(finalJitterText);
@@ -804,6 +846,7 @@ function BrainSingPageContent() {
           lyricAccuracy: lyricAccuracyText,
           transcript: pronunciation.transcript,
           metricSource,
+          measurementReason,
           comment: finalComment,
           rankings: rows,
           completedAt: Date.now(),

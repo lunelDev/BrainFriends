@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { AUTH_COOKIE_NAME, getAuthenticatedSessionContext } from "@/lib/server/accountAuth";
 import {
   getAdminPatientReportDetail,
+  listAdminReportValidationSample,
   listAdminPatientReportSummaries,
 } from "@/lib/server/adminReportsDb";
 
@@ -30,8 +31,11 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, ...result });
     }
 
-    const patients = await listAdminPatientReportSummaries(token);
-    return NextResponse.json({ ok: true, patients });
+    const [patients, validationSampleEntries] = await Promise.all([
+      listAdminPatientReportSummaries(token),
+      listAdminReportValidationSample(token),
+    ]);
+    return NextResponse.json({ ok: true, patients, validationSampleEntries });
   } catch (error) {
     const message = error instanceof Error ? error.message : "failed_to_load_admin_reports";
     const status =

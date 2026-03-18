@@ -14,6 +14,7 @@ import { READING_TEXTS } from "@/constants/readingData";
 import { SpeechAnalyzer } from "@/lib/speech/SpeechAnalyzer";
 import { useTraining } from "../../TrainingContext";
 import { AnalysisSidebar } from "@/components/training/AnalysisSidebar";
+import { RuntimeStatusBanner } from "@/components/training/RuntimeStatusBanner";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { loadPatientProfile } from "@/lib/patientStorage";
@@ -1190,6 +1191,7 @@ function Step5Content() {
       <div className="flex flex-col lg:flex-row flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
         <main className="flex-1 flex flex-col min-h-[calc(100vh-4rem)] lg:min-h-0 relative p-3 sm:p-4 lg:p-10 pb-8 lg:pb-10 order-1 overflow-y-auto">
           <div className="w-full max-w-2xl mx-auto flex flex-col h-full gap-4 lg:gap-8 justify-center">
+            <RuntimeStatusBanner />
             <div className="w-full bg-white border border-orange-100 rounded-2xl px-4 py-3 shadow-sm">
               <p className="text-[10px] font-black text-orange-500 uppercase tracking-[0.18em] mb-1">
                 진행 가이드

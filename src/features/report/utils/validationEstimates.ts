@@ -92,6 +92,28 @@ const getStepScore = (row: TrainingHistoryEntry, stepKey: StepKey) => {
   return Number.isFinite(Number(v)) ? Number(v) : 0;
 };
 
+const getRehabStepKey = (row: TrainingHistoryEntry): StepKey | null => {
+  switch (Number(row.rehabStep || 0)) {
+    case 1:
+      return "step1";
+    case 2:
+      return "step2";
+    case 3:
+      return "step3";
+    case 4:
+      return "step4";
+    case 5:
+      return "step5";
+    case 6:
+      return "step6";
+    default:
+      return null;
+  }
+};
+
+const isMeasuredRow = (row: TrainingHistoryEntry) =>
+  row.measurementQuality?.overall === "measured";
+
 const buildProxyClinicalScore = (
   row: TrainingHistoryEntry,
   mode: "self" | "rehab",
@@ -231,6 +253,138 @@ export function buildEstimatedValidationMetrics(params: {
   ];
 }
 
+export function buildAggregateEstimatedValidationMetrics(
+  rows: TrainingHistoryEntry[],
+): EstimatedKpiMetric[] {
+  const sampleRows = rows.filter(
+    (row) => row.trainingMode !== "sing" && isMeasuredRow(row),
+  );
+  if (!sampleRows.length) {
+    return [
+      {
+        key: "analysisAccuracy",
+        label: "분석 정확도(추정)",
+        value: null,
+        unit: "%",
+        thresholdLabel: "기준 ≥ 95.2%",
+        status: "PENDING",
+        note: "표본 없음",
+      },
+      {
+        key: "clinicalCorrelation",
+        label: "임상적 상관성(추정)",
+        value: null,
+        unit: "r",
+        thresholdLabel: "기준 ≥ 0.85",
+        status: "PENDING",
+        note: "표본 없음",
+      },
+      {
+        key: "icc",
+        label: "반복측정 신뢰도 ICC(추정)",
+        value: null,
+        unit: "",
+        thresholdLabel: "기준 ≥ 0.80",
+        status: "PENDING",
+        note: "표본 없음",
+      },
+    ];
+  }
+
+  const allItemScores: number[] = [];
+  const aiScores: number[] = [];
+  const proxyScores: number[] = [];
+  const selfRows = sampleRows.filter(
+    (row) => row.trainingMode === "self" || !row.trainingMode,
+  );
+  const rehabRows = sampleRows.filter((row) => row.trainingMode === "rehab");
+
+  for (const row of sampleRows) {
+    if (row.trainingMode === "rehab") {
+      const stepKey = getRehabStepKey(row);
+      if (!stepKey) continue;
+      const stepItems = row.stepDetails?.[stepKey] ?? [];
+      const itemScores = stepItems
+        .map((item) => readItemScore(item))
+        .filter((v): v is number => v !== null);
+      if (itemScores.length) {
+        allItemScores.push(...itemScores);
+      } else {
+        allItemScores.push(getStepScore(row, stepKey));
+      }
+      aiScores.push(getStepScore(row, stepKey));
+      proxyScores.push(buildProxyClinicalScore(row, "rehab", stepKey));
+      continue;
+    }
+
+    const selfItems = (
+      [
+        ...(row.stepDetails?.step1 ?? []),
+        ...(row.stepDetails?.step2 ?? []),
+        ...(row.stepDetails?.step3 ?? []),
+        ...(row.stepDetails?.step4 ?? []),
+        ...(row.stepDetails?.step5 ?? []),
+        ...(row.stepDetails?.step6 ?? []),
+      ] as any[]
+    )
+      .map((item) => readItemScore(item))
+      .filter((v): v is number => v !== null);
+
+    if (selfItems.length) {
+      allItemScores.push(...selfItems);
+    } else {
+      allItemScores.push(Number(row.aq || 0));
+    }
+    aiScores.push(Number(row.aq || 0));
+    proxyScores.push(buildProxyClinicalScore(row, "self", null));
+  }
+
+  const analysisAccuracy = allItemScores.length
+    ? clamp(avg(allItemScores), 0, 100)
+    : null;
+  const r = pearson(aiScores, proxyScores);
+  const icc = iccTwoWayAbsolute(aiScores, proxyScores);
+  const sampleHint = `측정 완료 표본 ${sampleRows.length}건`;
+  const sampleDetailHint = `self ${selfRows.length}건 · rehab ${rehabRows.length}건`;
+
+  return [
+    {
+      key: "analysisAccuracy",
+      label: "분석 정확도(추정)",
+      value: analysisAccuracy === null ? null : Number(analysisAccuracy.toFixed(1)),
+      unit: "%",
+      thresholdLabel: "기준 ≥ 95.2%",
+      status:
+        analysisAccuracy === null
+          ? "PENDING"
+          : analysisAccuracy >= 95.2
+            ? "PASS"
+            : "FAIL",
+      note: allItemScores.length
+        ? `문항 기반 산출 · ${allItemScores.length}개 문항 · ${sampleDetailHint}`
+        : `데이터 부족 (${sampleHint})`,
+    },
+    {
+      key: "clinicalCorrelation",
+      label: "임상적 상관성(추정)",
+      value: r === null ? null : Number(r.toFixed(3)),
+      unit: "r",
+      thresholdLabel: "기준 ≥ 0.85",
+      status: r === null ? "PENDING" : r >= 0.85 ? "PASS" : "FAIL",
+      note: r === null ? `데이터 부족 (${sampleHint})` : `${sampleHint} · ${sampleDetailHint}`,
+    },
+    {
+      key: "icc",
+      label: "반복측정 신뢰도 ICC(추정)",
+      value: icc === null ? null : Number(icc.toFixed(3)),
+      unit: "",
+      thresholdLabel: "기준 ≥ 0.80",
+      status: icc === null ? "PENDING" : icc >= 0.8 ? "PASS" : "FAIL",
+      note: icc === null ? `데이터 부족 (${sampleHint})` : `${sampleHint} · ${sampleDetailHint}`,
+    },
+  ];
+}
+
 export function getEstimatedKpiSummary(metrics: EstimatedKpiMetric[]) {
   const decided = metrics.filter((m) => m.status !== "PENDING");
   const passCount = metrics.filter((m) => m.status === "PASS").length;
@@ -247,4 +401,3 @@ export function getEstimatedKpiSummary(metrics: EstimatedKpiMetric[]) {
     variability: Number(variability.toFixed(3)),
   };
 }
-

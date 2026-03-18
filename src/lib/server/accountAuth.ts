@@ -11,6 +11,8 @@ import { upsertPatientIdentity } from "@/lib/server/patientIdentityDb";
 
 export const AUTH_COOKIE_NAME = "brainfriends_session";
 const SESSION_TTL_DAYS = 30;
+const BUILTIN_ADMIN_LOGIN_ID = "admin";
+const BUILTIN_ADMIN_PASSWORD = "0000";
 
 export type SignupAccountInput = {
   userRole?: "patient" | "admin";
@@ -154,8 +156,94 @@ export function validateLoginId(value: string) {
   return isValidLoginIdFormat(normalizeLoginId(value));
 }
 
+async function ensureBuiltinAdminAccount(client: any) {
+  const patientProfile = {
+    sessionId: randomUUID(),
+    userRole: "admin" as const,
+    name: "관리자",
+    birthDate: "1970-01-01",
+    gender: "U" as const,
+    age: calcAge("1970-01-01"),
+    educationYears: 0,
+    onsetDate: "",
+    daysSinceOnset: undefined,
+    hemiplegia: "N" as const,
+    hemianopsia: "NONE" as const,
+    phone: "0000",
+    hand: "U" as const,
+    language: "한국어",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  } satisfies PatientProfile;
+
+  const loginKeyHash = sha256(
+    buildLoginKey({
+      name: patientProfile.name,
+      birthDate: patientProfile.birthDate,
+      phoneLast4: "0000",
+    }),
+  );
+  const { patientId } = await upsertPatientIdentity(client, patientProfile);
+  const userId = randomUUID();
+
+  await client.query(
+    `
+      INSERT INTO patient_intake_profiles (
+        patient_id,
+        education_years,
+        onset_date,
+        days_since_onset,
+        hemiplegia,
+        hemianopsia,
+        hand,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, NULL, NULL, $3, $4, $5, NOW(), NOW())
+      ON CONFLICT (patient_id) DO UPDATE
+      SET
+        education_years = EXCLUDED.education_years,
+        hemiplegia = EXCLUDED.hemiplegia,
+        hemianopsia = EXCLUDED.hemianopsia,
+        hand = EXCLUDED.hand,
+        updated_at = NOW()
+    `,
+    [patientId, 0, "N", "NONE", "U"],
+  );
+
+  await client.query(
+    `
+      INSERT INTO app_users (
+        user_id,
+        patient_id,
+        user_role,
+        login_id,
+        login_key_hash,
+        password_hash,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, 'admin', $3, $4, $5, NOW(), NOW())
+      ON CONFLICT (login_id) DO UPDATE
+      SET
+        patient_id = EXCLUDED.patient_id,
+        user_role = 'admin',
+        login_key_hash = EXCLUDED.login_key_hash,
+        password_hash = EXCLUDED.password_hash,
+        updated_at = NOW()
+    `,
+    [
+      userId,
+      patientId,
+      BUILTIN_ADMIN_LOGIN_ID,
+      loginKeyHash,
+      hashPassword(BUILTIN_ADMIN_PASSWORD),
+    ],
+  );
+}
+
 export async function createAccount(input: SignupAccountInput) {
-  const userRole = input.userRole === "admin" ? "admin" : "patient";
+  const userRole = "patient";
   const loginId = normalizeLoginId(input.loginId);
   const name = normalizeName(input.name);
   const birthDate = normalizeBirthDate(input.birthDate);
@@ -164,6 +252,7 @@ export async function createAccount(input: SignupAccountInput) {
   if (
     !loginId ||
     !isValidLoginIdFormat(loginId) ||
+    loginId === BUILTIN_ADMIN_LOGIN_ID ||
     !name ||
     !birthDate ||
     phoneLast4.length !== 4 ||
@@ -308,6 +397,17 @@ export async function authenticateAccount(input: LoginAccountInput) {
   const client = await pool.connect();
 
   try {
+    if (loginId === BUILTIN_ADMIN_LOGIN_ID && input.password === BUILTIN_ADMIN_PASSWORD) {
+      await client.query("BEGIN");
+      try {
+        await ensureBuiltinAdminAccount(client);
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
+    }
+
     const result = await client.query(
       `
         SELECT
@@ -528,6 +628,14 @@ export async function isLoginIdAvailable(loginIdInput: string) {
     return {
       available: false,
       reason: "invalid_format",
+      normalizedLoginId: loginId,
+    } as const;
+  }
+
+  if (loginId === BUILTIN_ADMIN_LOGIN_ID) {
+    return {
+      available: false,
+      reason: "reserved_admin",
       normalizedLoginId: loginId,
     } as const;
   }
