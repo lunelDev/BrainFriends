@@ -122,12 +122,6 @@ function Step1Content() {
     setIsMounted(true);
     GLOBAL_SPEECH_LOCK = {};
 
-    console.group("🎯 Step 1 초기화");
-    console.log("장소:", placeParam);
-    console.log("초기 점수:", 0);
-    console.log("총 문제 수:", 10);
-    console.groupEnd();
-
     return () => {
       cancelSpeechPlayback();
     };
@@ -192,7 +186,6 @@ function Step1Content() {
       setQuestionResults(normalized);
       setScore(resumedScore);
       setCurrentIndex(Math.min(normalized.length, trainingData.length - 1));
-      console.log(`↩️ Step 1 이어하기 복원: ${normalized.length}/${trainingData.length}`);
     } catch (error) {
       console.error("Step 1 이어하기 복원 실패:", error);
     }
@@ -219,14 +212,12 @@ function Step1Content() {
 
   const speakWord = useCallback(
     async (text: string) => {
-      console.log(`🔊 음성 출력: "${text}"`);
       setIsSpeaking(true);
       setCanAnswer(false);
       await speakKoreanText(text, { rate: 0.96 });
       setIsSpeaking(false);
       setCanAnswer(true);
       setQuestionStartTime(Date.now());
-      console.log("✅ 음성 출력 완료, 답변 가능");
     },
     [currentItem],
   );
@@ -247,8 +238,6 @@ function Step1Content() {
 
         localStorage.setItem("step1_data", JSON.stringify(formattedForResult));
         saveResumeMeta(STEP1_STORAGE_KEY, stepSignature, formattedForResult.length);
-        console.log("✅ Step 1 Result 페이지용 백업 저장:", formattedForResult);
-
         // 2. ✅ SessionManager용 데이터 (question 필드 사용)
         const formattedForSession = results.map((r) => ({
           question: r.question,
@@ -274,11 +263,6 @@ function Step1Content() {
         };
 
         sessionManager.saveStep1Result(step1Data);
-        console.log("✅ Step 1 SessionManager 저장 완료:", step1Data);
-
-        const verification = localStorage.getItem("kwab_training_session");
-        const verifiedData = JSON.parse(verification || "{}");
-        console.log("✅ 저장 검증 - step1 데이터:", verifiedData.step1);
       } catch (error) {
         console.error("❌ Step 1 저장 실패:", error);
       }
@@ -355,18 +339,6 @@ function Step1Content() {
         },
       ];
 
-      console.group(`📝 ${currentIndex + 1}번 문제 완료`);
-      console.log("질문:", currentItem.question);
-      console.log("정답:", currentItem.answer ? "O" : "X");
-      console.log(
-        "사용자 답변:",
-        userAnswer === null ? "시간초과" : userAnswer ? "O" : "X",
-      );
-      console.log("정답 여부:", isCorrect ? "✅ 정답" : "❌ 오답");
-      console.log("응답 시간:", `${(responseTime / 1000).toFixed(1)}초`);
-      console.log("현재 누적 점수:", isCorrect ? score + 1 : score);
-      console.groupEnd();
-
       setQuestionResults(updatedResults);
       if (isCorrect) setScore((s) => s + 1);
       try {
@@ -387,28 +359,13 @@ function Step1Content() {
 
       setTimeout(() => {
         if (currentIndex < trainingData.length - 1) {
-          console.log(
-            `➡️ 다음 문제 (${currentIndex + 2}/${trainingData.length})로 이동`,
-          );
           setCurrentIndex((prev) => prev + 1);
           setIsAnswered(false);
           setReplayCount(0);
         } else {
           const finalScore = isCorrect ? score + 1 : score;
 
-          console.group("🏁 Step 1 최종 완료");
-          console.log("최종 점수:", finalScore);
-          console.log(
-            "정답률:",
-            `${((finalScore / trainingData.length) * 100).toFixed(1)}%`,
-          );
-          console.groupEnd();
-
           saveStep1Results(updatedResults, finalScore);
-
-          console.log(
-            `🚀 Step 2로 이동 (step1=${finalScore}, place=${placeParam})`,
-          );
           if (isRehabMode && rehabTargetStep === 1) {
             const scoring = calculateCompositeScore(
               updatedResults,
@@ -441,7 +398,6 @@ function Step1Content() {
   useEffect(() => {
     if (!isMounted || !currentItem || GLOBAL_SPEECH_LOCK[currentIndex]) return;
     GLOBAL_SPEECH_LOCK[currentIndex] = true;
-    console.log(`🎬 ${currentIndex + 1}번 문제 시작`);
     setReplayCount(0);
     const timer = setTimeout(() => {
       void speakWord(currentItem.question);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Activity,
   ArrowUpRight,
@@ -297,6 +298,7 @@ async function persistToDatabase(
 }
 
 export default function SingTrainingResultPage() {
+  const searchParams = useSearchParams();
   const [result, setResult] = useState<SingResult | null>(null);
   const [hasLoadedResult, setHasLoadedResult] = useState(false);
   const [dbSaveState, setDbSaveState] = useState<
@@ -357,7 +359,9 @@ export default function SingTrainingResultPage() {
 
     const raw = window.sessionStorage.getItem(SING_RESULT_SESSION_KEY);
     if (!raw) {
-      const lastSong = window.sessionStorage.getItem(SING_LAST_SONG_SESSION_KEY);
+      const lastSong =
+        window.sessionStorage.getItem(SING_LAST_SONG_SESSION_KEY) ??
+        searchParams.get("song");
       if (lastSong && lastSong in SONGS) {
         const fallbackResult = buildFallbackSingResult(
           lastSong as SongKey,
@@ -385,7 +389,7 @@ export default function SingTrainingResultPage() {
     } finally {
       setHasLoadedResult(true);
     }
-  }, [patient]);
+  }, [patient, searchParams]);
 
   useEffect(() => {
     if (result || !patient) return;
@@ -532,14 +536,14 @@ export default function SingTrainingResultPage() {
   const consonantScore = parseMeasuredNumber(result.finalConsonant);
   const vowelScore = parseMeasuredNumber(result.finalVowel);
   const lyricAccuracyScore = parseMeasuredNumber(result.lyricAccuracy);
-  const mouthImprovement = Math.max(
-    8,
-    Math.round(((facialSymmetryScore ?? 80) - 80) * 0.9),
-  );
-  const eyeImprovement = Math.max(
-    6,
-    Math.round(((facialSymmetryScore ?? 82) - 82) * 0.65),
-  );
+  const mouthImprovement =
+    facialSymmetryScore == null
+      ? null
+      : Math.max(8, Math.round((facialSymmetryScore - 80) * 0.9));
+  const eyeImprovement =
+    facialSymmetryScore == null
+      ? null
+      : Math.max(6, Math.round((facialSymmetryScore - 82) * 0.65));
   const rhythmCoordination =
     jitterScore == null
       ? null
@@ -778,14 +782,28 @@ export default function SingTrainingResultPage() {
               </div>
 
               <div className="mt-6 space-y-5">
-                <SymmetryRow label="좌측 구강 근육 활성도" before={67} after={67 + mouthImprovement} feedback={`${mouthImprovement}% 변화`} />
-                <SymmetryRow label="좌측 안륜근 반응도" before={72} after={72 + eyeImprovement} feedback={`${eyeImprovement}% 변화`} />
+                <SymmetryRow
+                  label="좌측 구강 근육 활성도"
+                  before={mouthImprovement == null ? null : 67}
+                  after={mouthImprovement == null ? null : 67 + mouthImprovement}
+                  feedback={
+                    mouthImprovement == null ? "미측정" : `${mouthImprovement}% 변화`
+                  }
+                />
+                <SymmetryRow
+                  label="좌측 안륜근 반응도"
+                  before={eyeImprovement == null ? null : 72}
+                  after={eyeImprovement == null ? null : 72 + eyeImprovement}
+                  feedback={
+                    eyeImprovement == null ? "미측정" : `${eyeImprovement}% 변화`
+                  }
+                />
                 <SymmetryRow
                   label="표정-발성 보조 협응 지수"
-                  before={78}
+                  before={facialSymmetryScore == null ? null : 78}
                   after={
                     facialSymmetryScore == null
-                      ? 78
+                      ? null
                       : Math.min(98, Math.round(facialSymmetryScore))
                   }
                   feedback={
@@ -893,10 +911,11 @@ function SymmetryRow({
   feedback,
 }: {
   label: string;
-  before: number;
-  after: number;
+  before: number | null;
+  after: number | null;
   feedback: string;
 }) {
+  const unavailable = before == null || after == null;
   return (
     <div className="rounded-[24px] border border-slate-200 bg-white p-4">
       <div className="flex items-center justify-between gap-4">
@@ -905,13 +924,19 @@ function SymmetryRow({
           <p className="mt-1 text-sm font-medium text-slate-500">{feedback}</p>
         </div>
         <p className="text-sm font-black uppercase tracking-[0.18em] text-emerald-600">
-          After
+          {unavailable ? "N/A" : "After"}
         </p>
       </div>
-      <div className="mt-4 space-y-3">
-        <Bar label="시작 시점" value={before} tone="slate" />
-        <Bar label="훈련 후" value={after} tone="emerald" />
-      </div>
+      {unavailable ? (
+        <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm font-semibold text-slate-500">
+          안면 대칭 측정 데이터가 충분하지 않아 이 보조 지표는 계산하지 않았습니다.
+        </div>
+      ) : (
+        <div className="mt-4 space-y-3">
+          <Bar label="시작 시점" value={before} tone="slate" />
+          <Bar label="훈련 후" value={after} tone="emerald" />
+        </div>
+      )}
     </div>
   );
 }

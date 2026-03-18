@@ -300,7 +300,6 @@ function Step6Content() {
       setCorrectCount(restored.filter((row: any) => Boolean(row?.isCorrect)).length);
       setCurrentIndex(Math.min(restored.length, questions.length - 1));
       setPhase("writing");
-      console.log(`↩️ Step 6 이어하기 복원: ${restored.length}/${questions.length}`);
     } catch (error) {
       console.error("Step 6 이어하기 복원 실패:", error);
     }
@@ -476,8 +475,6 @@ function Step6Content() {
       };
 
       persistStep6Entry(newEntry);
-
-      console.log("Step 6 데이터 저장", newEntry);
       setCorrectCount((prev) => prev + 1);
       setFailedAttempts(0);
       setPraiseMessage(
@@ -628,8 +625,6 @@ function Step6Content() {
           },
           isRehabMode && rehabTargetStep === 6 ? "rehab" : "self",
         );
-
-        console.log("Step 6 SessionManager 저장 완료");
       } catch (error) {
         console.error("SessionManager 저장 실패:", error);
         const fallbackRows = JSON.parse(

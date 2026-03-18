@@ -11,6 +11,8 @@ import {
   Printer,
   RotateCcw,
   Trophy,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import {
   SING_TRAINING_ANALYSIS_VERSION,
@@ -431,6 +433,7 @@ function BrainSingPageContent() {
   const [finalSi, setFinalSi] = useState("0.0");
   const [comment, setComment] = useState("");
   const [rankings, setRankings] = useState<RankRow[]>([]);
+  const [isBgmMuted, setIsBgmMuted] = useState(false);
   const [audioReady, setAudioReady] = useState(false);
   const [songDurationSec, setSongDurationSec] = useState(30);
 
@@ -446,6 +449,7 @@ function BrainSingPageContent() {
   useEffect(() => {
     const audio = new Audio(currentSong.audioSrc);
     audio.preload = "auto";
+    audio.muted = isBgmMuted;
     setAudioReady(false);
     setSongDurationSec(currentSong.durationSec ?? 30);
     const handleReady = () => setAudioReady(true);
@@ -475,7 +479,7 @@ function BrainSingPageContent() {
         songAudioRef.current = null;
       }
     };
-  }, [currentSong.audioSrc]);
+  }, [currentSong.audioSrc, isBgmMuted]);
 
   const stopActiveSession = () => {
     if (clockTimerRef.current !== null) {
@@ -534,11 +538,18 @@ function BrainSingPageContent() {
       songAudioRef.current.onended = null;
       songAudioRef.current.pause();
       songAudioRef.current.currentTime = 0;
+      songAudioRef.current.muted = false;
     }
     audioEndedRef.current = false;
     keyFramesRef.current = [];
     lastKeyFrameCapturedAtRef.current = 0;
   };
+
+  useEffect(() => {
+    if (songAudioRef.current) {
+      songAudioRef.current.muted = isBgmMuted;
+    }
+  }, [isBgmMuted]);
 
   const stopAnalysisLoopKeepingCamera = () => {
     if (countdownTimerRef.current !== null) {
@@ -748,6 +759,7 @@ function BrainSingPageContent() {
     try {
       if (songAudioRef.current) {
         try {
+          songAudioRef.current.muted = isBgmMuted;
           songAudioRef.current.currentTime = 0;
           await songAudioRef.current.play();
           songAudioRef.current.pause();
@@ -928,7 +940,9 @@ function BrainSingPageContent() {
     if (typeof window !== "undefined") {
       window.setTimeout(() => {
         stopActiveSession();
-        window.location.replace("/result-page/sing-training");
+        window.location.replace(
+          `/result-page/sing-training?song=${encodeURIComponent(song)}`,
+        );
       }, 2000);
     }
   };
@@ -981,6 +995,7 @@ function BrainSingPageContent() {
     );
 
     if (songAudioRef.current) {
+      songAudioRef.current.muted = isBgmMuted;
       songAudioRef.current.currentTime = 0;
       songAudioRef.current.onended = () => {
         audioEndedRef.current = true;
@@ -1190,6 +1205,24 @@ function BrainSingPageContent() {
             <div className="absolute left-6 top-6 z-10 rounded-full border border-white/15 bg-black/35 px-4 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-white backdrop-blur-md">
               {currentSong.level} · {song}
             </div>
+
+            <button
+              type="button"
+              onClick={() => setIsBgmMuted((prev) => !prev)}
+              className="absolute right-6 top-6 z-10 inline-flex h-11 items-center justify-center gap-2 rounded-full border border-white/15 bg-black/35 px-4 text-sm font-black text-white backdrop-blur-md"
+            >
+              {isBgmMuted ? (
+                <>
+                  <VolumeX className="h-4 w-4" />
+                  BGM 끔
+                </>
+              ) : (
+                <>
+                  <Volume2 className="h-4 w-4" />
+                  BGM 켬
+                </>
+              )}
+            </button>
 
             {phase === "singing" && (
               <>

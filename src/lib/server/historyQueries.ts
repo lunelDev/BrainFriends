@@ -88,6 +88,7 @@ export async function listHistoryForAuthenticatedUser(
           NULL::text AS training_mode,
           NULL::integer AS rehab_step,
           cs.session_id::text AS session_id,
+          cs.source_session_key,
           sr.result_id::text AS result_id,
           NULL::text AS source_history_id,
           NULL::numeric AS aq,
@@ -140,16 +141,23 @@ export async function listHistoryForAuthenticatedUser(
     .sort((a, b) => b.completedAt.localeCompare(a.completedAt));
 
   const patient = context.patient;
-  const sourceSessionKeys = Array.from(
+  const languageSourceSessionKeys = Array.from(
     new Set(
       languageRows.rows
         .map((row: any) => String(row.source_session_key ?? "").trim())
         .filter((value: string) => value.length > 0),
     ),
   );
+  const singSourceSessionKeys = Array.from(
+    new Set(
+      singRows.rows
+        .map((row: any) => String(row.source_session_key ?? "").trim())
+        .filter((value: string) => value.length > 0),
+    ),
+  );
 
   const step6ImageRows =
-    sourceSessionKeys.length > 0
+    languageSourceSessionKeys.length > 0
       ? await pool.query(
           `
             SELECT
@@ -165,7 +173,47 @@ export async function listHistoryForAuthenticatedUser(
               AND source_session_key = ANY($2::text[])
             ORDER BY source_session_key ASC, uploaded_at ASC
           `,
-          [context.patientPseudonymId, sourceSessionKeys],
+          [context.patientPseudonymId, languageSourceSessionKeys],
+        )
+      : { rows: [] as any[] };
+  const languageAudioRows =
+    languageSourceSessionKeys.length > 0
+      ? await pool.query(
+          `
+            SELECT
+              source_session_key,
+              step_no,
+              object_key,
+              uploaded_at
+            FROM clinical_media_objects
+            WHERE patient_pseudonym_id = $1
+              AND training_type IN ('self-assessment', 'speech-rehab')
+              AND step_no IN (2, 4, 5)
+              AND media_type = 'audio'
+              AND capture_role IN ('step2-audio', 'step4-audio', 'step5-audio')
+              AND source_session_key = ANY($2::text[])
+            ORDER BY source_session_key ASC, step_no ASC, uploaded_at ASC
+          `,
+          [context.patientPseudonymId, languageSourceSessionKeys],
+        )
+      : { rows: [] as any[] };
+  const singAudioRows =
+    singSourceSessionKeys.length > 0
+      ? await pool.query(
+          `
+            SELECT
+              source_session_key,
+              object_key,
+              uploaded_at
+            FROM clinical_media_objects
+            WHERE patient_pseudonym_id = $1
+              AND training_type = 'sing-training'
+              AND media_type = 'audio'
+              AND capture_role = 'review-audio'
+              AND source_session_key = ANY($2::text[])
+            ORDER BY source_session_key ASC, uploaded_at DESC
+          `,
+          [context.patientPseudonymId, singSourceSessionKeys],
         )
       : { rows: [] as any[] };
 
@@ -178,11 +226,34 @@ export async function listHistoryForAuthenticatedUser(
     next.push(`/api/media/access?objectKey=${encodeURIComponent(objectKey)}`);
     step6ImageMap.set(sourceSessionKey, next);
   }
+  const languageAudioMap = new Map<string, Record<number, string[]>>();
+  for (const row of languageAudioRows.rows) {
+    const sourceSessionKey = String(row.source_session_key ?? "").trim();
+    const stepNo = Number(row.step_no ?? 0);
+    const objectKey = String(row.object_key ?? "").trim();
+    if (!sourceSessionKey || !stepNo || !objectKey) continue;
+    const byStep = languageAudioMap.get(sourceSessionKey) ?? {};
+    const next = byStep[stepNo] ?? [];
+    next.push(`/api/media/access?objectKey=${encodeURIComponent(objectKey)}`);
+    byStep[stepNo] = next;
+    languageAudioMap.set(sourceSessionKey, byStep);
+  }
+  const singAudioMap = new Map<string, string>();
+  for (const row of singAudioRows.rows) {
+    const sourceSessionKey = String(row.source_session_key ?? "").trim();
+    const objectKey = String(row.object_key ?? "").trim();
+    if (!sourceSessionKey || !objectKey || singAudioMap.has(sourceSessionKey)) continue;
+    singAudioMap.set(
+      sourceSessionKey,
+      `/api/media/access?objectKey=${encodeURIComponent(objectKey)}`,
+    );
+  }
 
   const entries: TrainingHistoryEntry[] = [
     ...languageRows.rows.map((row: any) => {
       const sourceSessionKey = String(row.source_session_key ?? "").trim();
       const imageUrls = step6ImageMap.get(sourceSessionKey) ?? [];
+      const audioUrlsByStep = languageAudioMap.get(sourceSessionKey) ?? {};
       const baseStepDetails =
         (row.step_details as TrainingHistoryEntry["stepDetails"]) ?? {
           step1: [],
@@ -195,6 +266,33 @@ export async function listHistoryForAuthenticatedUser(
 
       const stepDetails: TrainingHistoryEntry["stepDetails"] = {
         ...baseStepDetails,
+        step2: Array.isArray(baseStepDetails.step2)
+          ? baseStepDetails.step2.map((item: any, index: number) => ({
+              ...item,
+              audioUrl:
+                typeof item?.audioUrl === "string" && item.audioUrl.trim().length > 0
+                  ? item.audioUrl
+                  : audioUrlsByStep[2]?.[index] ?? undefined,
+            }))
+          : [],
+        step4: Array.isArray(baseStepDetails.step4)
+          ? baseStepDetails.step4.map((item: any, index: number) => ({
+              ...item,
+              audioUrl:
+                typeof item?.audioUrl === "string" && item.audioUrl.trim().length > 0
+                  ? item.audioUrl
+                  : audioUrlsByStep[4]?.[index] ?? undefined,
+            }))
+          : [],
+        step5: Array.isArray(baseStepDetails.step5)
+          ? baseStepDetails.step5.map((item: any, index: number) => ({
+              ...item,
+              audioUrl:
+                typeof item?.audioUrl === "string" && item.audioUrl.trim().length > 0
+                  ? item.audioUrl
+                  : audioUrlsByStep[5]?.[index] ?? undefined,
+            }))
+          : [],
         step6: Array.isArray(baseStepDetails.step6)
           ? baseStepDetails.step6.map((item: any, index: number) => ({
               ...item,
@@ -249,7 +347,9 @@ export async function listHistoryForAuthenticatedUser(
           undefined,
       };
     }),
-    ...singRows.rows.map((row: any) => ({
+    ...singRows.rows.map((row: any) => {
+      const sourceSessionKey = String(row.source_session_key ?? "").trim();
+      return {
       historyId: `history_sing_${new Date(row.completed_at).getTime()}`,
       sessionId: String(row.session_id),
       patientKey: context.patientPseudonymId,
@@ -275,6 +375,7 @@ export async function listHistoryForAuthenticatedUser(
           row.lyric_accuracy == null ? "-" : String(row.lyric_accuracy),
         transcript:
           row.recognized_lyrics == null ? "" : String(row.recognized_lyrics),
+        reviewAudioUrl: singAudioMap.get(sourceSessionKey),
         comment: row.comment ? String(row.comment) : "",
         rankings: [],
         versionSnapshot: row.version_snapshot ?? undefined,
@@ -295,7 +396,8 @@ export async function listHistoryForAuthenticatedUser(
         step5: [],
         step6: [],
       },
-    })),
+      };
+    }),
   ].sort((a, b) => b.completedAt - a.completedAt);
 
   return {

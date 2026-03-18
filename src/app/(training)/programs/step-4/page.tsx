@@ -901,11 +901,6 @@ function Step4Content() {
             .slice(0, scenarios.length);
           localStorage.setItem(STEP4_STORAGE_KEY, JSON.stringify(next));
           saveResumeMeta(STEP4_STORAGE_KEY, stepSignature, next.length);
-          console.log("[Step4] save:success", {
-            index: currentIndex,
-            savedCount: next.length,
-            score: scored.finalScore,
-          });
           setSaveStatusText("녹음 저장 완료");
           updateRuntimeStatus({
             pageError: false,
@@ -928,9 +923,6 @@ function Step4Content() {
           });
         }
       } else {
-        console.warn("[Step4] save:skip (audioBlob 없음)", {
-          index: currentIndex,
-        });
         setSaveStatusText("오디오 없음");
         updateRuntimeStatus({
           pageError: true,
@@ -1054,10 +1046,6 @@ function Step4Content() {
               : 0,
           timestamp: Date.now(),
           versionSnapshot: buildVersionSnapshot("step4"),
-        });
-        console.log("[Step4] session:save:success", {
-          totalScenarios: allResults.length,
-          averageKwabScore: Number(averageKwabScore.toFixed(1)),
         });
       } catch (e) {
         console.error("[Step4] session:save:failed", e);

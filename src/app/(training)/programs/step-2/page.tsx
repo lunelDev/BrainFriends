@@ -1077,10 +1077,6 @@ function Step2Content() {
             saving: true,
             message: "결과 저장 중",
           });
-          console.debug("[Step2] save:start", {
-            index: currentIndex,
-            text: currentItem.text,
-          });
           saveSucceeded = await new Promise<boolean>((resolve) => {
             const reader = new FileReader();
             reader.onloadend = () => {
@@ -1168,25 +1164,6 @@ function Step2Content() {
                   }
                 }
 
-                if (
-                  !nextEntry.audioUrl ||
-                  strippedAudioCount > 0 ||
-                  droppedByQuota > 0
-                ) {
-                  console.warn("[Step2] save:reduced", {
-                    strippedAudioCount,
-                    droppedByQuota,
-                    savedCount: candidate.length,
-                    hasAudio: Boolean(
-                      candidate[candidate.length - 1]?.audioUrl,
-                    ),
-                  });
-                }
-                console.debug("[Step2] save:success", {
-                  key: STEP2_AUDIO_STORAGE_KEY,
-                  savedCount: candidate.length,
-                  score: Number(finalScore.toFixed(1)),
-                });
                 setReviewAudioUrl(URL.createObjectURL(audioBlob));
                 updateRuntimeStatus({
                   pageError: false,
@@ -1227,10 +1204,6 @@ function Step2Content() {
             reader.readAsDataURL(audioBlob);
           });
         } else {
-          console.warn("[Step2] save:skip (audioBlob 없음)", {
-            index: currentIndex,
-            text: currentItem.text,
-          });
           setIsSaving(false);
           updateRuntimeStatus({
             saving: false,

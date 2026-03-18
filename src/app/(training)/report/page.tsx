@@ -38,6 +38,7 @@ import {
   FileText,
   HeartHandshake,
   MessageSquare,
+  Music,
   ScanFace,
   Sparkles,
   TrendingUp,
@@ -862,32 +863,30 @@ function ReportContent() {
                       </p>
                     </div>
                   </div>
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center">
-                    <HeartHandshake className="w-4 h-4 text-emerald-600" />
-                  </span>
-                  <h3 className="text-base sm:text-lg font-black text-slate-900">전국 실버 랭킹</h3>
-                </div>
-                <div className="space-y-2">
-                  {(selected.singResult?.rankings ?? []).map((row, idx) => (
-                    <div
-                      key={`${row.name}-${idx}`}
-                      className={`flex items-center justify-between rounded-xl border px-4 py-3 ${
-                        row.me
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : "border-slate-200 bg-slate-50 text-slate-700"
-                      }`}
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const id = `sing-audio-${selected.historyId}`;
+                        if (playingId === id) {
+                          stopPlayback();
+                          return;
+                        }
+                        if (selected.singResult?.reviewAudioUrl) {
+                          playAudio(selected.singResult.reviewAudioUrl, id);
+                          return;
+                        }
+                        playSpeechFallback(
+                          selected.singResult?.transcript || "녹음된 노래가 없습니다.",
+                          id,
+                        );
+                      }}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 font-black text-emerald-700"
                     >
-                      <span className="text-sm font-black">
-                        {idx + 1}위. {row.name} ({row.region})
-                      </span>
-                      <span className="text-sm font-black">{row.score}점</span>
-                    </div>
-                  ))}
+                      <Music className="h-4 w-4" />
+                      {playingId === `sing-audio-${selected.historyId}` ? "재생 중..." : "내가 부른 노래 듣기"}
+                    </button>
+                  </div>
                 </div>
               </section>
             </div>

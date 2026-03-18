@@ -447,9 +447,6 @@ function Step3Content() {
 
       setAnalysisResults(parsed);
       setCurrentIndex(Math.min(parsed.length, protocol.length - 1));
-      console.log(
-        `↩️ Step 3 이어하기 복원: ${parsed.length}/${protocol.length}`,
-      );
     } catch (error) {
       console.error("Step 3 이어하기 복원 실패:", error);
     }
@@ -650,8 +647,6 @@ function Step3Content() {
     // ✅ Result 페이지용 백업 저장 (실시간, 최대 10개)
     localStorage.setItem(STEP3_STORAGE_KEY, JSON.stringify(updatedResults));
     saveResumeMeta(STEP3_STORAGE_KEY, stepSignature, updatedResults.length);
-    console.log("✅ Step 3 데이터 저장(10문항 기준):", updatedResults);
-
     setTimeout(() => {
       if (currentIndex < protocol.length - 1) {
         setCurrentIndex((prev) => prev + 1);
@@ -689,8 +684,6 @@ function Step3Content() {
             timestamp: Date.now(),
             versionSnapshot: buildVersionSnapshot("step3"),
           });
-
-          console.log("✅ Step 3 SessionManager 저장 완료");
         } catch (e) {
           console.error("❌ Step 3 SessionManager 저장 실패:", e);
         }
