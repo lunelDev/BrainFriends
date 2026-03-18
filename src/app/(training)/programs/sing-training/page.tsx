@@ -479,7 +479,7 @@ function BrainSingPageContent() {
         songAudioRef.current = null;
       }
     };
-  }, [currentSong.audioSrc, isBgmMuted]);
+  }, [currentSong.audioSrc]);
 
   const stopActiveSession = () => {
     if (clockTimerRef.current !== null) {

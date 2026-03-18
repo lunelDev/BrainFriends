@@ -250,12 +250,25 @@ async function persistToDatabase(
   }
 
   try {
+    const persistableResult = {
+      ...nextResult,
+      reviewAudioUrl: undefined,
+      reviewKeyFrames: Array.isArray(nextResult.reviewKeyFrames)
+        ? nextResult.reviewKeyFrames.map((frame) => ({
+            capturedAt: frame.capturedAt,
+            label: frame.label,
+            mediaId: frame.mediaId ?? null,
+            objectKey: frame.objectKey ?? null,
+          }))
+        : [],
+    };
+
     const response = await fetch("/api/sing-results", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ patient, result: nextResult }),
+      body: JSON.stringify({ patient, result: persistableResult }),
     });
 
     if (!response.ok) {
