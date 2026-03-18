@@ -243,6 +243,25 @@ Not intended use:
 - reading/fluency/repetition/writing consistency scoring
 - 세션 저장 및 결과 표시
 
+## AI Models and Technical Stack
+
+현재 프로젝트에서 핵심 분석 경로에 사용되는 기술 스택은 아래와 같다.
+
+| Area | Technology / Model | Current Use |
+| --- | --- | --- |
+| Face landmark / facial asymmetry | MediaPipe Face Landmarker (`@mediapipe/tasks-vision`) | 자가진단, 언어재활, 노래방의 공통 얼굴 랜드마크 추적 및 대칭/구강 feature extraction |
+| Speech-to-text | OpenAI `whisper-1` | 음성 전사(STT) 경로. `NEXT_PUBLIC_DEV_MODE=true` 이면 테스트 응답을 반환할 수 있음 |
+| OCR | `tesseract.js` | 이미지 텍스트 추출 관련 기능용 라이브러리 포함 |
+| Browser ML runtime | WebAssembly + MediaPipe Tasks Vision | 브라우저 측 얼굴 분석 실행 환경 |
+| Rule-based scoring | Project-local scoring logic | step별 점수, AQ, 노래방 점수, 임상 요약값 계산 |
+
+기술적 주의사항:
+
+- 얼굴 분석은 공통 `FaceTracker` / `LeftSidebar` 기반으로 연결되어 있으므로, 노래방만이 아니라 자가진단과 언어재활의 안정성과도 직접 연결된다.
+- 외부 CDN 의존을 줄이기 위해 MediaPipe wasm/model asset은 `public/mediapipe` 경로에 로컬 고정한다.
+- 결과 저장 시 `algorithm_version`, `feature_schema_version`, `scoring_rule_version`, `model_version`, `release_version`을 같이 기록해 재현성과 추적성을 확보한다.
+- 점수는 모델 출력 그 자체가 아니라 landmark/STT 결과를 입력으로 하는 규칙 기반 후처리를 포함한다.
+
 ## Architecture Direction
 
 권장 논리 구조:
@@ -347,23 +366,52 @@ Not intended use:
 
 | Table | One-Line Meaning |
 | --- | --- |
+| `app_users` | 로그인 계정, 권한, 비밀번호 해시를 저장하는 애플리케이션 사용자 테이블 |
 | `patient_pii` | 환자 이름, 생년월일, 전화번호 등 직접식별정보를 저장하는 PII 테이블 |
+| `patient_intake_profiles` | 학력, 발병일, 편마비, 반맹 등 초기 문진 정보를 저장하는 환자 프로필 테이블 |
 | `patient_pseudonym_map` | 직접식별자와 임상 데이터 사이를 연결하는 가명 매핑 테이블 |
 | `clinical_sessions` | 어떤 훈련을 어떤 버전으로 언제 수행했는지 저장하는 세션 테이블 |
-| `language_training_results` | self-assessment / speech-rehab의 AQ, step 점수, 상세 결과를 저장하는 임상 결과 테이블 |
-| `sing_results` | Brain Karaoke 점수, jitter, facial symmetry, latency를 저장하는 임상 결과 테이블 |
+| `language_training_results` | self-assessment / speech-rehab의 AQ, step 점수, 상세 결과, 측정 품질(`measurement_quality`)을 저장하는 임상 결과 테이블 |
+| `clinical_media_objects` | object storage에 업로드한 녹음/이미지/영상의 버킷, object key, 메타데이터를 저장하는 미디어 테이블 |
+| `sing_results` | Brain Karaoke의 자음 정확도, 모음 정확도, 가사 일치도, jitter, facial symmetry, latency, 인식 가사를 저장하는 임상 결과 테이블 |
+| `training_usage_events` | 화면 진입, 결과 저장, draft sync 등 사용자 동작 이력을 append-only로 남기는 이벤트 로그 테이블 |
 
 ## Media Storage Note
 
 현재 step 단계의 녹음/이미지 데이터는 아래처럼 저장됩니다.
 
-- `step2`, `step4`, `step5`의 녹음 `audioUrl`은 브라우저 localStorage 기반 임시 데이터/히스토리 표시용으로만 사용됩니다.
-- `step6`의 필기 이미지 `userImage`도 브라우저 localStorage 기반 임시 데이터/히스토리 표시용으로만 사용됩니다.
+- `step2`, `step4`, `step5`의 녹음 `audioUrl`은 훈련 중에는 브라우저 localStorage 기반 임시 데이터로 유지되고, 결과 화면에서 최종 결과 저장 시점에만 object storage 업로드를 시도합니다.
+- `step6`의 필기 이미지 `userImage`도 훈련 중에는 브라우저 localStorage 기반 임시 데이터로 유지되고, 결과 화면에서 최종 결과 저장 시점에만 object storage 업로드를 시도합니다.
+- Brain Karaoke의 `reviewAudioUrl`도 노래 종료 직후 로컬 결과에만 유지되며, 결과 화면 저장 시점에만 서버 업로드를 시도합니다.
 - 서버 DB의 `language_training_results.step_details` 저장 시에는 `audioUrl`, `userImage`, `cameraFrameImage`, `cameraFrameFrames`, `imageData`를 제거한 뒤 저장합니다.
 - 즉 현재 DB에는 step 녹음 원본/필기 원본이 직접 저장되지 않고, 정량 결과와 구조화된 상세 값만 저장됩니다.
-- Brain Karaoke의 `reviewAudioUrl`도 현재는 결과 화면 재생과 audit metadata 용도로만 쓰이며, PostgreSQL 테이블에는 직접 저장하지 않습니다.
+- 원본 미디어는 훈련 중간 단계에서 바로 업로드하지 않고, 결과가 확정되어 레포트에 반영되는 시점에만 업로드되도록 유지합니다.
 
 이 원칙은 개인정보 최소화와 저장 용량/무결성 관점에서 의도된 설계입니다. 원본 멀티미디어를 장기 보존하려면 별도 object storage, 보존정책, 접근권한, 암호화 정책을 따로 설계해야 합니다.
+
+## Data Retention and Traffic Policy
+
+중간 저장 데이터와 운영 로그는 원장 데이터와 분리해서 관리해야 한다.
+
+| Target | Risk | Operational Policy |
+| --- | --- | --- |
+| `training_client_drafts` | 높음 | 최종 결과 저장 후 관련 draft 삭제, 미완료 draft는 7~30일 보관 후 정리 |
+| `training_usage_events` | 높음 | 핵심 이벤트만 저장, 30~90일 보관 후 archive 또는 월별 집계로 전환 |
+| `clinical_media_objects` | 중간 | 메타데이터는 보관 가능하나 원본 object storage와 분리해서 보존 정책 적용 |
+| Object Storage 원본 오디오/이미지/영상 | 매우 높음 | 임상 요구사항 기준으로 30~90일 또는 별도 장기보관 정책 적용 |
+| `language_training_results.step_details` | 중간 | 원본/중복 데이터를 제외하고 구조화된 결과만 저장 유지 |
+| `clinical_sessions` | 낮음 | 세션 원장 데이터로 기본 보관 |
+| `language_training_results` | 낮음 | 임상 결과 원장 데이터로 기본 보관 |
+| `sing_results` | 낮음 | 노래방 결과 원장 데이터로 기본 보관 |
+| `app_users`, `patient_pii`, `patient_intake_profiles`, `patient_pseudonym_map` | 낮음 | 개인정보 및 환자 원장 데이터이므로 임의 삭제 금지 |
+| audit log | 중간~높음 | 월별 rotation, 장기 archive, 장애 분석용 분리 보관 |
+
+운영 원칙:
+
+- DB row 수보다 미디어 업로드와 과도한 draft sync 요청이 더 큰 비용 요인이 될 수 있다.
+- 결과 원장 데이터와 운영 로그/임시 저장 데이터는 동일한 보존 기준으로 관리하면 안 된다.
+- object storage 원본은 임상 요구사항이 확정되지 않으면 무기한 저장하지 않는다.
+- 운영 전에는 draft 정리 정책, event archive 정책, object storage 보존 정책을 함께 정의해야 한다.
 
 ## Repository Usage Note
 
@@ -414,19 +462,53 @@ Not intended use:
 - 이름/생년월일/전화번호는 object key에 넣지 않는다
 - object storage 접근은 signed URL 또는 서버 프록시 기반으로 제한한다
 
-## Immediate Engineering Tasks
+## External Report Data Requirements
 
-지금 바로 진행할 작업 항목:
+외부 레포트 사이트에서 결과를 안정적으로 표시하려면 최소한 아래 데이터 항목을 조회할 수 있어야 한다.
 
-- 로그인 사용자 기준 `내 이력 조회 API` 추가
-- 로그인 사용자 기준 `최초 진단 여부 API` 추가
-- self-assessment / speech-rehab / sing 결과 조회를 DB 우선 구조로 변경
-- `src/lib/patientStorage.ts` 의 로컬 의존을 축소하고 서버 세션 컨텍스트로 대체
-- 배포 환경용 `.env` 정리 및 NCP 배포 절차 문서화
+| Report Area | Required Data |
+| --- | --- |
+| 환자 기본 정보 | `patient_code`, `full_name`, `birth_date`, `sex`, `education_years`, `onset_date`, `days_since_onset` |
+| 계정/접속 정보 | `login_id`, `user_role`, `last_login_at`, `created_at` |
+| 자가진단 세션 정보 | `clinical_sessions.training_type='self-assessment'`, `session_id`, `completed_at`, `algorithm_version`, `version_snapshot` |
+| 언어재활 세션 정보 | `clinical_sessions.training_type='speech-rehab'`, `session_id`, `completed_at`, `algorithm_version`, `version_snapshot` |
+| 자가진단/언어재활 요약 점수 | `aq`, `rehab_step`, `step_scores`, `source_history_id` |
+| 자가진단/언어재활 상세 결과 | `step_details`, `articulation_scores`, `facial_analysis_snapshot`, `measurement_quality`, `step_version_snapshots` |
+| 노래방 결과 | `clinical_sessions.training_type='sing-training'`, `song_key`, `score`, `consonant_accuracy`, `vowel_accuracy`, `lyric_accuracy`, `jitter`, `facial_symmetry`, `latency_ms`, `recognized_lyrics`, `comment`, `version_snapshot` |
+| 미디어 메타데이터 | `clinical_media_objects.bucket_name`, `object_key`, `media_type`, `capture_role`, `mime_type`, `file_size_bytes`, `duration_ms`, `captured_at` |
+| 사용 이력 | `training_usage_events.event_type`, `event_status`, `training_type`, `step_no`, `page_path`, `session_id`, `created_at` |
+
+외부 사이트 레포트 구현 시 주의사항:
+
+- 자가진단과 언어재활은 모두 `language_training_results`를 읽되 `clinical_sessions.training_type` 와 `training_mode`, `rehab_step` 으로 구분해야 한다.
+- 노래방은 `sing_results`를 별도로 읽어야 한다.
+- 원본 녹음/이미지 재생이 필요하면 `clinical_media_objects`와 object storage를 함께 연결해야 한다.
+- `step_details`, `articulation_scores`, `facial_analysis_snapshot`는 JSON 구조를 그대로 해석할 수 있는 파서가 필요하다.
+
+## Pending Work
+
+앞으로 작업해야 할 항목:
+
+- `brainfriends.goldenbraincare.com` DNS 반영 완료 여부 확인
+- Nginx reverse proxy 설정 추가
+- HTTPS 인증서 발급 및 443 적용
+- HTTPS 환경에서 카메라/마이크 권한 정상 동작 확인
+- 회원가입 -> 로그인 -> 훈련 진입 -> 결과 저장 전체 플로우 점검
+- `clinical_media_objects` 실제 적재 여부와 object storage 업로드 정합성 확인
+- 외부 레포트 사이트에서 사용할 조회 API 또는 SQL view 설계
+- 자가진단 / 언어재활 / 노래방 결과를 외부 레포트 화면에서 공통 포맷으로 매핑하는 규칙 정의
+- 노래방 결과 페이지 문구를 언어 발화 훈련 중심 해석으로 지속 정리
+- 노래방의 자음/모음/가사 일치도와 보조 안면 지표에 대한 레포트 문구 기준 정리
+- `step_details` JSON 구조를 외부 레포트에서 표시할 수 있도록 파서/스키마 문서화
+- 원본 음성/이미지/영상이 레포트에 필요할 경우 object storage signed URL 정책 설계
+- self-assessment / speech-rehab / sing 결과 조회를 DB 우선 구조로 정리
+- `src/lib/patientStorage.ts` 의 로컬 의존을 줄이고 서버 세션/DB 조회 기준으로 정리
+- 운영 점검용 SQL, 로그 확인 명령, 배포 절차를 문서화
+- 배포 서버의 `.env` 중 민감정보 교체 계획 수립
+- DB 비밀번호, `NCP_ACCESS_KEY`, `NCP_SECRET_KEY` 교체
 
 ## Disclaimer
 
 이 소프트웨어는 현재 허가 준비를 고려한 개발 단계의 시스템입니다.
 의료적 판단과 최종 임상 결정은 반드시 자격을 갖춘 전문가의 책임 하에 이루어져야 합니다.
-
 

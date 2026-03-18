@@ -65,7 +65,7 @@ export function FacialReportSection({ facialReport }: Props) {
 
         <div className="col-span-12 md:col-span-6 rounded-2xl border border-slate-100 bg-white p-4 md:p-5 min-h-[250px]">
           <div className="flex items-start justify-between gap-3">
-            <p className="text-sm md:text-base font-black text-slate-800">안면 비대칭 위험도</p>
+            <p className="text-sm md:text-base font-black text-slate-800">안면 반응 변화 추적</p>
             <span className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
               <ScanFace className="w-4 h-4 text-slate-700" />
             </span>
@@ -88,23 +88,53 @@ export function FacialReportSection({ facialReport }: Props) {
           </div>
           <div className="mt-4 grid grid-cols-12 gap-2.5">
             <div className="col-span-6 rounded-xl border border-slate-100 bg-slate-50/50 p-2.5">
-              <p className="text-[11px] font-bold text-slate-500">비대칭</p>
-              <p className="text-sm font-black text-slate-900">{Math.round(facialReport.asymmetryRisk)}</p>
+              <p className="text-[11px] font-bold text-slate-500">입꼬리 차이</p>
+              <p className="text-sm font-black text-slate-900">
+                {facialReport.oralCommissureAsymmetry.toFixed(1)}%
+              </p>
             </div>
             <div className="col-span-6 rounded-xl border border-slate-100 bg-slate-50/50 p-2.5">
-              <p className="text-[11px] font-bold text-slate-500">불균형</p>
-              <p className="text-sm font-black text-slate-900">{facialReport.articulationGap.toFixed(1)}</p>
+              <p className="text-[11px] font-bold text-slate-500">입술 폐쇄 차이</p>
+              <p className="text-sm font-black text-slate-900">
+                {facialReport.lipClosureAsymmetry.toFixed(1)}%
+              </p>
+            </div>
+            <div className="col-span-6 rounded-xl border border-slate-100 bg-slate-50/50 p-2.5">
+              <p className="text-[11px] font-bold text-slate-500">발화 편차</p>
+              <p className="text-sm font-black text-slate-900">
+                {facialReport.vowelArticulationVariance.toFixed(1)}
+              </p>
+            </div>
+            <div className="col-span-6 rounded-xl border border-slate-100 bg-slate-50/50 p-2.5">
+              <p className="text-[11px] font-bold text-slate-500">추적 품질</p>
+              <p className="text-sm font-black text-slate-900">
+                {facialReport.trackingQuality.toFixed(1)}%
+              </p>
             </div>
           </div>
           <p className="mt-4 text-xs sm:text-sm font-bold text-slate-600 leading-relaxed whitespace-pre-line break-words">
             {facialReport.summary}
           </p>
-          <p className="mt-3 text-[11px] sm:text-xs font-bold text-slate-500">
-            변화:{" "}
-            {facialReport.asymmetryDelta === null
-              ? "이전 데이터 없음"
-              : `${facialReport.asymmetryDelta > 0 ? "+" : ""}${facialReport.asymmetryDelta.toFixed(1)}%p`}
-          </p>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] sm:text-xs font-bold text-slate-500">
+            <p>
+              입꼬리 변화:{" "}
+              {facialReport.oralCommissureDelta === null
+                ? "이전 데이터 없음"
+                : `${facialReport.oralCommissureDelta > 0 ? "+" : ""}${facialReport.oralCommissureDelta.toFixed(1)}%p`}
+            </p>
+            <p>
+              폐쇄 변화:{" "}
+              {facialReport.lipClosureDelta === null
+                ? "이전 데이터 없음"
+                : `${facialReport.lipClosureDelta > 0 ? "+" : ""}${facialReport.lipClosureDelta.toFixed(1)}%p`}
+            </p>
+            <p>
+              발화 편차 변화:{" "}
+              {facialReport.vowelArticulationDelta === null
+                ? "이전 데이터 없음"
+                : `${facialReport.vowelArticulationDelta > 0 ? "+" : ""}${facialReport.vowelArticulationDelta.toFixed(1)}`}
+            </p>
+          </div>
         </div>
       </div>
     </section>

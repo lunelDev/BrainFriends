@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { loadPatientProfile } from "@/lib/patientStorage";
 import {
+  MeasurementQualityLevel,
   SessionManager,
   TrainingHistoryEntry,
 } from "@/lib/kwab/SessionManager";
@@ -17,9 +18,36 @@ import {
   countImprovedMetrics,
 } from "@/lib/results/rehab/adapters";
 import { RehabDetailBlocks } from "@/features/rehab-report/components/RehabDetailBlocks";
-import { persistTrainingHistoryToDatabase } from "@/lib/client/clinicalResultsApi";
+import {
+  persistTrainingHistoryToDatabase,
+  syncTrainingMediaForHistory,
+} from "@/lib/client/clinicalResultsApi";
 import { fetchMyHistoryEntries } from "@/lib/client/historyApi";
 import { Database, ScanFace, TrendingUp } from "lucide-react";
+import {
+  cancelSpeechPlayback,
+  speakKoreanText,
+} from "@/lib/client/speechSynthesis";
+
+function getMeasurementQualityUi(level?: MeasurementQualityLevel) {
+  switch (level) {
+    case "measured":
+      return {
+        label: "실측 완료",
+        className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      };
+    case "partial":
+      return {
+        label: "일부 측정",
+        className: "border-amber-200 bg-amber-50 text-amber-700",
+      };
+    default:
+      return {
+        label: "참고용",
+        className: "border-slate-200 bg-slate-50 text-slate-600",
+      };
+  }
+}
 
 function ResultRehabPage() {
   const router = useRouter();
@@ -100,6 +128,9 @@ function ResultRehabPage() {
 
   const previousStepRow = stepRows.length > 1 ? stepRows[1] : null;
   const latestStepRow = stepRows.length ? stepRows[0] : null;
+  const qualityUi = getMeasurementQualityUi(
+    latestStepRow?.measurementQuality?.overall,
+  );
 
   useEffect(() => {
     if (!patient || !latestStepRow) return;
@@ -108,7 +139,8 @@ function ResultRehabPage() {
     persistedHistoryIdRef.current = latestStepRow.historyId;
     setDbSaveState("saving");
 
-    void persistTrainingHistoryToDatabase(patient, latestStepRow)
+    void syncTrainingMediaForHistory(patient, latestStepRow)
+      .then(() => persistTrainingHistoryToDatabase(patient, latestStepRow))
       .then((response) => {
         setDbSaveState(response.skipped ? "local_only" : "saved");
       })
@@ -236,22 +268,16 @@ function ResultRehabPage() {
       audioPlayerRef.current.onended = null;
       audioPlayerRef.current = null;
     }
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
+    cancelSpeechPlayback();
     setPlayingIndex(null);
   };
 
   const playSpeechFallback = (text: string, id: string) => {
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
     stopPlayback();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "ko-KR";
-    utterance.rate = 0.95;
-    utterance.onend = () => setPlayingIndex(null);
-    utterance.onerror = () => setPlayingIndex(null);
     setPlayingIndex(id);
-    window.speechSynthesis.speak(utterance);
+    void speakKoreanText(text, { rate: 0.96 }).finally(() =>
+      setPlayingIndex(null),
+    );
   };
 
   const playAudio = (audioUrl: string, id: string) => {
@@ -293,6 +319,9 @@ function ResultRehabPage() {
               {dbSaveState === "local_only" && "DB Not Configured - Local backup kept"}
               {dbSaveState === "failed" && "DB Sync Failed - Local backup kept"}
               {dbSaveState === "idle" && "DB Sync Pending"}
+            </div>
+            <div className={`px-3 py-2 rounded-xl border text-[11px] sm:text-xs font-bold inline-flex items-center ${qualityUi.className}`}>
+              측정 품질 · {qualityUi.label}
             </div>
             <button
               type="button"

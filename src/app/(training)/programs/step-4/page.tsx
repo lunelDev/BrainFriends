@@ -18,7 +18,6 @@ import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { loadPatientProfile } from "@/lib/patientStorage";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
-import { uploadClinicalMedia } from "@/lib/client/clinicalMediaUpload";
 import {
   analyzeArticulation,
   calculateArticulationWritingConsistency,
@@ -32,6 +31,10 @@ import {
 } from "@/lib/text/displayText";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import { logTrainingEvent } from "@/lib/client/trainingEventsApi";
+import {
+  cancelSpeechPlayback,
+  speakKoreanText,
+} from "@/lib/client/speechSynthesis";
 import {
   maskPlaceLabels,
   scoreStep4Response,
@@ -568,9 +571,7 @@ function Step4Content() {
         audioPlayerRef.current.pause();
         audioPlayerRef.current = null;
       }
-      if (typeof window !== "undefined" && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
+      cancelSpeechPlayback();
       resetRuntimeStatus();
     };
   }, [resetRuntimeStatus, scenarios.length, stepSignature]);
@@ -603,41 +604,15 @@ function Step4Content() {
   // 안내 음성 재생 (단순 버전)
   const playInstruction = useCallback(() => {
     if (!currentScenario || typeof window === "undefined") return;
-    if (!window.speechSynthesis) {
-      setIsPromptPlaying(false);
-      setCanRecord(true);
-      promptEndedAtRef.current = Date.now();
-      return;
-    }
-
-    const synth = window.speechSynthesis;
-    synth.cancel();
-    synth.resume();
     setIsPromptPlaying(true);
-
-    const utterance = new SpeechSynthesisUtterance(
-      "이 사진 속 상황을 자유롭게 이야기해 주세요.",
-    );
-    utterance.lang = "ko-KR";
-    utterance.rate = 0.9;
-    const koVoice = synth
-      .getVoices()
-      .find((v) => v.lang?.toLowerCase().startsWith("ko"));
-    if (koVoice) utterance.voice = koVoice;
-    utterance.onend = () => {
+    setCanRecord(false);
+    void speakKoreanText("이 사진 속 상황을 자유롭게 이야기해 주세요.", {
+      rate: 0.96,
+    }).finally(() => {
       setIsPromptPlaying(false);
       setCanRecord(true);
       promptEndedAtRef.current = Date.now();
-    };
-    utterance.onerror = () => {
-      setIsPromptPlaying(false);
-      setCanRecord(true);
-      promptEndedAtRef.current = Date.now();
-    };
-
-    setTimeout(() => {
-      synth.speak(utterance);
-    }, 80);
+    });
   }, [currentScenario]);
 
   useEffect(() => {
@@ -914,23 +889,6 @@ function Step4Content() {
             savedCount: next.length,
             score: scored.finalScore,
           });
-          const patient = loadPatientProfile();
-          if (patient) {
-            uploadClinicalMedia({
-              patient,
-              sourceSessionKey: patient.sessionId,
-              trainingType: clinicalTrainingType,
-              stepNo: 4,
-              mediaType: "audio",
-              captureRole: "step4-audio",
-              labelSegment: currentScenario.situation,
-              blob: analysis.audioBlob,
-              fileExtension: analysis.audioBlob.type.includes("mpeg") ? "mp3" : "webm",
-              durationMs: Math.round(speechDurationSec * 1000),
-            }).catch((uploadError) => {
-              console.error("[Step4] failed to upload clinical audio", uploadError);
-            });
-          }
           setSaveStatusText("녹음 저장 완료");
           updateRuntimeStatus({
             pageError: false,
@@ -1104,9 +1062,7 @@ function Step4Content() {
       const randomFloat = (min: number, max: number, digits = 1) =>
         Number((Math.random() * (max - min) + min).toFixed(digits));
       if (timerRef.current) clearInterval(timerRef.current);
-      if (typeof window !== "undefined" && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
+      cancelSpeechPlayback();
 
       const demoItems = scenarios.slice(0, 3).map((scenario, index) => {
         const finalScore = randomFloat(58, 96);

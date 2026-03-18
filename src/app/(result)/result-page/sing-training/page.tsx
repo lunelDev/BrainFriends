@@ -15,6 +15,13 @@ import { loadPatientProfile, type PatientProfile } from "@/lib/patientStorage";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import type { VersionSnapshot } from "@/lib/analysis/versioning";
 import { fetchMyHistoryEntries } from "@/lib/client/historyApi";
+import { dataUrlToBlob, uploadClinicalMedia } from "@/lib/client/clinicalMediaUpload";
+import {
+  SING_TRAINING_ANALYSIS_VERSION,
+  SING_TRAINING_CATALOG_VERSION,
+  SONGS,
+} from "@/features/sing-training/data/songs";
+import type { SongKey } from "@/features/sing-training/types";
 
 export const dynamic = "force-static";
 
@@ -33,13 +40,22 @@ type SingResult = {
   finalJitter: string;
   finalSi: string;
   rtLatency: string;
+  finalConsonant?: string;
+  finalVowel?: string;
+  lyricAccuracy?: string;
+  transcript?: string;
+  metricSource?: "measured" | "demo";
   comment: string;
   rankings: RankRow[];
   completedAt: number;
   reviewAudioUrl?: string | null;
   reviewAudioMediaId?: string | null;
   reviewAudioObjectKey?: string | null;
-  reviewAudioUploadState?: "uploaded" | "failed" | "not_recorded";
+  reviewAudioUploadState?:
+    | "uploaded"
+    | "failed"
+    | "not_recorded"
+    | "pending_result_sync";
   reviewAudioUploadError?: string | null;
   governance?: {
     catalogVersion: string;
@@ -60,6 +76,7 @@ type PersistDatabaseResult = {
   skipped: boolean;
   ok: boolean;
   error?: string | null;
+  nextResult?: SingResult | null;
 };
 
 const EMPTY_RANKINGS: RankRow[] = Array.from({ length: 5 }, (_, index) => ({
@@ -70,17 +87,117 @@ const EMPTY_RANKINGS: RankRow[] = Array.from({ length: 5 }, (_, index) => ({
   me: false,
 }));
 
+function parseMeasuredNumber(value: string | null | undefined) {
+  if (!value) return null;
+  const numeric = Number(value.replace(/[^\d.-]/g, ""));
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function buildFallbackSingResult(
+  song: SongKey,
+  patientName: string,
+): SingResult {
+  const songMeta = SONGS[song];
+  return {
+    song,
+    userName: patientName || "사용자",
+    score: 0,
+    finalJitter: "--",
+    finalSi: "--",
+    rtLatency: "-- ms",
+    finalConsonant: "--",
+    finalVowel: "--",
+    lyricAccuracy: "--",
+    transcript: "",
+    metricSource: "demo",
+    comment:
+      "음성 또는 안면 측정 데이터가 충분하지 않아 임상 결과를 확정할 수 없습니다. 화면 확인용 결과만 표시되며 서버 저장은 수행되지 않습니다.",
+    rankings: EMPTY_RANKINGS,
+    completedAt: Date.now(),
+    reviewAudioUrl: null,
+    reviewAudioMediaId: null,
+    reviewAudioObjectKey: null,
+    reviewAudioUploadState: "not_recorded",
+    reviewAudioUploadError: null,
+    governance: {
+      catalogVersion:
+        songMeta.governance.catalogVersion ?? SING_TRAINING_CATALOG_VERSION,
+      analysisVersion:
+        songMeta.governance.analysisVersion ?? SING_TRAINING_ANALYSIS_VERSION,
+      requirementIds: songMeta.governance.requirementIds,
+      failureModes: songMeta.governance.failureModes,
+    },
+  };
+}
+
 async function persistToDatabase(
   patient: PatientProfile,
   result: SingResult,
 ): Promise<PersistDatabaseResult> {
+  let nextResult = result;
+
+  if (
+    result.reviewAudioUrl &&
+    result.reviewAudioUploadState !== "uploaded"
+  ) {
+    try {
+      const reviewAudioBlob = await dataUrlToBlob(result.reviewAudioUrl);
+      const uploadedReviewAudio = await uploadClinicalMedia({
+        patient,
+        sourceSessionKey: patient.sessionId,
+        trainingType: "sing-training",
+        mediaType: "audio",
+        captureRole: "review-audio",
+        labelSegment: result.song,
+        blob: reviewAudioBlob,
+        fileExtension: reviewAudioBlob.type.includes("mpeg") ? "mp3" : "webm",
+      });
+
+      nextResult = {
+        ...result,
+        reviewAudioMediaId: uploadedReviewAudio.mediaId,
+        reviewAudioObjectKey: uploadedReviewAudio.objectKey,
+        reviewAudioUploadState: "uploaded",
+        reviewAudioUploadError: null,
+      };
+    } catch (error) {
+      return {
+        ranking: null,
+        skipped: false,
+        ok: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "failed_to_upload_review_audio",
+        nextResult: {
+          ...result,
+          reviewAudioUploadState: "failed",
+          reviewAudioUploadError:
+            error instanceof Error
+              ? error.message
+              : "failed_to_upload_review_audio",
+        },
+      };
+    }
+  }
+
+  if (result.metricSource !== "measured") {
+    return {
+      ranking: null,
+      skipped: true,
+      ok: true,
+      error: null,
+      nextResult,
+    };
+  }
+
   try {
     const response = await fetch("/api/sing-results", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ patient, result }),
+      body: JSON.stringify({ patient, result: nextResult }),
     });
 
     if (!response.ok) {
@@ -92,6 +209,7 @@ async function persistToDatabase(
         skipped: false,
         ok: false,
         error: payload?.error || "failed_to_persist_sing_result",
+        nextResult,
       };
     }
 
@@ -105,6 +223,7 @@ async function persistToDatabase(
       skipped: Boolean(payload?.skipped),
       ok: true,
       error: null,
+      nextResult,
     };
   } catch (error) {
     return {
@@ -115,6 +234,7 @@ async function persistToDatabase(
         error instanceof Error
           ? error.message
           : "failed_to_persist_sing_result",
+      nextResult,
     };
   }
 }
@@ -179,6 +299,15 @@ export default function SingTrainingResultPage() {
 
     const raw = window.sessionStorage.getItem("brain-sing-result");
     if (!raw) {
+      const lastSong = window.sessionStorage.getItem("brain-sing-last-song");
+      if (lastSong && lastSong in SONGS) {
+        const fallbackResult = buildFallbackSingResult(
+          lastSong as SongKey,
+          patient?.name || "사용자",
+        );
+        setResult(fallbackResult);
+        setMyRank(null);
+      }
       setHasLoadedResult(true);
       return;
     }
@@ -199,6 +328,10 @@ export default function SingTrainingResultPage() {
             finalJitter: parsed.finalJitter,
             finalSi: parsed.finalSi,
             rtLatency: parsed.rtLatency,
+            finalConsonant: parsed.finalConsonant,
+            finalVowel: parsed.finalVowel,
+            lyricAccuracy: parsed.lyricAccuracy,
+            transcript: parsed.transcript,
             comment: parsed.comment,
             rankings: parsed.rankings,
             governance: parsed.governance,
@@ -235,6 +368,10 @@ export default function SingTrainingResultPage() {
           finalJitter: latestSing.singResult.finalJitter,
           finalSi: latestSing.singResult.finalSi,
           rtLatency: latestSing.singResult.rtLatency,
+          finalConsonant: latestSing.singResult.finalConsonant,
+          finalVowel: latestSing.singResult.finalVowel,
+          lyricAccuracy: latestSing.singResult.lyricAccuracy,
+          transcript: latestSing.singResult.transcript,
           comment: latestSing.singResult.comment,
           rankings: latestSing.singResult.rankings ?? [],
           completedAt: latestSing.completedAt,
@@ -279,9 +416,18 @@ export default function SingTrainingResultPage() {
     setDbSaveState("saving");
 
     void persistToDatabase(patient, result).then(
-      ({ ranking, skipped, ok, error }) => {
+      ({ ranking, skipped, ok, error, nextResult }) => {
         if (cancelled) {
           return;
+        }
+        if (nextResult) {
+          setResult(nextResult);
+          if (typeof window !== "undefined") {
+            window.sessionStorage.setItem(
+              "brain-sing-result",
+              JSON.stringify(nextResult),
+            );
+          }
         }
         if (!ok) {
           console.error("[sing-result] database persistence failed", error);
@@ -345,31 +491,50 @@ export default function SingTrainingResultPage() {
     );
   }
 
-  const facialSymmetryScore = Number(result.finalSi || 0);
-  const jitterScore = Number(result.finalJitter || 0);
+  const isMeasuredResult = result.metricSource === "measured";
+  const facialSymmetryScore = parseMeasuredNumber(result.finalSi);
+  const jitterScore = parseMeasuredNumber(result.finalJitter);
+  const consonantScore = parseMeasuredNumber(result.finalConsonant);
+  const vowelScore = parseMeasuredNumber(result.finalVowel);
+  const lyricAccuracyScore = parseMeasuredNumber(result.lyricAccuracy);
   const mouthImprovement = Math.max(
     8,
-    Math.round((facialSymmetryScore - 80) * 0.9),
+    Math.round(((facialSymmetryScore ?? 80) - 80) * 0.9),
   );
   const eyeImprovement = Math.max(
     6,
-    Math.round((facialSymmetryScore - 82) * 0.65),
+    Math.round(((facialSymmetryScore ?? 82) - 82) * 0.65),
   );
-  const rhythmCoordination = Math.max(
-    70,
-    Math.min(99, result.score - Math.round(jitterScore * 5)),
-  );
+  const rhythmCoordination =
+    jitterScore == null
+      ? null
+      : Math.max(70, Math.min(99, result.score - Math.round(jitterScore * 5)));
   const maskedAge = patient?.age ? `${patient.age}세 기준` : "동일 연령대 기준";
   const vitalityComment =
-    result.score >= 90
-      ? "건강하게 회복 중인 흐름이 매우 안정적으로 확인되었습니다."
-      : "안면 반응과 발성 협응이 균형 있게 유지되고 있습니다.";
+    !isMeasuredResult
+      ? "측정 데이터가 충분하지 않아 화면 확인용 결과만 표시합니다."
+      : result.score >= 90
+      ? "자음·모음 산출과 가사 재현이 매우 안정적으로 확인되었습니다."
+      : "발화 산출과 가사 추종이 전반적으로 안정적인 흐름을 보였습니다.";
   const hasDbRanking = result.rankings.some((row) =>
     Number.isFinite(Number(row.rank)),
   );
   const displayedRankings: RankRow[] = hasDbRanking
     ? result.rankings
     : EMPTY_RANKINGS;
+  const scoreLabel = isMeasuredResult ? `${result.score}` : "미측정";
+  const consonantLabel =
+    consonantScore == null ? "미측정" : `${consonantScore.toFixed(1)}점`;
+  const vowelLabel =
+    vowelScore == null ? "미측정" : `${vowelScore.toFixed(1)}점`;
+  const facialSymmetryLabel =
+    facialSymmetryScore == null ? "미측정" : `${facialSymmetryScore.toFixed(1)}점`;
+  const jitterLabel =
+    jitterScore == null ? "미측정" : `${jitterScore.toFixed(2)}%`;
+  const rhythmCoordinationLabel =
+    rhythmCoordination == null ? "미측정" : `${rhythmCoordination}점`;
+  const lyricAccuracyLabel =
+    lyricAccuracyScore == null ? "미측정" : `${lyricAccuracyScore.toFixed(1)}점`;
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f5fbf8_0%,#eef8f3_100%)] px-4 py-6 sm:px-6 sm:py-8">
@@ -384,7 +549,7 @@ export default function SingTrainingResultPage() {
                 {result.song} 진단 결과
               </h1>
               <p className="mt-2 text-base font-medium text-slate-500">
-                {result.userName}님의 안면 마비 진단 기반 노래 분석 결과입니다.
+                {result.userName}님의 언어 발화 훈련 기반 노래 분석 결과입니다.
               </p>
               {result.governance ? (
                 <p className="mt-2 text-sm font-semibold text-slate-500">
@@ -395,7 +560,8 @@ export default function SingTrainingResultPage() {
               <p className="mt-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
                 {dbSaveState === "saving" && "DB Sync In Progress"}
                 {dbSaveState === "saved" && "DB Sync Complete"}
-                {dbSaveState === "local_only" && "DB Not Configured - Local backup kept"}
+                {dbSaveState === "local_only" &&
+                  "Measured metrics unavailable - Local result only"}
                 {dbSaveState === "failed" && "DB Sync Failed - Local backup kept"}
                 {dbSaveState === "idle" && "DB Sync Pending"}
               </p>
@@ -414,6 +580,8 @@ export default function SingTrainingResultPage() {
                     <p className="text-xs font-semibold text-slate-500">
                       {result.reviewAudioUploadState === "uploaded" &&
                         "NCP 업로드 및 DB 메타데이터 저장 완료"}
+                      {result.reviewAudioUploadState === "pending_result_sync" &&
+                        "결과 저장 시 서버 업로드 대기 중"}
                       {result.reviewAudioUploadState === "failed" &&
                         `업로드 실패: ${result.reviewAudioUploadError || "--"}`}
                       {result.reviewAudioUploadState === "not_recorded" &&
@@ -446,11 +614,13 @@ export default function SingTrainingResultPage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.24em] text-white/75">
-                    Brain Vitality Score
+                    Brain Speech Score
                   </p>
                   <h2 className="mt-3 text-6xl font-black leading-none sm:text-7xl">
-                    {result.score}
-                    <span className="ml-2 text-3xl sm:text-4xl">점</span>
+                    {scoreLabel}
+                    {isMeasuredResult ? (
+                      <span className="ml-2 text-3xl sm:text-4xl">점</span>
+                    ) : null}
                   </h2>
                 </div>
                 <div className="flex h-16 w-16 items-center justify-center rounded-[22px] border border-white/18 bg-white/12">
@@ -458,16 +628,17 @@ export default function SingTrainingResultPage() {
                 </div>
               </div>
               <p className="mt-5 max-w-[520px] text-lg font-bold leading-relaxed text-white/92">
-                안면 대칭도 + 발음 정확도 + 리듬 협응력을 종합한 뇌 활력 점수입니다.
+                자음, 모음, 가사 일치도와 안면 반응을 함께 반영한 언어재활형 노래 훈련 결과입니다.
               </p>
-              <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <MetricPill title="안면 대칭" value={`${facialSymmetryScore.toFixed(1)}점`} />
-                <MetricPill title="발성 안정" value={`${jitterScore.toFixed(2)}%`} />
-                <MetricPill title="리듬 협응" value={`${rhythmCoordination}점`} />
+              <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <MetricPill title="자음 정확도" value={consonantLabel} />
+                <MetricPill title="모음 정확도" value={vowelLabel} />
+                <MetricPill title="가사 일치도" value={lyricAccuracyLabel} />
+                <MetricPill title="안면 대칭" value={facialSymmetryLabel} />
               </div>
               <div className="mt-6 rounded-[24px] border border-white/14 bg-black/10 p-4">
                 <p className="text-sm font-black uppercase tracking-[0.18em] text-white/70">
-                  Recovery Signal
+                  Speech Signal
                 </p>
                 <p className="mt-2 text-xl font-bold leading-relaxed text-white">
                   {vitalityComment}
@@ -482,7 +653,7 @@ export default function SingTrainingResultPage() {
                 </div>
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.22em] text-emerald-600">
-                    Medical Comment
+                    Speech Comment
                   </p>
                   <h2 className="mt-1 text-2xl font-black text-slate-900">
                     전문 AI 분석 소견
@@ -492,19 +663,36 @@ export default function SingTrainingResultPage() {
 
               <div className="mt-6 space-y-4 text-lg leading-relaxed text-slate-700">
                 <p className="font-bold text-slate-900">
-                  오늘 성대 안정성이 매우 우수했습니다.
+                  {isMeasuredResult
+                    ? "오늘 발화 정확도와 가사 추종 능력이 안정적으로 확인되었습니다."
+                    : "이번 세션은 측정 데이터가 충분하지 않았습니다."}
                 </p>
                 <p>
-                  입을 크게 벌리는 동작이 지난번보다 {Math.max(12, mouthImprovement)}% 더 정확해졌고, 눈 주위 반응도도 함께 개선되는 양상을 보였습니다.
+                  {isMeasuredResult
+                    ? `자음과 모음 산출 점수를 기반으로 보면 발화 명료도가 안정적이었고, 가사 흐름을 따라가는 수행도도 양호했습니다. 보조 지표로 안면 대칭과 반응 속도도 함께 확인했습니다.`
+                    : "마이크 입력 또는 안면 추적 데이터가 부족하면 임상 결과를 확정할 수 없습니다. 곡 재생과 결과 UI는 확인할 수 있지만, 서버 저장과 레포트 반영은 수행되지 않습니다."}
                 </p>
                 <p>{result.comment}</p>
+                <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">
+                    Speech Metrics
+                  </p>
+                  <p className="mt-2 text-base font-semibold text-slate-700">
+                    자음 {consonantLabel} · 모음 {vowelLabel} · 가사 일치도 {lyricAccuracyLabel} · 반응속도 {result.rtLatency === "-- ms" ? "미측정" : result.rtLatency}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    {result.transcript?.trim()
+                      ? `인식 가사: "${result.transcript}"`
+                      : "인식된 가사 텍스트가 없습니다."}
+                  </p>
+                </div>
                 <div className="rounded-[24px] border border-emerald-200 bg-white/70 p-4">
                   <p className="flex items-center gap-2 text-base font-black text-emerald-700">
                     <ArrowUpRight className="h-5 w-5" />
                     따뜻한 격려 메시지
                   </p>
                   <p className="mt-2 text-base font-medium text-slate-700">
-                    오늘처럼 노래 리듬에 맞춰 입 모양을 크게 열어 주시면, 안면 좌우 협응 회복에 도움이 됩니다. 같은 흐름으로 꾸준히 진행하면 더 안정적인 표정 반응을 기대할 수 있습니다.
+                    오늘처럼 가사를 끝까지 또박또박 따라 부르는 연습을 반복하면 자음·모음 산출 안정성과 문장 길이 유지에 도움이 됩니다. 안면 대칭은 보조 지표로 함께 추적합니다.
                   </p>
                 </div>
               </div>
@@ -519,26 +707,43 @@ export default function SingTrainingResultPage() {
                 </div>
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.22em] text-emerald-600">
-                    Facial Symmetry Graph
+                    Facial Support Metrics
                   </p>
                   <h2 className="mt-1 text-2xl font-black text-slate-900">
-                    안면 대칭 개선도
+                    보조 안면 반응 지표
                   </h2>
                 </div>
               </div>
 
               <div className="mt-6 space-y-5">
-                <SymmetryRow label="좌측 구강 근육 활성도" before={67} after={67 + mouthImprovement} feedback={`${mouthImprovement}% 증가`} />
-                <SymmetryRow label="좌측 안륜근 반응도" before={72} after={72 + eyeImprovement} feedback={`${eyeImprovement}% 증가`} />
-                <SymmetryRow label="표정-발성 협응 지수" before={78} after={Math.min(98, Math.round(facialSymmetryScore))} feedback={`${Math.max(8, Math.round(facialSymmetryScore - 78))}% 향상`} />
+                <SymmetryRow label="좌측 구강 근육 활성도" before={67} after={67 + mouthImprovement} feedback={`${mouthImprovement}% 변화`} />
+                <SymmetryRow label="좌측 안륜근 반응도" before={72} after={72 + eyeImprovement} feedback={`${eyeImprovement}% 변화`} />
+                <SymmetryRow
+                  label="표정-발성 보조 협응 지수"
+                  before={78}
+                  after={
+                    facialSymmetryScore == null
+                      ? 78
+                      : Math.min(98, Math.round(facialSymmetryScore))
+                  }
+                  feedback={
+                    facialSymmetryScore == null
+                      ? "미측정"
+                      : `${Math.max(8, Math.round(facialSymmetryScore - 78))}% 향상`
+                  }
+                />
               </div>
 
               <div className="mt-6 rounded-[24px] bg-emerald-50 p-4 text-emerald-900">
                 <p className="text-sm font-black">
-                  좌측 구강 근육 활성도 {mouthImprovement}% 증가, 눈매 대칭 반응 {eyeImprovement}% 향상
+                  {isMeasuredResult
+                    ? `노래 발화 중 입 주위 반응과 눈매 대칭을 보조 지표로 함께 기록했습니다.`
+                    : "안면 측정 데이터가 부족해 보조 안면 그래프는 기준값만 표시합니다."}
                 </p>
                 <p className="mt-2 text-base font-medium text-emerald-800">
-                  시작 시점 대비 입꼬리와 눈매의 좌우 균형이 더 정교하게 회복되는 흐름을 보였습니다.
+                  {isMeasuredResult
+                    ? "노래방의 핵심 평가는 발화 점수이며, 안면 반응은 발화 시 보조 반응 지표로 함께 해석합니다."
+                    : "측정이 충분한 세션에서만 안면 보조 지표를 레포트에 함께 반영합니다."}
                 </p>
               </div>
             </section>
@@ -570,7 +775,7 @@ export default function SingTrainingResultPage() {
                     ? `${myRank.rank}위 · ${myRank.score}점`
                     : dbSaveState === "saving"
                       ? "랭킹 산출 중"
-                      : dbSaveState === "local_only"
+                    : dbSaveState === "local_only"
                         ? "로컬 모드"
                         : "--"}
                 </p>
@@ -578,7 +783,7 @@ export default function SingTrainingResultPage() {
                   {myRank && hasDbRanking
                     ? `${myRank.name}님의 현재 ${result.song} 전국 실버 랭킹 위치입니다.`
                     : dbSaveState === "local_only"
-                      ? "DB가 연결되지 않아 로컬 결과만 유지 중입니다."
+                      ? "실측 지표가 없어 서버 저장과 DB 랭킹 계산을 생략했습니다."
                       : `${result.song} 기준 DB 랭킹 데이터가 아직 없습니다.`}
                 </p>
               </div>

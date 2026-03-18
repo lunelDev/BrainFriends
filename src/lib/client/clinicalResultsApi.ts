@@ -1,5 +1,6 @@
 import type { PatientProfile } from "@/lib/patientStorage";
 import type { TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
+import { dataUrlToBlob, uploadClinicalMedia } from "@/lib/client/clinicalMediaUpload";
 
 export type PersistClinicalHistoryResult = {
   saved?: {
@@ -14,9 +15,111 @@ export type PersistClinicalHistoryResult = {
 };
 
 const CLINICAL_SYNC_PREFIX = "clinical-db-sync:";
+const CLINICAL_MEDIA_SYNC_PREFIX = "clinical-media-sync:";
 
 function getPersistKey(entry: TrainingHistoryEntry) {
   return `${CLINICAL_SYNC_PREFIX}${entry.historyId}`;
+}
+
+function getMediaPersistKey(entry: TrainingHistoryEntry) {
+  return `${CLINICAL_MEDIA_SYNC_PREFIX}${entry.historyId}`;
+}
+
+function getTrainingType(entry: TrainingHistoryEntry) {
+  return entry.trainingMode === "rehab" ? "speech-rehab" : "self-assessment";
+}
+
+export async function syncTrainingMediaForHistory(
+  patient: PatientProfile,
+  historyEntry: TrainingHistoryEntry,
+) {
+  if (typeof window !== "undefined") {
+    const cached = window.sessionStorage.getItem(getMediaPersistKey(historyEntry));
+    if (cached) {
+      return JSON.parse(cached) as { synced: boolean };
+    }
+  }
+
+  const uploads: Array<Promise<unknown>> = [];
+  const trainingType = getTrainingType(historyEntry);
+
+  const enqueueAudioUpload = (
+    stepNo: number,
+    captureRole: string,
+    labelSegment: string,
+    audioUrl: string,
+    durationMs?: number | null,
+  ) => {
+    if (!audioUrl || !audioUrl.startsWith("data:audio")) return;
+    uploads.push(
+      dataUrlToBlob(audioUrl).then((blob) =>
+        uploadClinicalMedia({
+          patient,
+          sourceSessionKey: historyEntry.sessionId,
+          trainingType,
+          stepNo,
+          mediaType: "audio",
+          captureRole,
+          labelSegment,
+          blob,
+          fileExtension: blob.type.includes("mpeg") ? "mp3" : "webm",
+          durationMs: durationMs ?? null,
+        }),
+      ),
+    );
+  };
+
+  const enqueueImageUpload = (
+    stepNo: number,
+    captureRole: string,
+    labelSegment: string,
+    imageUrl: string,
+  ) => {
+    if (!imageUrl || !imageUrl.startsWith("data:image")) return;
+    uploads.push(
+      dataUrlToBlob(imageUrl).then((blob) =>
+        uploadClinicalMedia({
+          patient,
+          sourceSessionKey: historyEntry.sessionId,
+          trainingType,
+          stepNo,
+          mediaType: "image",
+          captureRole,
+          labelSegment,
+          blob,
+          fileExtension: blob.type.includes("png") ? "png" : "jpg",
+        }),
+      ),
+    );
+  };
+
+  (historyEntry.stepDetails?.step2 ?? []).forEach((item: any) => {
+    enqueueAudioUpload(2, "step2-audio", String(item?.text ?? "step2"), String(item?.audioUrl ?? ""), item?.responseTime ?? null);
+  });
+
+  (historyEntry.stepDetails?.step4 ?? []).forEach((item: any) => {
+    enqueueAudioUpload(4, "step4-audio", String(item?.situation ?? item?.text ?? "step4"), String(item?.audioUrl ?? ""), item?.speechDuration ? Math.round(Number(item.speechDuration) * 1000) : null);
+  });
+
+  (historyEntry.stepDetails?.step5 ?? []).forEach((item: any) => {
+    enqueueAudioUpload(5, "step5-audio", String(item?.text ?? "step5"), String(item?.audioUrl ?? ""), item?.totalTime ?? null);
+  });
+
+  (historyEntry.stepDetails?.step6 ?? []).forEach((item: any) => {
+    enqueueImageUpload(6, "step6-image", String(item?.word ?? item?.text ?? "step6"), String(item?.userImage ?? ""));
+  });
+
+  await Promise.all(uploads);
+
+  const normalized = { synced: true };
+  if (typeof window !== "undefined") {
+    window.sessionStorage.setItem(
+      getMediaPersistKey(historyEntry),
+      JSON.stringify(normalized),
+    );
+  }
+
+  return normalized;
 }
 
 export async function persistTrainingHistoryToDatabase(

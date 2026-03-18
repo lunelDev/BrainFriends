@@ -99,13 +99,13 @@ export default function ModeSelectPage() {
                   onClick={() => router.push("/tools/training-usage-admin")}
                   className="h-8 sm:h-9 min-w-[132px] px-3 sm:px-4 rounded-full text-[11px] sm:text-xs font-black shadow-sm border bg-white text-slate-700 border-slate-200 hover:bg-slate-100 transition-all"
                 >
-                  전체 환자 타임라인
+                  전체 사용자 타임라인
                 </button>
                 <button
                   onClick={() => router.push("/tools/admin-reports")}
                   className="h-8 sm:h-9 min-w-[116px] px-3 sm:px-4 rounded-full text-[11px] sm:text-xs font-black shadow-sm border bg-white text-slate-700 border-slate-200 hover:bg-slate-100 transition-all"
                 >
-                  환자 리포트
+                  사용자 리포트
                 </button>
               </>
             ) : (
@@ -133,7 +133,7 @@ export default function ModeSelectPage() {
             어떤 활동을 시작할까요?
           </h1>
           <p className="text-sm sm:text-base text-slate-500 font-medium">
-            환자님의 건강한 내일을 위해 최적화된 프로그램을 준비했습니다.
+            사용자님의 건강한 내일을 위해 최적화된 프로그램을 준비했습니다.
           </p>
         </div>
 

@@ -19,6 +19,10 @@ import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import { buildStep1TrainingData } from "@/features/steps/step1/utils";
 import { logTrainingEvent } from "@/lib/client/trainingEventsApi";
 import {
+  cancelSpeechPlayback,
+  speakKoreanText,
+} from "@/lib/client/speechSynthesis";
+import {
   buildStepSignature,
   isResumeMetaMatched,
   saveResumeMeta,
@@ -109,7 +113,7 @@ function Step1Content() {
     console.groupEnd();
 
     return () => {
-      if (typeof window !== "undefined") window.speechSynthesis.cancel();
+      cancelSpeechPlayback();
     };
   }, [placeParam]);
 
@@ -202,23 +206,7 @@ function Step1Content() {
       console.log(`🔊 음성 출력: "${text}"`);
       setIsSpeaking(true);
       setCanAnswer(false);
-      if (typeof window !== "undefined" && window.speechSynthesis) {
-        const synth = window.speechSynthesis;
-        synth.cancel();
-        synth.resume();
-        const msg = new SpeechSynthesisUtterance(text);
-        msg.lang = "ko-KR";
-        msg.rate = 0.85;
-        const koVoice = synth
-          .getVoices()
-          .find((v) => v.lang?.toLowerCase().startsWith("ko"));
-        if (koVoice) msg.voice = koVoice;
-        await new Promise<void>((resolve) => {
-          msg.onend = () => resolve();
-          msg.onerror = () => resolve();
-          synth.speak(msg);
-        });
-      }
+      await speakKoreanText(text, { rate: 0.96 });
       setIsSpeaking(false);
       setCanAnswer(true);
       setQuestionStartTime(Date.now());

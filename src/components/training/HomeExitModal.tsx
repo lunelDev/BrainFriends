@@ -1,5 +1,25 @@
 "use client";
 
+function stopAllActiveMediaStreams() {
+  if (typeof window === "undefined") return;
+
+  const mediaElements = Array.from(
+    document.querySelectorAll("video, audio"),
+  ) as Array<HTMLVideoElement | HTMLAudioElement>;
+
+  for (const element of mediaElements) {
+    const stream = element.srcObject;
+    if (stream instanceof MediaStream) {
+      stream.getTracks().forEach((track) => track.stop());
+      element.srcObject = null;
+    }
+
+    try {
+      element.pause();
+    } catch {}
+  }
+}
+
 type Props = {
   open: boolean;
   onConfirm: () => void;
@@ -24,7 +44,10 @@ export function HomeExitModal({ open, onConfirm, onCancel }: Props) {
 
         <div className="grid grid-cols-1 gap-3">
           <button
-            onClick={onConfirm}
+            onClick={() => {
+              stopAllActiveMediaStreams();
+              onConfirm();
+            }}
             className="w-full py-3.5 rounded-2xl bg-[#0B1A3A] text-white font-black hover:bg-[#09152f] transition-all"
           >
             홈으로 이동

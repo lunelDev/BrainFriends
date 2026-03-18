@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS language_training_results (
   step_details JSONB NOT NULL,
   articulation_scores JSONB,
   facial_analysis_snapshot JSONB,
+  measurement_quality JSONB,
   step_version_snapshots JSONB,
   source_history_id VARCHAR(128) NOT NULL UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -102,19 +103,23 @@ CREATE TABLE IF NOT EXISTS clinical_media_objects (
   status VARCHAR(20) NOT NULL DEFAULT 'active'
 );
 
-CREATE TABLE IF NOT EXISTS sing_results (
-  result_id UUID PRIMARY KEY,
-  session_id UUID NOT NULL REFERENCES clinical_sessions(session_id),
-  patient_pseudonym_id VARCHAR(64) NOT NULL REFERENCES patient_pseudonym_map(patient_pseudonym_id),
-  song_key VARCHAR(100) NOT NULL,
-  score NUMERIC(5,2) NOT NULL,
-  jitter NUMERIC(6,3),
-  facial_symmetry NUMERIC(6,3),
-  latency_ms NUMERIC(8,2),
-  comment TEXT,
-  version_snapshot JSONB,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+  CREATE TABLE IF NOT EXISTS sing_results (
+    result_id UUID PRIMARY KEY,
+    session_id UUID NOT NULL REFERENCES clinical_sessions(session_id),
+    patient_pseudonym_id VARCHAR(64) NOT NULL REFERENCES patient_pseudonym_map(patient_pseudonym_id),
+    song_key VARCHAR(100) NOT NULL,
+    score NUMERIC(5,2) NOT NULL,
+    jitter NUMERIC(6,3),
+    facial_symmetry NUMERIC(6,3),
+    latency_ms NUMERIC(8,2),
+    consonant_accuracy NUMERIC(6,3),
+    vowel_accuracy NUMERIC(6,3),
+    lyric_accuracy NUMERIC(6,3),
+    recognized_lyrics TEXT,
+    comment TEXT,
+    version_snapshot JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
 
 CREATE TABLE IF NOT EXISTS training_client_drafts (
   user_id UUID NOT NULL REFERENCES app_users(user_id) ON DELETE CASCADE,

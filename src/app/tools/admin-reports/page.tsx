@@ -66,7 +66,7 @@ export default function AdminReportsPage() {
           if (error instanceof Error && error.message === "forbidden") {
             setIsForbidden(true);
           } else {
-            setError("환자 리포트 목록을 불러오지 못했습니다.");
+            setError("사용자 리포트 목록을 불러오지 못했습니다.");
           }
         }
       })
@@ -101,7 +101,7 @@ export default function AdminReportsPage() {
         setEntries(Array.isArray(payload.entries) ? payload.entries : []);
       })
       .catch(() => {
-        if (!cancelled) setError("선택한 환자의 리포트를 불러오지 못했습니다.");
+        if (!cancelled) setError("선택한 사용자의 리포트를 불러오지 못했습니다.");
       })
       .finally(() => {
         if (!cancelled) setIsLoadingDetail(false);
@@ -130,10 +130,10 @@ export default function AdminReportsPage() {
             Admin Reports
           </p>
           <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-900">
-            환자 리포트 관리
+            사용자 리포트 관리
           </h1>
           <p className="mt-2 text-sm font-medium text-slate-500">
-            환자별 self-assessment, rehab, sing 결과를 관리자 화면에서 조회합니다.
+            사용자별 self-assessment, rehab, sing 결과를 관리자 화면에서 조회합니다.
           </p>
         </section>
 
@@ -153,16 +153,16 @@ export default function AdminReportsPage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="환자명, 아이디, patient_code"
+                placeholder="사용자명, 아이디, patient_code"
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700"
               />
             </label>
 
             <div className="mt-4 space-y-3">
               {isLoadingPatients ? (
-                <p className="text-sm font-bold text-slate-500">환자 목록을 불러오는 중입니다.</p>
+                <p className="text-sm font-bold text-slate-500">사용자 목록을 불러오는 중입니다.</p>
               ) : !filteredPatients.length ? (
-                <p className="text-sm font-bold text-slate-500">조건에 맞는 환자가 없습니다.</p>
+                <p className="text-sm font-bold text-slate-500">조건에 맞는 사용자가 없습니다.</p>
               ) : (
                 filteredPatients.map((patient) => (
                   <button
@@ -190,15 +190,15 @@ export default function AdminReportsPage() {
 
           <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
             {!selectedPatientId ? (
-              <p className="text-sm font-bold text-slate-500">선택된 환자가 없습니다.</p>
+              <p className="text-sm font-bold text-slate-500">선택된 사용자가 없습니다.</p>
             ) : isLoadingDetail ? (
-              <p className="text-sm font-bold text-slate-500">환자 리포트를 불러오는 중입니다.</p>
+              <p className="text-sm font-bold text-slate-500">사용자 리포트를 불러오는 중입니다.</p>
             ) : (
               <>
                 <div className="grid gap-3 sm:grid-cols-4">
-                  <SummaryCard label="환자명" value={selectedPatient?.patientName ?? "-"} />
+                  <SummaryCard label="사용자명" value={selectedPatient?.patientName ?? "-"} />
                   <SummaryCard label="아이디" value={selectedPatient?.loginId ?? "-"} />
-                  <SummaryCard label="환자코드" value={selectedPatient?.patientCode ?? "-"} />
+                  <SummaryCard label="사용자코드" value={selectedPatient?.patientCode ?? "-"} />
                   <SummaryCard label="가명 ID" value={selectedPatient?.patientPseudonymId ?? "-"} mono />
                 </div>
 

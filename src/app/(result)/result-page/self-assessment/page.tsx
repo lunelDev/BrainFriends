@@ -7,6 +7,7 @@ import { PlaceType } from "@/constants/trainingData";
 import { calculateKWABScores, getAQNormalComparison } from "@/lib/kwab/KWABScoring";
 import {
   SessionManager,
+  MeasurementQualityLevel,
   TrainingHistoryEntry,
 } from "@/lib/kwab/SessionManager";
 import { DerivedKwab, ExportFile } from "@/features/result/types";
@@ -23,13 +24,40 @@ import {
   shouldShowPlayButton,
 } from "@/features/result/utils/resultHelpers";
 import { SelfAssessmentBlocks } from "@/features/result/components/SelfAssessmentBlocks";
-import { persistTrainingHistoryToDatabase } from "@/lib/client/clinicalResultsApi";
+import {
+  persistTrainingHistoryToDatabase,
+  syncTrainingMediaForHistory,
+} from "@/lib/client/clinicalResultsApi";
 import { fetchMyHistoryEntries } from "@/lib/client/historyApi";
+import {
+  cancelSpeechPlayback,
+  speakKoreanText,
+} from "@/lib/client/speechSynthesis";
 import {
   Trophy,
   Database,
   Printer,
 } from "lucide-react";
+
+function getMeasurementQualityUi(level?: MeasurementQualityLevel) {
+  switch (level) {
+    case "measured":
+      return {
+        label: "실측 완료",
+        className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      };
+    case "partial":
+      return {
+        label: "일부 측정",
+        className: "border-amber-200 bg-amber-50 text-amber-700",
+      };
+    default:
+      return {
+        label: "참고용",
+        className: "border-slate-200 bg-slate-50 text-slate-600",
+      };
+  }
+}
 
 function ResultContent() {
   const router = useRouter();
@@ -233,6 +261,9 @@ function ResultContent() {
 
 
   const currentHistoryEntry = latestAndPreviousHistory.current;
+  const qualityUi = getMeasurementQualityUi(
+    currentHistoryEntry?.measurementQuality?.overall,
+  );
 
   const previousHistory = useMemo(() => {
     if (!patientForHistory) return [];
@@ -364,7 +395,10 @@ function ResultContent() {
     persistedHistoryIdRef.current = currentHistoryEntry.historyId;
     setDbSaveState("saving");
 
-    void persistTrainingHistoryToDatabase(patientProfile, currentHistoryEntry)
+    void syncTrainingMediaForHistory(patientProfile, currentHistoryEntry)
+      .then(() =>
+        persistTrainingHistoryToDatabase(patientProfile, currentHistoryEntry),
+      )
       .then((response) => {
         setDbSaveState(response.skipped ? "local_only" : "saved");
       })
@@ -463,9 +497,7 @@ function ResultContent() {
   const stopPlayback = () => {
     audioRef.current?.pause();
     if (audioRef.current) audioRef.current.currentTime = 0;
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
+    cancelSpeechPlayback();
   };
 
   const playAudio = (url: string, id: string) => {
@@ -482,24 +514,16 @@ function ResultContent() {
   };
 
   const playSpeechFallback = (text: string, id: string) => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-      return;
-    }
     if (playingIndex === id) {
       stopPlayback();
       setPlayingIndex(null);
       return;
     }
     stopPlayback();
-    const utterance = new SpeechSynthesisUtterance(
-      text || "음성 데이터가 없습니다.",
-    );
-    utterance.lang = "ko-KR";
-    utterance.rate = 0.92;
-    utterance.onend = () => setPlayingIndex(null);
-    utterance.onerror = () => setPlayingIndex(null);
     setPlayingIndex(id);
-    window.speechSynthesis.speak(utterance);
+    void speakKoreanText(text || "음성 데이터가 없습니다.", { rate: 0.96 }).finally(
+      () => setPlayingIndex(null),
+    );
   };
 
   if (!isMounted || !sessionData) return null;
@@ -585,6 +609,9 @@ function ResultContent() {
                 {dbSaveState === "local_only" && "DB Not Configured - Local backup kept"}
                 {dbSaveState === "failed" && "DB Sync Failed - Local backup kept"}
                 {dbSaveState === "idle" && "DB Sync Pending"}
+              </div>
+              <div className={`px-3 py-2 rounded-xl border text-[11px] sm:text-xs font-bold ${qualityUi.className}`}>
+                측정 품질 · {qualityUi.label}
               </div>
               <button
                 onClick={handleExportData}

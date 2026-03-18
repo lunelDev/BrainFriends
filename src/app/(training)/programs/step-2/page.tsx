@@ -18,7 +18,6 @@ import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { loadPatientProfile } from "@/lib/patientStorage";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
-import { uploadClinicalMedia } from "@/lib/client/clinicalMediaUpload";
 import {
   analyzeArticulation,
   createInitialArticulationAnalyzerState,
@@ -31,6 +30,10 @@ import {
 } from "@/lib/text/displayText";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import { logTrainingEvent } from "@/lib/client/trainingEventsApi";
+import {
+  cancelSpeechPlayback,
+  speakKoreanText,
+} from "@/lib/client/speechSynthesis";
 import {
   blendArticulationAccuracy,
   getResultSentenceSizeClass,
@@ -375,85 +378,7 @@ function Step2Content() {
   );
 
   const speakText = useCallback((text: string) => {
-    return new Promise<void>((resolve) => {
-      if (typeof window === "undefined" || !window.speechSynthesis) {
-        resolve();
-        return;
-      }
-
-      const normalized = String(text || "").trim();
-      if (!normalized) {
-        resolve();
-        return;
-      }
-
-      const synth = window.speechSynthesis;
-      const estimateMs = Math.min(
-        12000,
-        Math.max(2200, normalized.replace(/\s+/g, "").length * 180),
-      );
-      let settled = false;
-
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        resolve();
-      };
-
-      const timeoutId = window.setTimeout(() => {
-        try {
-          synth.cancel();
-        } catch {
-          // noop
-        }
-        finish();
-      }, estimateMs);
-
-      const speakNow = () => {
-        try {
-          synth.cancel();
-          synth.resume();
-
-          const utterance = new SpeechSynthesisUtterance(normalized);
-          utterance.lang = "ko-KR";
-          utterance.rate = 0.9;
-          const koVoice = synth
-            .getVoices()
-            .find((v) => v.lang?.toLowerCase().startsWith("ko"));
-          if (koVoice) utterance.voice = koVoice;
-
-          utterance.onend = () => {
-            window.clearTimeout(timeoutId);
-            finish();
-          };
-          utterance.onerror = () => {
-            window.clearTimeout(timeoutId);
-            finish();
-          };
-          synth.speak(utterance);
-        } catch {
-          window.clearTimeout(timeoutId);
-          finish();
-        }
-      };
-
-      const voices = synth.getVoices();
-      if (voices.length > 0) {
-        speakNow();
-        return;
-      }
-
-      const handleVoicesChanged = () => {
-        synth.removeEventListener("voiceschanged", handleVoicesChanged);
-        speakNow();
-      };
-
-      synth.addEventListener("voiceschanged", handleVoicesChanged);
-      window.setTimeout(() => {
-        synth.removeEventListener("voiceschanged", handleVoicesChanged);
-        if (!settled) speakNow();
-      }, 700);
-    });
+    return speakKoreanText(text, { rate: 0.96 });
   }, []);
 
   const runCountdown = useCallback(async (from: number, token: number) => {
@@ -472,10 +397,7 @@ function Step2Content() {
     if (!AudioCtx) {
       // fallback: 음성합성으로 짧은 신호 제공
       if (window.speechSynthesis) {
-        const u = new SpeechSynthesisUtterance("삐");
-        u.lang = "ko-KR";
-        u.rate = 1.2;
-        window.speechSynthesis.speak(u);
+        void speakKoreanText("삐", { rate: 1.12, pitch: 1.02, volume: 0.9 });
       }
       return;
     }
@@ -486,10 +408,7 @@ function Step2Content() {
       }
       if (ctx.state !== "running") {
         if (window.speechSynthesis) {
-          const u = new SpeechSynthesisUtterance("삐");
-          u.lang = "ko-KR";
-          u.rate = 1.2;
-          window.speechSynthesis.speak(u);
+          void speakKoreanText("삐", { rate: 1.12, pitch: 1.02, volume: 0.9 });
         }
         return;
       }
@@ -513,10 +432,7 @@ function Step2Content() {
     } catch {
       // 최종 fallback
       if (window.speechSynthesis) {
-        const u = new SpeechSynthesisUtterance("삐");
-        u.lang = "ko-KR";
-        u.rate = 1.2;
-        window.speechSynthesis.speak(u);
+        void speakKoreanText("삐", { rate: 1.12, pitch: 1.02, volume: 0.9 });
       }
     }
   }, []);
@@ -745,8 +661,7 @@ function Step2Content() {
         audioInputStreamRef.current.getTracks().forEach((t) => t.stop());
         audioInputStreamRef.current = null;
       }
-      if (typeof window !== "undefined" && window.speechSynthesis)
-        window.speechSynthesis.cancel();
+      cancelSpeechPlayback();
       resetRuntimeStatus();
     };
   }, [protocol.length, resetRuntimeStatus, stepSignature]);
@@ -910,9 +825,7 @@ function Step2Content() {
       const randomFloat = (min: number, max: number, digits = 1) =>
         Number((Math.random() * (max - min) + min).toFixed(digits));
       flowTokenRef.current += 1;
-      if (typeof window !== "undefined" && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
+      cancelSpeechPlayback();
       analyzerRef.current?.cancelAnalysis();
 
       const demoItems = protocol
@@ -1265,23 +1178,6 @@ function Step2Content() {
                   savedCount: candidate.length,
                   score: Number(finalScore.toFixed(1)),
                 });
-                const patient = loadPatientProfile();
-                if (patient) {
-                  uploadClinicalMedia({
-                    patient,
-                    sourceSessionKey: patient.sessionId,
-                    trainingType: clinicalTrainingType,
-                    stepNo: 2,
-                    mediaType: "audio",
-                    captureRole: "step2-audio",
-                    labelSegment: currentItem.text,
-                    blob: audioBlob,
-                    fileExtension: audioBlob.type.includes("mpeg") ? "mp3" : "webm",
-                    durationMs: responseTimeMs,
-                  }).catch((uploadError) => {
-                    console.error("[Step2] failed to upload clinical audio", uploadError);
-                  });
-                }
                 setReviewAudioUrl(URL.createObjectURL(audioBlob));
                 updateRuntimeStatus({
                   pageError: false,
@@ -1785,6 +1681,7 @@ function Step2Content() {
               vowelMouthWidth: (sidebarMetrics.vowelMouthWidth || 0) * 100,
               vowelRounding: (sidebarMetrics.vowelRounding || 0) * 100,
               vowelPatternMatch: (sidebarMetrics.vowelPatternMatch || 0) * 100,
+              trackingQuality: (sidebarMetrics.trackingQuality || 0) * 100,
               audioLevel: audioLevel,
             }}
             showTracking={showTracking}

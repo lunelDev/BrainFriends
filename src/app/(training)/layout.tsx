@@ -52,7 +52,15 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isReportRoute = pathname === "/report";
   const isProgramRoute = pathname.startsWith("/programs/");
-  const showLiveTrainingChrome = isProgramRoute && !isReportRoute;
+  const cameraEnabledProgramRoutes = new Set([
+    "/programs/step-2",
+    "/programs/step-4",
+    "/programs/step-5",
+  ]);
+  const showLiveTrainingChrome =
+    isProgramRoute &&
+    !isReportRoute &&
+    cameraEnabledProgramRoutes.has(pathname);
   const {
     clinicalMetrics,
     sidebarMetrics,
@@ -154,6 +162,45 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
     updateRuntimeStatus,
   ]);
 
+  useEffect(() => {
+    if (!showLiveTrainingChrome) return;
+    if (runtimeStatus.pageError || runtimeStatus.needsRetry || runtimeStatus.saving) return;
+
+    const trackingQualityPct = Number(sidebarMetrics.trackingQuality || 0) * 100;
+    const landmarkCount = Array.isArray(sidebarMetrics.landmarks)
+      ? sidebarMetrics.landmarks.length
+      : 0;
+
+    if (!sidebarMetrics.cameraActive || landmarkCount === 0 || trackingQualityPct < 15) {
+      updateRuntimeStatus({
+        message: "카메라 초기화 중입니다. 권한과 장치 연결 상태를 확인해 주세요.",
+      });
+      return;
+    }
+
+    if (!sidebarMetrics.faceDetected || trackingQualityPct < 55) {
+      updateRuntimeStatus({
+        message: "얼굴을 화면 중앙에 맞추고 조명과 카메라 각도를 조정해 주세요.",
+      });
+      return;
+    }
+
+    if (runtimeStatus.message) {
+      updateRuntimeStatus({ message: "" });
+    }
+  }, [
+    showLiveTrainingChrome,
+    runtimeStatus.pageError,
+    runtimeStatus.needsRetry,
+    runtimeStatus.saving,
+    runtimeStatus.message,
+    sidebarMetrics.cameraActive,
+    sidebarMetrics.faceDetected,
+    sidebarMetrics.landmarks,
+    sidebarMetrics.trackingQuality,
+    updateRuntimeStatus,
+  ]);
+
   const runtimeIndicator = runtimeStatus.pageError
     ? {
         label: "오류 감지",
@@ -201,6 +248,56 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
             color: "text-emerald-500",
             lamp: "bg-emerald-500",
           };
+  const trackingQualityPct = Number(sidebarMetrics.trackingQuality || 0) * 100;
+  const landmarkCount = Array.isArray(sidebarMetrics.landmarks)
+    ? sidebarMetrics.landmarks.length
+    : 0;
+  const runtimeBannerState = !showLiveTrainingChrome
+    ? null
+    : runtimeStatus.pageError || runtimeStatus.needsRetry
+      ? {
+          title: runtimeIndicator.label,
+          message: runtimeStatus.message || runtimeIndicator.value,
+          retry: runtimeStatus.needsRetry,
+          wrap: "border-red-200 bg-red-50/95 text-red-900",
+          dot: "bg-red-500",
+        }
+      : runtimeStatus.saving
+        ? {
+            title: runtimeIndicator.label,
+            message: runtimeStatus.message || runtimeIndicator.value,
+            retry: false,
+            wrap: "border-amber-200 bg-amber-50/95 text-amber-900",
+            dot: "bg-amber-500",
+          }
+      : runtimeStatus.message
+        ? {
+            title: "안내",
+            message: runtimeStatus.message,
+            retry: false,
+            wrap: "border-sky-200 bg-sky-50/95 text-sky-900",
+            dot: "bg-sky-500",
+          }
+      : !sidebarMetrics.cameraActive || landmarkCount === 0 || trackingQualityPct < 15
+        ? {
+            title: "카메라 초기화 중",
+            message: "카메라 권한과 장치 연결 상태를 확인해 주세요.",
+            retry: false,
+            wrap: "border-sky-200 bg-sky-50/95 text-sky-900",
+            dot: "bg-sky-500",
+          }
+      : !sidebarMetrics.faceDetected || trackingQualityPct < 55
+        ? {
+            title: "측정 위치 조정 필요",
+            message:
+              trackingQualityPct < 55
+                ? "얼굴을 화면 중앙에 맞추고 조명과 카메라 각도를 조정해 주세요."
+                : "얼굴을 화면 중앙에 맞춰 주세요.",
+            retry: false,
+            wrap: "border-orange-200 bg-orange-50/95 text-orange-900",
+            dot: "bg-orange-500",
+          }
+      : null;
 
   const isTrackerReady = sidebarMetrics.cameraActive && sidebarMetrics.faceDetected;
   const metricOrNA = (value: string) => (isTrackerReady ? value : "N/A");
@@ -258,11 +355,35 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
   return (
     <div className="training-print-root h-screen w-full bg-[#F3F4F6] overflow-hidden">
       <div className="training-print-shell w-full h-screen bg-white flex flex-col overflow-hidden relative">
+        {runtimeBannerState && (
+          <div className="pointer-events-none absolute left-1/2 top-[78px] z-[120] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 px-4 sm:top-[84px] sm:max-w-[calc(100%-3rem)] sm:px-6 lg:left-[calc((100%-380px)/2)] lg:right-auto lg:w-[min(calc(100%-420px),36rem)] lg:max-w-none lg:-translate-x-1/2 lg:px-0">
+            <div
+              className={`mx-auto flex w-full items-start gap-3 rounded-2xl border px-4 py-3 shadow-md backdrop-blur sm:items-center sm:px-5 ${runtimeBannerState.wrap}`}
+            >
+              <span
+                className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full sm:mt-0 ${runtimeBannerState.dot} ${runtimeStatus.saving ? "animate-pulse" : ""}`}
+              />
+              <div className="min-w-0">
+                <p className="text-[12px] font-black leading-none">
+                  {runtimeBannerState.title}
+                </p>
+                <p className="mt-1 text-[12px] font-medium leading-snug sm:text-[13px]">
+                  {runtimeBannerState.message}
+                </p>
+              </div>
+              {runtimeBannerState.retry ? (
+                <span className="shrink-0 rounded-full bg-white/80 px-2 py-1 text-[11px] font-black text-red-700">
+                  재시도 필요
+                </span>
+              ) : null}
+            </div>
+          </div>
+        )}
         <div className="training-print-content flex-1 flex flex-col overflow-hidden bg-[#ffffff]">
           {children}
         </div>
 
-        {showLiveTrainingChrome && (
+        {false && showLiveTrainingChrome && (
           <footer className="no-print px-6 py-2 border-t border-slate-100 bg-white shrink-0">
           <div className="grid grid-cols-7 gap-2.5 w-full max-w-7xl mx-auto">
             <MetricBox
@@ -378,6 +499,7 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
                 mouthWidth: m.mouthWidth || 0,
                 eyebrowLift: (m.eyebrowLiftPct || 0) / 100,
                 eyeClosureStrength: (m.eyeClosureStrengthPct || 0) / 100,
+                trackingQuality: (m.trackingQualityPct || 0) / 100,
                 faceDetected,
                 landmarks, // Context로 좌표 전달
               });

@@ -43,6 +43,10 @@ import {
   Sparkles,
   TrendingUp,
 } from "lucide-react";
+import {
+  cancelSpeechPlayback,
+  speakKoreanText,
+} from "@/lib/client/speechSynthesis";
 
 function ReportContent() {
   const router = useRouter();
@@ -287,9 +291,7 @@ function ReportContent() {
       audioRef.current.currentTime = 0;
       audioRef.current.onended = null;
     }
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
+    cancelSpeechPlayback();
     setPlayingId(null);
   };
 
@@ -309,19 +311,11 @@ function ReportContent() {
 
   const playSpeechFallback = (text: string, id: string) => {
     try {
-      if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-        return;
-      }
       stopPlayback();
-      const utterance = new SpeechSynthesisUtterance(
-        text || "음성 데이터가 없습니다.",
-      );
-      utterance.lang = "ko-KR";
-      utterance.rate = 0.9;
-      utterance.onend = () => setPlayingId(null);
-      utterance.onerror = () => setPlayingId(null);
       setPlayingId(id);
-      window.speechSynthesis.speak(utterance);
+      void speakKoreanText(text || "음성 데이터가 없습니다.", { rate: 0.96 }).finally(
+        () => setPlayingId(null),
+      );
     } catch {
       setPlayingId(null);
     }
@@ -409,21 +403,26 @@ function ReportContent() {
   const selfFacialForBlocks = useMemo(() => {
     if (!selfFacialReport) return null;
     return {
-      overallConsonant: selfFacialReport.consonant,
-      overallVowel: selfFacialReport.vowel,
-      step2Consonant: selfFacialReport.consonant,
-      step2Vowel: selfFacialReport.vowel,
-      step4Consonant: selfFacialReport.consonant,
-      step4Vowel: selfFacialReport.vowel,
-      step5Consonant: selfFacialReport.consonant,
-      step5Vowel: selfFacialReport.vowel,
+      overallConsonant: selfFacialReport.overallConsonant,
+      overallVowel: selfFacialReport.overallVowel,
+      step2Consonant: selfFacialReport.step2Consonant,
+      step2Vowel: selfFacialReport.step2Vowel,
+      step4Consonant: selfFacialReport.step4Consonant,
+      step4Vowel: selfFacialReport.step4Vowel,
+      step5Consonant: selfFacialReport.step5Consonant,
+      step5Vowel: selfFacialReport.step5Vowel,
       asymmetryRisk: selfFacialReport.asymmetryRisk,
-      asymmetryDelta: selfFacialReport.riskDelta,
-      articulationGap: Number(
-        Math.abs(selfFacialReport.consonant - selfFacialReport.vowel).toFixed(1),
-      ),
+      asymmetryDelta: selfFacialReport.asymmetryDelta,
+      articulationGap: selfFacialReport.articulationGap,
       riskLabel: selfFacialReport.riskLabel,
       summary: selfFacialReport.summary,
+      trackingQuality: selfFacialReport.trackingQuality,
+      oralCommissureAsymmetry: selfFacialReport.oralCommissureAsymmetry,
+      oralCommissureDelta: selfFacialReport.oralCommissureDelta,
+      lipClosureAsymmetry: selfFacialReport.lipClosureAsymmetry,
+      lipClosureDelta: selfFacialReport.lipClosureDelta,
+      vowelArticulationVariance: selfFacialReport.vowelArticulationVariance,
+      vowelArticulationDelta: selfFacialReport.vowelArticulationDelta,
     };
   }, [selfFacialReport]);
 
@@ -782,7 +781,7 @@ function ReportContent() {
             <div className="space-y-4 max-h-[calc(100vh-7rem)] overflow-y-auto pr-2 pb-24">
               <section className="rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white p-5 shadow-sm h-[140px] flex flex-col justify-center">
                 <p className="text-xs font-black opacity-90">
-                  {selected.patientName || "환자"} 님의 브레인 노래방 리포트
+                  {selected.patientName || "사용자"} 님의 브레인 노래방 리포트
                 </p>
                 <h2 className="text-2xl sm:text-3xl font-black mt-1">
                   뇌 활력 점수 {Number(selected.singResult?.score ?? selected.aq ?? 0).toFixed(1)}점
@@ -979,23 +978,30 @@ function ReportContent() {
                       </span>
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-sky-200 text-slate-600 shadow-sm">
                         <i className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-                        비대칭{" "}
+                        입꼬리 차이{" "}
                         <b className="text-slate-900">
-                          {rehabFacialReport.asymmetryRisk.toFixed(1)}%
+                          {rehabFacialReport.oralCommissureAsymmetry.toFixed(1)}%
                         </b>
                       </span>
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-200 text-slate-600 shadow-sm">
                         <i className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                        위험도{" "}
-                        <b className="text-slate-900">{rehabFacialReport.riskLabel}</b>
+                        폐쇄 차이{" "}
+                        <b className="text-slate-900">
+                          {rehabFacialReport.lipClosureAsymmetry.toFixed(1)}%
+                        </b>
                       </span>
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-200 text-slate-600 shadow-sm">
                         <i className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-                        추이{" "}
+                        발화 편차{" "}
                         <b className="text-slate-900">
-                          {rehabFacialReport.riskDelta === null
-                            ? "N/A"
-                            : `${rehabFacialReport.riskDelta > 0 ? "+" : ""}${rehabFacialReport.riskDelta.toFixed(1)}%p`}
+                          {rehabFacialReport.vowelArticulationVariance.toFixed(1)}
+                        </b>
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-200 text-slate-600 shadow-sm">
+                        <i className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                        추적 품질{" "}
+                        <b className="text-slate-900">
+                          {rehabFacialReport.trackingQuality.toFixed(1)}%
                         </b>
                       </span>
                     </div>
@@ -1004,6 +1010,26 @@ function ReportContent() {
                   <p className="mt-2.5 text-xs text-slate-600 px-1 leading-relaxed">
                     {rehabFacialReport.summary}
                   </p>
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] font-bold text-slate-500 px-1">
+                    <span>
+                      입꼬리 변화{" "}
+                      {rehabFacialReport.oralCommissureDelta === null
+                        ? "N/A"
+                        : `${rehabFacialReport.oralCommissureDelta > 0 ? "+" : ""}${rehabFacialReport.oralCommissureDelta.toFixed(1)}%p`}
+                    </span>
+                    <span>
+                      폐쇄 변화{" "}
+                      {rehabFacialReport.lipClosureDelta === null
+                        ? "N/A"
+                        : `${rehabFacialReport.lipClosureDelta > 0 ? "+" : ""}${rehabFacialReport.lipClosureDelta.toFixed(1)}%p`}
+                    </span>
+                    <span>
+                      위험도{" "}
+                      {rehabFacialReport.riskDelta === null
+                        ? `${rehabFacialReport.riskLabel}`
+                        : `${rehabFacialReport.riskLabel} (${rehabFacialReport.riskDelta > 0 ? "+" : ""}${rehabFacialReport.riskDelta.toFixed(1)}%p)`}
+                    </span>
+                  </div>
                 </section>
               )}
 
@@ -1101,7 +1127,7 @@ function ReportContent() {
             <div className="space-y-4 max-h-[calc(100vh-7rem)] overflow-y-auto pr-2 pb-24">
               <section className="rounded-2xl bg-gradient-to-r from-orange-600 to-orange-500 text-white p-5 shadow-sm h-[140px] flex flex-col justify-center">
                 <p className="text-xs font-black opacity-90">
-                  {selected.patientName || "환자"} 님의 자가진단 리포트
+                  {selected.patientName || "사용자"} 님의 자가진단 리포트
                 </p>
                 <h2 className="text-2xl sm:text-3xl font-black mt-1">
                   종합 점수 {Number(selected.aq || 0).toFixed(1)}점

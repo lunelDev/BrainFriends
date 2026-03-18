@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { Noto_Sans_KR } from "next/font/google";
 import "./globals.css";
-import Script from "next/script";
 import { AUTH_COOKIE_NAME, getAuthenticatedSessionContext } from "@/lib/server/accountAuth";
 import { listTrainingDraftsForAuthenticatedUser } from "@/lib/server/trainingDraftsDb";
 
@@ -154,22 +153,7 @@ export default async function RootLayout({
 
   return (
     <html lang="ko" suppressHydrationWarning>
-      <head>
-        {/* ✅ Next.js 표준 방식으로 스크립트 로드 순서 고정 */}
-        <Script
-          src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"
-          strategy="beforeInteractive"
-        />
-        <Script
-          src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"
-          strategy="beforeInteractive"
-        />
-        {/* ✅ 안면 레이어(그물망) 드로잉을 위해 반드시 필요 */}
-        <Script
-          src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
-          strategy="beforeInteractive"
-        />
-      </head>
+      <head />
       <body
         suppressHydrationWarning
         className={`${notoSansKr.variable} antialiased`}

@@ -16,6 +16,8 @@ type FaceGuideData = {
   leftJaw: { x: number; y: number };
   rightJaw: { x: number; y: number };
   faceWidth: number;
+  rollAngleDeg: number;
+  trackingQualityPct: number;
   signedDeviationPct: number;
   deviationPct: number;
   mouthTiltPct: number;
@@ -62,6 +64,19 @@ function getFaceGuideData(landmarks: any[]): FaceGuideData | null {
     y: (leftMouth.y + rightMouth.y + upperLip.y + lowerLip.y) / 4,
   };
   const faceWidth = Math.max(0.001, Math.abs(rightCheek.x - leftCheek.x));
+  const eyeDx = rightEye.x - leftEye.x;
+  const eyeDy = rightEye.y - leftEye.y;
+  const rollAngleDeg = (Math.atan2(eyeDy, eyeDx || 0.001) * 180) / Math.PI;
+  const centerX = (leftCheek.x + rightCheek.x) / 2;
+  const centerY = (leftCheek.y + rightCheek.y + nose.y + chin.y) / 4;
+  const noseOffsetX = Math.abs(nose.x - centerX) / faceWidth;
+  const noseOffsetY = Math.abs(nose.y - centerY) / Math.max(faceWidth, 0.001);
+  const faceAreaConfidence = Math.max(0, Math.min(1, faceWidth / 0.22));
+  const centerConfidence = Math.max(0, Math.min(1, 1 - noseOffsetX * 2.2 - noseOffsetY * 0.8));
+  const rollConfidence = Math.max(0, Math.min(1, 1 - Math.abs(rollAngleDeg) / 18));
+  const trackingQualityPct =
+    (faceAreaConfidence * 0.4 + centerConfidence * 0.35 + rollConfidence * 0.25) *
+    100;
 
   const dx = chin.x - eyeCenter.x;
   const dy = chin.y - eyeCenter.y;
@@ -86,6 +101,8 @@ function getFaceGuideData(landmarks: any[]): FaceGuideData | null {
     leftJaw: { x: leftJaw.x, y: leftJaw.y },
     rightJaw: { x: rightJaw.x, y: rightJaw.y },
     faceWidth,
+    rollAngleDeg,
+    trackingQualityPct,
     signedDeviationPct,
     deviationPct,
     mouthTiltPct,
@@ -103,7 +120,7 @@ export const AnalysisSidebar = ({
   hideMetrics = false,
   hidePreview = false,
   previewAspectClass = "aspect-[4/3]",
-  previewMediaClass = "object-cover object-center",
+  previewMediaClass = "object-contain object-center",
 }: any) => {
   const { sidebarMetrics } = useTraining(); // 전역 좌표 데이터를 가져옴
   const [localShowTracking, setLocalShowTracking] = useState(
@@ -128,6 +145,7 @@ export const AnalysisSidebar = ({
     deviationPct: number;
     mouthTiltPct: number;
     jawTiltPct: number;
+    trackingQualityPct: number;
   }>({
     label: "안면 비대칭 분석 중",
     detail: "",
@@ -136,6 +154,7 @@ export const AnalysisSidebar = ({
     deviationPct: 0,
     mouthTiltPct: 0,
     jawTiltPct: 0,
+    trackingQualityPct: 0,
   });
 
   const isControlled = useMemo(
@@ -148,6 +167,7 @@ export const AnalysisSidebar = ({
   const trackingEnabled = isControlled
     ? Boolean(showTracking)
     : localShowTracking;
+  const shouldShowQualityHint = trackingEnabled && asymmetryVisual.trackingQualityPct < 55;
 
   const normalizePct = (value: number) => {
     const safe = Number(value || 0);
@@ -180,11 +200,61 @@ export const AnalysisSidebar = ({
         0,
     ),
   );
+  const trackingQuality = normalizePct(
+    Number((metrics?.trackingQuality ?? sidebarMetrics?.trackingQuality ?? 0) || 0),
+  );
   const lipGuide = getLipGuideFeedback({
     mouthOpening: Number(metrics?.openingRatio || 0),
     consonantAcc: Number(metrics?.consonantAcc || 0),
     vowelAcc: Number(metrics?.vowelAcc || 0),
   });
+
+  const getVideoDrawRect = () => {
+    const videoEl = videoRef?.current;
+    const canvasEl = canvasRef?.current;
+    const canvasWidth = canvasEl?.width || 0;
+    const canvasHeight = canvasEl?.height || 0;
+
+    if (!videoEl || !canvasEl || !canvasWidth || !canvasHeight) {
+      return {
+        offsetX: 0,
+        offsetY: 0,
+        drawWidth: canvasWidth,
+        drawHeight: canvasHeight,
+      };
+    }
+
+    const videoWidth = videoEl.videoWidth || canvasWidth;
+    const videoHeight = videoEl.videoHeight || canvasHeight;
+    if (!videoWidth || !videoHeight) {
+      return {
+        offsetX: 0,
+        offsetY: 0,
+        drawWidth: canvasWidth,
+        drawHeight: canvasHeight,
+      };
+    }
+
+    const videoAspect = videoWidth / videoHeight;
+    const canvasAspect = canvasWidth / canvasHeight;
+
+    let drawWidth = canvasWidth;
+    let drawHeight = canvasHeight;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (videoAspect > canvasAspect) {
+      drawWidth = canvasWidth;
+      drawHeight = canvasWidth / videoAspect;
+      offsetY = (canvasHeight - drawHeight) / 2;
+    } else {
+      drawHeight = canvasHeight;
+      drawWidth = canvasHeight * videoAspect;
+      offsetX = (canvasWidth - drawWidth) / 2;
+    }
+
+    return { offsetX, offsetY, drawWidth, drawHeight };
+  };
 
   useEffect(() => {
     if (typeof showTracking === "boolean") {
@@ -213,8 +283,9 @@ export const AnalysisSidebar = ({
       setAsymmetryVisual((prev) => ({
         ...prev,
         label: "안면 비대칭 분석 중",
-        detail: "",
+        detail: "얼굴 위치를 맞추는 중입니다.",
         state: "idle",
+        trackingQualityPct: 0,
       }));
       return;
     }
@@ -245,6 +316,22 @@ export const AnalysisSidebar = ({
     const jawTilt = emaRef.current.jawTiltPct;
     const signedDev = emaRef.current.signedDeviationPct;
     const side = signedDev > 0 ? "우측" : "좌측";
+    const quality = guide.trackingQualityPct;
+
+    if (quality < 55) {
+      warningSinceRef.current = null;
+      setAsymmetryVisual({
+        label: "측정 불안정",
+        detail: `추적 품질 ${quality.toFixed(1)}% · 정면 자세를 맞춰 주세요`,
+        state: "idle",
+        signedDeviationPct: signedDev,
+        deviationPct: dev,
+        mouthTiltPct: mouthTilt,
+        jawTiltPct: jawTilt,
+        trackingQualityPct: quality,
+      });
+      return;
+    }
 
     const warningCandidate = dev >= 2.5 || mouthTilt >= 1.6 || jawTilt >= 1.6;
     let state: GuideSeverity = "normal";
@@ -269,12 +356,13 @@ export const AnalysisSidebar = ({
 
     setAsymmetryVisual({
       label,
-      detail: `편위 ${dev.toFixed(1)}% · 입 ${mouthTilt.toFixed(1)}% · 턱 ${jawTilt.toFixed(1)}%`,
+      detail: `편위 ${dev.toFixed(1)}% · 입 ${mouthTilt.toFixed(1)}% · 턱 ${jawTilt.toFixed(1)}% · 품질 ${quality.toFixed(1)}%`,
       state,
       signedDeviationPct: signedDev,
       deviationPct: dev,
       mouthTiltPct: mouthTilt,
       jawTiltPct: jawTilt,
+      trackingQualityPct: quality,
     });
   }, [sidebarMetrics?.landmarks]);
 
@@ -290,6 +378,35 @@ export const AnalysisSidebar = ({
       videoEl.play().catch(console.error);
     }
   }, [videoRef]);
+
+  useEffect(() => {
+    const canvas = canvasRef?.current;
+    if (!canvas) return;
+
+    const syncCanvasSize = () => {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+      const nextWidth = Math.max(1, Math.round(rect.width * dpr));
+      const nextHeight = Math.max(1, Math.round(rect.height * dpr));
+
+      if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
+        canvas.width = nextWidth;
+        canvas.height = nextHeight;
+      }
+    };
+
+    syncCanvasSize();
+    if (typeof window === "undefined") return;
+
+    window.addEventListener("resize", syncCanvasSize);
+    const observer = new ResizeObserver(() => syncCanvasSize());
+    observer.observe(canvas);
+
+    return () => {
+      window.removeEventListener("resize", syncCanvasSize);
+      observer.disconnect();
+    };
+  }, [canvasRef]);
 
   useEffect(() => {
     if (!canvasRef || !canvasRef.current) return;
@@ -309,10 +426,11 @@ export const AnalysisSidebar = ({
     const drawLipOutline = () => {
       const landmarks = landmarksRef.current;
       if (!landmarks || landmarks.length === 0) return;
+      const drawRect = getVideoDrawRect();
 
       const toPoint = (idx: number) => ({
-        x: landmarks[idx].x * canvas.width,
-        y: landmarks[idx].y * canvas.height,
+        x: drawRect.offsetX + landmarks[idx].x * drawRect.drawWidth,
+        y: drawRect.offsetY + landmarks[idx].y * drawRect.drawHeight,
       });
 
       const upperOuter = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291];
@@ -386,13 +504,14 @@ export const AnalysisSidebar = ({
     const drawFaceGuides = () => {
       const landmarks = landmarksRef.current;
       if (!landmarks || landmarks.length === 0) return;
+      const drawRect = getVideoDrawRect();
 
       const guide = getFaceGuideData(landmarks);
       if (!guide) return;
 
       const toPoint = (p: { x: number; y: number }) => ({
-        x: p.x * canvas.width,
-        y: p.y * canvas.height,
+        x: drawRect.offsetX + p.x * drawRect.drawWidth,
+        y: drawRect.offsetY + p.y * drawRect.drawHeight,
       });
 
       const lCheek = toPoint(guide.leftCheek);
@@ -409,38 +528,172 @@ export const AnalysisSidebar = ({
       // 세로축(얼굴 중심축)에 수직인 단위벡터
       const px = -uy;
       const py = ux;
+      const toLandmark = (idx: number) => ({
+        x: drawRect.offsetX + (landmarks[idx]?.x ?? 0) * drawRect.drawWidth,
+        y: drawRect.offsetY + (landmarks[idx]?.y ?? 0) * drawRect.drawHeight,
+      });
+      const leftEyeLoop = [33, 160, 158, 133, 153, 144];
+      const rightEyeLoop = [362, 385, 387, 263, 373, 380];
+      const leftBrow = [70, 63, 105, 66, 107];
+      const rightBrow = [336, 296, 334, 293, 300];
+      const noseBridge = [168, 6, 197, 195, 5, 4, 1, 19, 94, 2];
+      const mouthOuter = [61, 40, 0, 267, 291, 321, 314, 17, 84, 91];
+      const anchorPoints = [105, 334, 61, 291, 1, 152];
+      const leftFaceIndices = [
+        10, 109, 67, 103, 54, 21, 162, 127, 234, 93, 132, 58, 172, 136, 150,
+        149, 176, 148,
+      ];
+      const rightFaceIndices = [
+        10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365,
+        379, 378, 400, 377,
+      ];
 
       const palette =
-        asymmetryVisual.state === "warning"
+        asymmetryVisual.trackingQualityPct < 55
           ? {
-              line: "rgba(248, 113, 113, 0.98)",
-              axis: "rgba(239, 68, 68, 0.98)",
+              line: "rgba(148, 163, 184, 0.52)",
+              axis: "rgba(100, 116, 139, 0.72)",
+              leftDot: "rgba(148, 163, 184, 0.38)",
+              rightDot: "rgba(148, 163, 184, 0.38)",
+              mouth: "rgba(148, 163, 184, 0.42)",
+            }
+          : asymmetryVisual.state === "warning"
+          ? {
+              line: "rgba(248, 113, 113, 0.68)",
+              axis: "rgba(239, 68, 68, 0.9)",
+              leftDot: "rgba(248, 113, 113, 0.34)",
+              rightDot: "rgba(74, 222, 128, 0.18)",
+              mouth: "rgba(248, 113, 113, 0.44)",
             }
           : asymmetryVisual.state === "caution"
             ? {
-                line: "rgba(251, 191, 36, 0.95)",
-                axis: "rgba(245, 158, 11, 0.98)",
+                line: "rgba(251, 191, 36, 0.6)",
+                axis: "rgba(245, 158, 11, 0.82)",
+                leftDot: "rgba(251, 191, 36, 0.22)",
+                rightDot: "rgba(74, 222, 128, 0.16)",
+                mouth: "rgba(251, 191, 36, 0.38)",
               }
             : {
-                line: "rgba(167, 243, 208, 0.95)",
-                axis: "rgba(16, 185, 129, 0.95)",
+                line: "rgba(167, 243, 208, 0.5)",
+                axis: "rgba(255, 214, 10, 0.78)",
+                leftDot: "rgba(250, 204, 21, 0.16)",
+                rightDot: "rgba(74, 222, 128, 0.16)",
+                mouth: "rgba(255, 214, 10, 0.28)",
               };
 
-      // 얼굴 중심 세로선 1개
+      const drawSoftDots = (indices: number[], color: string, radius = 1.6) => {
+        ctx.fillStyle = color;
+        indices.forEach((idx) => {
+          if (!landmarks[idx]) return;
+          const p = toLandmark(idx);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      };
+
+      const drawPolyline = (
+        indices: number[],
+        color: string,
+        width: number,
+        dashed = false,
+        closed = false,
+      ) => {
+        const valid = indices.filter((idx) => landmarks[idx]);
+        if (valid.length < 2) return;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.setLineDash(dashed ? [3, 3] : []);
+        ctx.beginPath();
+        valid.forEach((idx, index) => {
+          const p = toLandmark(idx);
+          if (index === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
+        if (closed) ctx.closePath();
+        ctx.stroke();
+        ctx.setLineDash([]);
+      };
+
+      const drawDenseLandmarks = () => {
+        landmarks.forEach((point: any, index: number) => {
+          if (!point) return;
+          const x = drawRect.offsetX + point.x * drawRect.drawWidth;
+          const y = drawRect.offsetY + point.y * drawRect.drawHeight;
+
+          let fill = "rgba(255,255,255,0.22)";
+          let radius = 0.9;
+
+          if (leftFaceIndices.includes(index)) {
+            fill = "rgba(248, 113, 113, 0.52)";
+            radius = 1.15;
+          } else if (rightFaceIndices.includes(index)) {
+            fill = "rgba(74, 222, 128, 0.52)";
+            radius = 1.15;
+          } else if (
+            leftEyeLoop.includes(index) ||
+            leftBrow.includes(index) ||
+            [61, 40, 0, 17, 84, 91].includes(index)
+          ) {
+            fill = "rgba(248, 113, 113, 0.58)";
+            radius = 1.1;
+          } else if (
+            rightEyeLoop.includes(index) ||
+            rightBrow.includes(index) ||
+            [267, 291, 321, 314].includes(index)
+          ) {
+            fill = "rgba(74, 222, 128, 0.58)";
+            radius = 1.1;
+          } else if (noseBridge.includes(index)) {
+            fill = "rgba(255, 214, 10, 0.6)";
+            radius = 1;
+          }
+
+          ctx.fillStyle = fill;
+          ctx.beginPath();
+          ctx.arc(x, y, radius, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      };
+
+      drawDenseLandmarks();
+      drawPolyline(leftEyeLoop, "rgba(255,255,255,0.58)", 0.9, false, true);
+      drawPolyline(rightEyeLoop, "rgba(255,255,255,0.58)", 0.9, false, true);
+      drawPolyline(leftBrow, "rgba(255,255,255,0.42)", 0.75);
+      drawPolyline(rightBrow, "rgba(255,255,255,0.42)", 0.75);
+      drawPolyline(noseBridge, "rgba(255,255,255,0.3)", 0.65);
+      drawPolyline(mouthOuter, palette.mouth, 0.95, false, true);
+      drawSoftDots(anchorPoints, "rgba(255,255,255,0.48)", 1.15);
+
+      // 품질이 낮으면 중심축만 점선으로 안내합니다.
       ctx.strokeStyle = palette.axis;
-      ctx.lineWidth = 1;
-      ctx.setLineDash([]);
+      ctx.lineWidth = asymmetryVisual.trackingQualityPct < 55 ? 0.8 : 1;
+      ctx.setLineDash(asymmetryVisual.trackingQualityPct < 55 ? [4, 4] : []);
       ctx.beginPath();
       ctx.moveTo(eye.x - ux * 14, eye.y - uy * 14);
       ctx.lineTo(chin.x + ux * 8, chin.y + uy * 8);
       ctx.stroke();
 
-      // 얼굴 중심 가로선 1개 (코 중심)
+      ctx.strokeStyle = "rgba(255, 214, 10, 0.5)";
+      ctx.lineWidth = 0.75;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      const eyeHalfSpan = Math.max(12, faceWidthPx * 0.2);
+      ctx.moveTo(eye.x - px * eyeHalfSpan, eye.y - py * eyeHalfSpan);
+      ctx.lineTo(eye.x + px * eyeHalfSpan, eye.y + py * eyeHalfSpan);
+      ctx.stroke();
+
+      if (asymmetryVisual.trackingQualityPct < 55) {
+        ctx.setLineDash([]);
+        return;
+      }
+
+      // 코 중심 기준 짧은 보조선
       ctx.strokeStyle = palette.line;
       ctx.lineWidth = 0.7;
       ctx.setLineDash([2, 2]);
       ctx.beginPath();
-      const halfSpan = Math.max(10, faceWidthPx * 0.44);
+      const halfSpan = Math.max(8, faceWidthPx * 0.18);
       ctx.moveTo(nose.x - px * halfSpan, nose.y - py * halfSpan);
       ctx.lineTo(nose.x + px * halfSpan, nose.y + py * halfSpan);
       ctx.stroke();
@@ -558,22 +811,13 @@ export const AnalysisSidebar = ({
           </div>
         </div>
 
-        <div className="absolute top-3 left-3 z-10">
-          <div
-            className={`px-2.5 py-1 rounded-lg text-[10px] font-black border backdrop-blur-sm ${
-              asymmetryVisual.state === "normal"
-                ? "bg-emerald-500/85 border-emerald-300 text-white"
-                : asymmetryVisual.state === "caution"
-                  ? "bg-amber-500/90 border-amber-200 text-slate-900"
-                  : asymmetryVisual.state === "warning"
-                    ? "bg-red-500/90 border-red-200 text-white"
-                    : "bg-black/40 border-white/30 text-white"
-            }`}
-          >
-            {asymmetryVisual.label}
-            {asymmetryVisual.detail ? ` · ${asymmetryVisual.detail}` : ""}
+        {shouldShowQualityHint ? (
+          <div className="absolute top-3 left-3 z-10">
+            <div className="px-2.5 py-1 rounded-lg text-[10px] font-black border backdrop-blur-sm bg-black/40 border-white/30 text-white">
+              추적 품질 조정 필요 · {asymmetryVisual.trackingQualityPct.toFixed(1)}%
+            </div>
           </div>
-        </div>
+        ) : null}
         {overlayMode === "lips" && trackingEnabled ? (
           <div className="absolute bottom-3 left-3 right-3 z-10">
             <div
@@ -595,9 +839,11 @@ export const AnalysisSidebar = ({
         <div className="lg:hidden rounded-[14px] border border-gray-100 bg-[#FBFBFC] px-3 py-3">
         <div className="grid grid-cols-2 gap-2 text-[11px] font-black text-slate-500">
           <div className="rounded-lg border border-slate-100 bg-white px-2 py-1.5">
-            안면대칭성{" "}
+            안면반응 참고{" "}
             <b className="text-emerald-600">
-              {Number(metrics.symmetryScore || 0).toFixed(1)}%
+              {trackingQuality < 55
+                ? "측정불안정"
+                : `${Number(metrics.symmetryScore || 0).toFixed(1)}%`}
             </b>
           </div>
           <div className="rounded-lg border border-slate-100 bg-white px-2 py-1.5">
@@ -664,9 +910,15 @@ export const AnalysisSidebar = ({
       {!hideMetrics ? (
         <div className="hidden lg:block flex-1 bg-[#FBFBFC] rounded-[24px] p-5 space-y-4 border border-gray-50 shadow-sm overflow-y-auto min-h-0">
         <MetricBar
-          label="안면 대칭성"
-          value={metrics.symmetryScore}
-          color="bg-emerald-400"
+          label="안면 반응 참고"
+          value={trackingQuality < 55 ? 0 : metrics.symmetryScore}
+          color={trackingQuality < 55 ? "bg-slate-400" : "bg-emerald-400"}
+          valueLabel={
+            trackingQuality < 55
+              ? "측정 불안정"
+              : `${Number(metrics.symmetryScore || 0).toFixed(1)}%`
+          }
+          meta={`추적 품질 ${trackingQuality.toFixed(1)}%`}
         />
 
         <div className="pt-3 border-t border-gray-100 space-y-4">

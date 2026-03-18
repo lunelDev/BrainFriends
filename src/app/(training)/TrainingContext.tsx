@@ -27,6 +27,7 @@ interface SidebarMetrics {
   mouthWidth: number;
   eyebrowLift: number;
   eyeClosureStrength: number;
+  trackingQuality: number;
   vowelAccuracy: number;
   consonantAccuracy: number;
   consonantClosureRate: number; // 자음-폐쇄율 (%)
@@ -76,6 +77,7 @@ export function TrainingProvider({ children }: { children: React.ReactNode }) {
     mouthWidth: 0,
     eyebrowLift: 0,
     eyeClosureStrength: 0,
+    trackingQuality: 0,
     vowelAccuracy: 0,
     consonantAccuracy: 0,
     consonantClosureRate: 0,

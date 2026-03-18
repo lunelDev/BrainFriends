@@ -78,7 +78,7 @@ export default function TrainingUsageAdminPage() {
           if (error instanceof Error && error.message === "forbidden") {
             setIsForbidden(true);
           } else {
-            setError("전체 환자 타임라인을 불러오지 못했습니다.");
+            setError("전체 사용자 타임라인을 불러오지 못했습니다.");
           }
         }
       })
@@ -187,10 +187,10 @@ export default function TrainingUsageAdminPage() {
             Admin Timeline
           </p>
           <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-900">
-            전체 환자 사용 타임라인
+            전체 사용자 사용 타임라인
           </h1>
           <p className="mt-2 text-sm font-medium text-slate-500">
-            로그인된 내부 사용자가 모든 환자의 훈련 이벤트를 환자명/아이디 기준으로 검색합니다.
+            로그인된 내부 사용자가 모든 사용자의 훈련 이벤트를 사용자명/아이디 기준으로 검색합니다.
           </p>
         </section>
 
@@ -203,7 +203,7 @@ export default function TrainingUsageAdminPage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="환자명, login_id, patient_code, 가명 ID"
+                placeholder="사용자명, login_id, patient_code, 가명 ID"
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700"
               />
             </label>
@@ -252,7 +252,7 @@ export default function TrainingUsageAdminPage() {
           {isForbidden ? (
             <p className="text-sm font-bold text-slate-500">관리자 계정만 접근할 수 있습니다.</p>
           ) : isLoading ? (
-            <p className="text-sm font-bold text-slate-500">전체 환자 타임라인을 불러오는 중입니다.</p>
+            <p className="text-sm font-bold text-slate-500">전체 사용자 타임라인을 불러오는 중입니다.</p>
           ) : error ? (
             <p className="text-sm font-bold text-red-500">{error}</p>
           ) : !groupedEvents.length ? (

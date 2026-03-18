@@ -141,6 +141,7 @@ export async function saveTrainingHistoryToDatabase(params: {
           step_details,
           articulation_scores,
           facial_analysis_snapshot,
+          measurement_quality,
           step_version_snapshots,
           source_history_id,
           created_at
@@ -157,7 +158,8 @@ export async function saveTrainingHistoryToDatabase(params: {
           $9::jsonb,
           $10::jsonb,
           $11::jsonb,
-          $12,
+          $12::jsonb,
+          $13,
           NOW()
         )
         ON CONFLICT (result_id) DO UPDATE
@@ -169,6 +171,7 @@ export async function saveTrainingHistoryToDatabase(params: {
           step_details = EXCLUDED.step_details,
           articulation_scores = EXCLUDED.articulation_scores,
           facial_analysis_snapshot = EXCLUDED.facial_analysis_snapshot,
+          measurement_quality = EXCLUDED.measurement_quality,
           step_version_snapshots = EXCLUDED.step_version_snapshots,
           source_history_id = EXCLUDED.source_history_id
       `,
@@ -183,6 +186,7 @@ export async function saveTrainingHistoryToDatabase(params: {
         JSON.stringify(safeStepDetails),
         JSON.stringify(historyEntry.articulationScores ?? null),
         JSON.stringify(historyEntry.facialAnalysisSnapshot ?? null),
+        JSON.stringify(historyEntry.measurementQuality ?? null),
         JSON.stringify(historyEntry.stepVersionSnapshots ?? null),
         historyEntry.historyId,
       ],

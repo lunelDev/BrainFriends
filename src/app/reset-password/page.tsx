@@ -86,7 +86,7 @@ export default function ResetPasswordPage() {
               비밀번호 재설정
             </h1>
             <p className="mt-2 text-sm font-medium text-slate-500">
-              가입 시 입력한 환자 정보로 비밀번호를 새로 설정합니다.
+              가입 시 입력한 사용자 정보로 비밀번호를 새로 설정합니다.
             </p>
           </div>
           <Link href="/" className="text-sm font-bold text-slate-500 hover:text-slate-700">

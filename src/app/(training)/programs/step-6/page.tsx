@@ -15,10 +15,6 @@ import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { loadPatientProfile } from "@/lib/patientStorage";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
-import {
-  dataUrlToBlob,
-  uploadClinicalMedia,
-} from "@/lib/client/clinicalMediaUpload";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import { calculateHangulStrokeCount } from "@/lib/text/hangulStroke";
 import { calculateArticulationWritingConsistency } from "@/lib/analysis/articulationAnalyzer";
@@ -467,27 +463,6 @@ function Step6Content() {
       persistStep6Entry(newEntry);
 
       console.log("Step 6 데이터 저장", newEntry);
-      const patient = loadPatientProfile();
-      if (patient && imageData) {
-        dataUrlToBlob(imageData)
-          .then((imageBlob) =>
-            uploadClinicalMedia({
-              patient,
-              sourceSessionKey: patient.sessionId,
-              trainingType: clinicalTrainingType,
-              stepNo: 6,
-              mediaType: "image",
-              captureRole: "step6-image",
-              labelSegment: currentWord.answer,
-              blob: imageBlob,
-              fileExtension: "jpg",
-            }),
-          )
-          .catch((uploadError) => {
-            console.error("[Step6] failed to upload clinical image", uploadError);
-          });
-      }
-
       setCorrectCount((prev) => prev + 1);
       setFailedAttempts(0);
       setPraiseMessage(

@@ -226,6 +226,20 @@ export interface TrainingSession {
 const SESSION_STORAGE_PREFIX = "kwab_training_session";
 const HISTORY_STORAGE_PREFIX = "kwab_training_history";
 export type TrainingMode = "self" | "rehab" | "sing";
+export type MeasurementQualityLevel = "measured" | "partial" | "demo";
+
+export interface MeasurementQualitySnapshot {
+  overall: MeasurementQualityLevel;
+  steps: {
+    step1: MeasurementQualityLevel;
+    step2: MeasurementQualityLevel;
+    step3: MeasurementQualityLevel;
+    step4: MeasurementQualityLevel;
+    step5: MeasurementQualityLevel;
+    step6: MeasurementQualityLevel;
+  };
+  notes: string[];
+}
 
 export interface SingHistoryResult {
   versionSnapshot?: VersionSnapshot;
@@ -234,6 +248,10 @@ export interface SingHistoryResult {
   finalJitter: string;
   finalSi: string;
   rtLatency: string;
+  finalConsonant?: string;
+  finalVowel?: string;
+  lyricAccuracy?: string;
+  transcript?: string;
   comment: string;
   governance?: {
     catalogVersion: string;
@@ -309,6 +327,28 @@ export interface TrainingHistoryEntry {
     overallVowel: number;
     articulationFaceMatchSummary: string;
     timelineCurrentAsymmetry: number;
+    trackingQuality?: number;
+    baseline?: {
+      oralCommissureAsymmetry: number;
+      lipClosureAsymmetry: number;
+      vowelArticulationVariance: number;
+    };
+    sessionAverage?: {
+      oralCommissureAsymmetry: number;
+      lipClosureAsymmetry: number;
+      vowelArticulationVariance: number;
+    };
+    delta?: {
+      oralCommissureAsymmetry: number;
+      lipClosureAsymmetry: number;
+      vowelArticulationVariance: number;
+    };
+    longitudinalDelta?: {
+      oralCommissureAsymmetry: number | null;
+      lipClosureAsymmetry: number | null;
+      vowelArticulationVariance: number | null;
+      asymmetryRisk: number | null;
+    };
   };
   stepVersionSnapshots?: {
     step1?: VersionSnapshot;
@@ -318,6 +358,7 @@ export interface TrainingHistoryEntry {
     step5?: VersionSnapshot;
     step6?: VersionSnapshot;
   };
+  measurementQuality?: MeasurementQualitySnapshot;
 }
 
 export class SessionManager {
@@ -759,6 +800,15 @@ export class SessionManager {
         .filter((v) => Number.isFinite(v) && v > 0);
       return avg(vals);
     };
+    const averageSlice = (values: number[], ratio: number) => {
+      if (!values.length) return 0;
+      const count = Math.max(1, Math.ceil(values.length * ratio));
+      return avg(values.slice(0, count));
+    };
+    const normalizedInverse = (values: number[]) =>
+      values
+        .map((v) => Math.max(0, Math.min(100, 100 - v)))
+        .filter((v) => Number.isFinite(v));
     const toNums = (rows: any[], key: string) =>
       rows
         .map((r) => Number((r as any)?.[key]))
@@ -782,12 +832,61 @@ export class SessionManager {
       step4Vowel,
       Number(this.session.step5?.averageVowelAccuracy ?? 0),
     ].filter((v) => v > 0));
+    const step2SymmetryInverse = normalizedInverse(toNums(step2Rows, "symmetryScore"));
+    const step2ClosureInverse = normalizedInverse(
+      step2Rows
+        .map((row) => Number((row as any)?.consonantDetail?.lipSymmetryPct))
+        .filter((v) => Number.isFinite(v)),
+    );
+    const step4ClosureInverse = normalizedInverse(
+      step4Rows
+        .map((row) => Number((row as any)?.consonantDetail?.lipSymmetryPct))
+        .filter((v) => Number.isFinite(v)),
+    );
+    const step5ClosureInverse = normalizedInverse(
+      step5Rows
+        .map((row) => Number((row as any)?.consonantDetail?.lipSymmetryPct))
+        .filter((v) => Number.isFinite(v)),
+    );
+    const oralCommissureBaseline = averageSlice(step2SymmetryInverse, 0.35);
+    const oralCommissureCurrent = avg(step2SymmetryInverse);
+    const lipClosureBaseline = averageSlice(
+      [...step2ClosureInverse, ...step4ClosureInverse, ...step5ClosureInverse],
+      0.35,
+    );
+    const lipClosureCurrent = avg([
+      avg(step2ClosureInverse),
+      avg(step4ClosureInverse),
+      avg(step5ClosureInverse),
+    ].filter((v) => v > 0));
+    const vowelVarianceBaseline = Number(
+      Math.abs(
+        averageSlice(
+          step2Rows
+            .map((row) => Number((row as any)?.vowelAccuracy))
+            .filter((v) => Number.isFinite(v)),
+          0.35,
+        ) -
+          averageSlice(
+            step5Rows
+              .map((row) => Number((row as any)?.vowelAccuracy))
+              .filter((v) => Number.isFinite(v)),
+            0.35,
+          ),
+      ).toFixed(1),
+    );
+    const vowelVarianceCurrent = Number(Math.abs(overallConsonant - overallVowel).toFixed(1));
     const asymmetryRisk = avg(
-      toNums(step2Rows, "symmetryScore").map((v) =>
-        Math.max(0, Math.min(100, 100 - v)),
-      ),
+      [oralCommissureCurrent, lipClosureCurrent, vowelVarianceCurrent].filter((v) => v > 0),
     );
     const articulationGap = Math.abs(overallConsonant - overallVowel);
+    const trackingQuality = avg(
+      [
+        avgByKey(step2Rows, "trackingQualityPct"),
+        avgByKey(step4Rows, "trackingQualityPct"),
+        avgByKey(step5Rows, "trackingQualityPct"),
+      ].filter((v) => v > 0),
+    );
     const articulationFaceMatchSummary =
       asymmetryRisk >= 45 && articulationGap >= 18
         ? "비대칭 및 자모음 편차가 동반되어 협응 훈련 권고"
@@ -838,6 +937,132 @@ export class SessionManager {
             };
           })()
         : fullStepVersionSnapshots;
+
+    const deriveStepQuality = (
+      stepNo: 1 | 2 | 3 | 4 | 5 | 6,
+    ): MeasurementQualityLevel => {
+      const rows = stepDetails[`step${stepNo}` as keyof typeof stepDetails] as any[];
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return "demo";
+      }
+
+      if (stepNo === 2 || stepNo === 5) {
+        const measuredCount = rows.filter((row) => row?.dataSource === "measured").length;
+        const demoCount = rows.filter((row) => row?.dataSource === "demo").length;
+        if (measuredCount === rows.length) return "measured";
+        if (demoCount === rows.length) return "demo";
+        return measuredCount > 0 ? "partial" : "demo";
+      }
+
+      if (stepNo === 4) {
+        const transcriptCount = rows.filter(
+          (row) =>
+            String(row?.transcript ?? "").trim().length > 0 &&
+            String(row?.transcript ?? "").trim() !== "시연용 더미 응답입니다.",
+        ).length;
+        if (transcriptCount === rows.length) return "measured";
+        if (transcriptCount > 0) return "partial";
+        return "demo";
+      }
+
+      if (stepNo === 6) {
+        const imageCount = rows.filter(
+          (row) => String(row?.userImage ?? "").trim().length > 0,
+        ).length;
+        if (imageCount === rows.length) return "measured";
+        if (imageCount > 0) return "partial";
+        return "demo";
+      }
+
+      if (stepNo === 1) {
+        const answeredCount = rows.filter((row) => row?.userAnswer !== null && row?.userAnswer !== undefined).length;
+        if (answeredCount === rows.length) return "measured";
+        if (answeredCount > 0) return "partial";
+        return "demo";
+      }
+
+      if (stepNo === 3) {
+        const evaluatedCount = rows.filter((row) => row?.isCorrect !== undefined).length;
+        if (evaluatedCount === rows.length) return "measured";
+        if (evaluatedCount > 0) return "partial";
+        return "demo";
+      }
+
+      return "demo";
+    };
+
+    const measurementQuality: MeasurementQualitySnapshot = {
+      steps: {
+        step1: deriveStepQuality(1),
+        step2: deriveStepQuality(2),
+        step3: deriveStepQuality(3),
+        step4: deriveStepQuality(4),
+        step5: deriveStepQuality(5),
+        step6: deriveStepQuality(6),
+      },
+      overall: "demo",
+      notes: [],
+    };
+
+    const activeQualities = mode === "rehab" && normalizedRehabStep
+      ? [measurementQuality.steps[`step${normalizedRehabStep}` as keyof typeof measurementQuality.steps]]
+      : Object.values(measurementQuality.steps);
+    if (activeQualities.every((level) => level === "measured")) {
+      measurementQuality.overall = "measured";
+    } else if (activeQualities.some((level) => level === "measured" || level === "partial")) {
+      measurementQuality.overall = "partial";
+    } else {
+      measurementQuality.overall = "demo";
+    }
+    measurementQuality.notes = [
+      `overall=${measurementQuality.overall}`,
+      ...Object.entries(measurementQuality.steps).map(([key, value]) => `${key}=${value}`),
+    ];
+    const previousComparableEntry = [...existing]
+      .sort((a, b) => b.completedAt - a.completedAt)
+      .find((row) => {
+        if (mode === "rehab") {
+          return (
+            row.trainingMode === "rehab" &&
+            Number(row.rehabStep ?? 0) === Number(normalizedRehabStep ?? 0)
+          );
+        }
+        return (row.trainingMode ?? "self") === mode;
+      });
+    const previousFacialSnapshot = previousComparableEntry?.facialAnalysisSnapshot;
+    const longitudinalDelta = {
+      oralCommissureAsymmetry:
+        previousFacialSnapshot?.sessionAverage?.oralCommissureAsymmetry != null
+          ? Number(
+              (
+                oralCommissureCurrent -
+                Number(previousFacialSnapshot.sessionAverage.oralCommissureAsymmetry)
+              ).toFixed(1),
+            )
+          : null,
+      lipClosureAsymmetry:
+        previousFacialSnapshot?.sessionAverage?.lipClosureAsymmetry != null
+          ? Number(
+              (
+                lipClosureCurrent -
+                Number(previousFacialSnapshot.sessionAverage.lipClosureAsymmetry)
+              ).toFixed(1),
+            )
+          : null,
+      vowelArticulationVariance:
+        previousFacialSnapshot?.sessionAverage?.vowelArticulationVariance != null
+          ? Number(
+              (
+                vowelVarianceCurrent -
+                Number(previousFacialSnapshot.sessionAverage.vowelArticulationVariance)
+              ).toFixed(1),
+            )
+          : null,
+      asymmetryRisk:
+        previousFacialSnapshot?.asymmetryRisk != null
+          ? Number((asymmetryRisk - Number(previousFacialSnapshot.asymmetryRisk)).toFixed(1))
+          : null,
+    };
 
     const entry: TrainingHistoryEntry = {
       historyId: `history_${Date.now()}`,
@@ -908,7 +1133,31 @@ export class SessionManager {
         overallVowel: Number(overallVowel.toFixed(1)),
         articulationFaceMatchSummary,
         timelineCurrentAsymmetry: Number(asymmetryRisk.toFixed(1)),
+        trackingQuality: Number(trackingQuality.toFixed(1)),
+        baseline: {
+          oralCommissureAsymmetry: Number(oralCommissureBaseline.toFixed(1)),
+          lipClosureAsymmetry: Number(lipClosureBaseline.toFixed(1)),
+          vowelArticulationVariance: vowelVarianceBaseline,
+        },
+        sessionAverage: {
+          oralCommissureAsymmetry: Number(oralCommissureCurrent.toFixed(1)),
+          lipClosureAsymmetry: Number(lipClosureCurrent.toFixed(1)),
+          vowelArticulationVariance: vowelVarianceCurrent,
+        },
+        delta: {
+          oralCommissureAsymmetry: Number(
+            (oralCommissureCurrent - oralCommissureBaseline).toFixed(1),
+          ),
+          lipClosureAsymmetry: Number(
+            (lipClosureCurrent - lipClosureBaseline).toFixed(1),
+          ),
+          vowelArticulationVariance: Number(
+            (vowelVarianceCurrent - vowelVarianceBaseline).toFixed(1),
+          ),
+        },
+        longitudinalDelta,
       },
+      measurementQuality,
     };
 
     const withoutSameSession = existing.filter((e) => e.sessionId !== entry.sessionId);

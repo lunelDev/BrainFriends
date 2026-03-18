@@ -20,7 +20,7 @@ export async function POST(req: Request) {
       phoneLast4: String(body.phoneLast4 ?? ""),
       newPassword: String(body.newPassword ?? ""),
     });
-    return NextResponse.json({ ok: true, ...result });
+    return NextResponse.json(result);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "failed_to_reset_password";

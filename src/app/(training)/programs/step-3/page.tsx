@@ -28,6 +28,10 @@ import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import { buildVersionSnapshot } from "@/lib/analysis/versioning";
 import { logTrainingEvent } from "@/lib/client/trainingEventsApi";
 import {
+  cancelSpeechPlayback,
+  speakKoreanText,
+} from "@/lib/client/speechSynthesis";
+import {
   buildImageCandidates,
   shuffleArray,
   type Step3VisualOption as VisualOption,
@@ -404,8 +408,7 @@ function Step3Content() {
     GLOBAL_SPEECH_LOCK = {};
 
     return () => {
-      if (typeof window !== "undefined" && window.speechSynthesis)
-        window.speechSynthesis.cancel();
+      cancelSpeechPlayback();
     };
   }, []);
 
@@ -437,30 +440,13 @@ function Step3Content() {
   }, [protocol, stepSignature]);
 
   const speakWord = useCallback((text: string) => {
-    if (typeof window === "undefined") return;
     setIsSpeaking(true);
     setCanAnswer(false);
-    const synth = window.speechSynthesis;
-    synth.cancel();
-    synth.resume();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "ko-KR";
-    utterance.rate = 0.85;
-    const koVoice = synth
-      .getVoices()
-      .find((v) => v.lang?.toLowerCase().startsWith("ko"));
-    if (koVoice) utterance.voice = koVoice;
-    utterance.onend = () => {
+    void speakKoreanText(text, { rate: 0.96 }).finally(() => {
       setIsSpeaking(false);
       setCanAnswer(true);
       setQuestionStartTime(Date.now());
-    };
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-      setCanAnswer(true);
-      setQuestionStartTime(Date.now());
-    };
-    synth.speak(utterance);
+    });
   }, []);
 
   useEffect(() => {
@@ -709,9 +695,7 @@ function Step3Content() {
     try {
       const randomFloat = (min: number, max: number, digits = 1) =>
         Number((Math.random() * (max - min) + min).toFixed(digits));
-      if (typeof window !== "undefined" && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
+      cancelSpeechPlayback();
 
       const demoResults = protocol.map((item) => {
         const isCorrect = Math.random() < 0.72;

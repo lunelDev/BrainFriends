@@ -19,11 +19,15 @@ import {
   SONGS,
 } from "@/features/sing-training/data/songs";
 import { SongKey, SyllableCue } from "@/features/sing-training/types";
+import { useTraining } from "../../TrainingContext";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { buildVersionSnapshot, type VersionSnapshot } from "@/lib/analysis/versioning";
 import { loadPatientProfile } from "@/lib/patientStorage";
-import { dataUrlToBlob, uploadClinicalMedia } from "@/lib/client/clinicalMediaUpload";
 import { logTrainingEvent } from "@/lib/client/trainingEventsApi";
+import {
+  PronunciationAnalyzer,
+  WhisperTranscriber,
+} from "@/lib/speech/SpeechAnalyzer";
 
 type Phase = "select" | "ready" | "countdown" | "singing" | "result";
 
@@ -41,13 +45,22 @@ type SingResultEnvelope = {
   finalJitter: string;
   finalSi: string;
   rtLatency: string;
+  finalConsonant?: string;
+  finalVowel?: string;
+  lyricAccuracy?: string;
+  transcript?: string;
+  metricSource?: "measured" | "demo";
   comment: string;
   rankings: RankRow[];
   completedAt: number;
   reviewAudioUrl?: string | null;
   reviewAudioMediaId?: string | null;
   reviewAudioObjectKey?: string | null;
-  reviewAudioUploadState?: "uploaded" | "failed" | "not_recorded";
+  reviewAudioUploadState?:
+    | "uploaded"
+    | "failed"
+    | "not_recorded"
+    | "pending_result_sync";
   reviewAudioUploadError?: string | null;
   governance: {
     catalogVersion: string;
@@ -59,6 +72,169 @@ type SingResultEnvelope = {
 };
 
 const LYRIC_LEAD_OFFSET_SEC = 0.28;
+const AUDIO_LEVEL_ONSET_THRESHOLD = 0.02;
+const MIN_VOICED_RMS = 0.015;
+const MIN_MEASURED_PITCH_SAMPLES = 8;
+const MIN_MEASURED_FACE_SAMPLES = 8;
+const MIN_SING_TRANSCRIPT_CHARS = 6;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function computeRms(samples: ArrayLike<number>) {
+  if (!samples.length) return 0;
+  let sum = 0;
+  for (let i = 0; i < samples.length; i += 1) {
+    sum += samples[i] * samples[i];
+  }
+  return Math.sqrt(sum / samples.length);
+}
+
+function estimatePitchHz(samples: ArrayLike<number>, sampleRate: number) {
+  const size = samples.length;
+  if (!size || sampleRate <= 0) return null;
+  const rms = computeRms(samples);
+  if (rms < MIN_VOICED_RMS) return null;
+
+  let bestLag = -1;
+  let bestCorr = 0;
+  const minLag = Math.floor(sampleRate / 400);
+  const maxLag = Math.floor(sampleRate / 80);
+
+  for (let lag = minLag; lag <= maxLag; lag += 1) {
+    let corr = 0;
+    for (let i = 0; i < size - lag; i += 1) {
+      corr += samples[i] * samples[i + lag];
+    }
+    if (corr > bestCorr) {
+      bestCorr = corr;
+      bestLag = lag;
+    }
+  }
+
+  if (bestLag <= 0 || bestCorr <= 0) return null;
+  return sampleRate / bestLag;
+}
+
+function buildMeasuredComment(params: {
+  jitterPct: number;
+  facialSymmetry: number | null;
+  latencyMs: number | null;
+  consonantAccuracy: number;
+  vowelAccuracy: number;
+  lyricAccuracy: number;
+}) {
+  const latencyText =
+    params.latencyMs == null ? "반응속도는 측정되지 않았습니다" : `반응 시작 시간은 ${params.latencyMs}ms`;
+  const faceText =
+    params.facialSymmetry == null
+      ? "안면 대칭 지수는 측정되지 않았습니다"
+      : `안면 대칭 지수는 ${params.facialSymmetry.toFixed(1)}점`;
+  return `가창 분석 결과 자음 정확도는 ${params.consonantAccuracy.toFixed(1)}점, 모음 정확도는 ${params.vowelAccuracy.toFixed(1)}점, 가사 일치도는 ${params.lyricAccuracy.toFixed(1)}점으로 분석되었습니다. ${faceText}이며 발성 흔들림은 ${params.jitterPct.toFixed(2)}% 수준입니다. ${latencyText}.`;
+}
+
+function normalizeLyricsForAnalysis(text: string) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .replace(/[~"'.,!?]/g, "")
+    .trim();
+}
+
+function buildExpectedSongLyrics(songKey: SongKey) {
+  return normalizeLyricsForAnalysis(
+    SONGS[songKey].lyrics.map((line) => line.txt).join(" "),
+  );
+}
+
+async function analyzeSongPronunciation(params: {
+  audioBlob: Blob | null;
+  expectedLyrics: string;
+}) {
+  if (!params.audioBlob) {
+    return {
+      transcript: "",
+      consonantAccuracy: null,
+      vowelAccuracy: null,
+      lyricAccuracy: null,
+      errorReason: "missing_audio_blob",
+    };
+  }
+
+  if (process.env.NEXT_PUBLIC_DEV_MODE === "true") {
+    return {
+      transcript: "",
+      consonantAccuracy: null,
+      vowelAccuracy: null,
+      lyricAccuracy: null,
+      errorReason: "dev_mode_mock",
+    };
+  }
+
+  try {
+    const transcriber = new WhisperTranscriber();
+    const analyzer = new PronunciationAnalyzer();
+    const { text } = await transcriber.transcribe(params.audioBlob);
+    const transcript = normalizeLyricsForAnalysis(text);
+    if ((transcript.match(/[가-힣a-zA-Z0-9]/g) || []).length < MIN_SING_TRANSCRIPT_CHARS) {
+      return {
+        transcript,
+        consonantAccuracy: null,
+        vowelAccuracy: null,
+        lyricAccuracy: null,
+        errorReason: "insufficient_transcript",
+      };
+    }
+
+    const detail = analyzer.analyzeDetailed(params.expectedLyrics, transcript);
+    return {
+      transcript,
+      consonantAccuracy: Number(detail.consonantAccuracy.toFixed(1)),
+      vowelAccuracy: Number(detail.vowelAccuracy.toFixed(1)),
+      lyricAccuracy: Number(detail.syllableAccuracy.toFixed(1)),
+      errorReason: null,
+    };
+  } catch (error) {
+    return {
+      transcript: "",
+      consonantAccuracy: null,
+      vowelAccuracy: null,
+      lyricAccuracy: null,
+      errorReason: error instanceof Error ? error.message : "stt_unknown_error",
+    };
+  }
+}
+
+function calculateCompositeSingScore(metrics: {
+  consonantAccuracy: number | null;
+  vowelAccuracy: number | null;
+  lyricAccuracy: number | null;
+  facialSymmetry: number | null;
+  latencyMs: number | null;
+}) {
+  const weightedParts: Array<{ value: number | null; weight: number }> = [
+    { value: metrics.consonantAccuracy, weight: 0.35 },
+    { value: metrics.vowelAccuracy, weight: 0.35 },
+    { value: metrics.lyricAccuracy, weight: 0.15 },
+    { value: metrics.facialSymmetry, weight: 0.1 },
+    {
+      value:
+        metrics.latencyMs == null
+          ? null
+          : clamp(100 - Math.max(0, metrics.latencyMs - 180) / 6, 0, 100),
+      weight: 0.05,
+    },
+  ];
+
+  const available = weightedParts.filter((part) => part.value != null);
+  if (!available.length) return 0;
+  const totalWeight = available.reduce((sum, part) => sum + part.weight, 0);
+  const totalScore = available.reduce(
+    (sum, part) => sum + Number(part.value) * (part.weight / totalWeight),
+    0,
+  );
+  return Math.round(clamp(totalScore, 0, 100));
+}
 
 function renderProgressLyric(
   text: string,
@@ -125,6 +301,7 @@ function BrainSingPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { patient, ageGroup } = useTrainingSession();
+  const { sidebarMetrics } = useTraining();
 
   useEffect(() => {
     void logTrainingEvent({
@@ -144,6 +321,10 @@ function BrainSingPageContent() {
   const songAudioRef = useRef<HTMLAudioElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const measurementAudioContextRef = useRef<AudioContext | null>(null);
+  const measurementAnalyserRef = useRef<AnalyserNode | null>(null);
+  const measurementDataRef = useRef<Float32Array<ArrayBuffer> | null>(null);
+  const measurementSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const clockTimerRef = useRef<number | null>(null);
   const countdownTimerRef = useRef<number | null>(null);
@@ -151,6 +332,10 @@ function BrainSingPageContent() {
   const finishTimerRef = useRef<number | null>(null);
   const finishGuardRef = useRef(false);
   const audioEndedRef = useRef(false);
+  const sessionStartRef = useRef<number | null>(null);
+  const measuredPitchHistoryRef = useRef<number[]>([]);
+  const measuredSymmetryHistoryRef = useRef<number[]>([]);
+  const voiceOnsetLatencyMsRef = useRef<number | null>(null);
 
   const requestedSong = useMemo(() => {
     const raw = searchParams.get("song");
@@ -255,6 +440,23 @@ function BrainSingPageContent() {
       }
       mediaRecorderRef.current = null;
     }
+    if (measurementSourceRef.current) {
+      measurementSourceRef.current.disconnect();
+      measurementSourceRef.current = null;
+    }
+    if (measurementAnalyserRef.current) {
+      measurementAnalyserRef.current.disconnect();
+      measurementAnalyserRef.current = null;
+    }
+    if (measurementAudioContextRef.current) {
+      void measurementAudioContextRef.current.close();
+      measurementAudioContextRef.current = null;
+    }
+    measurementDataRef.current = null;
+    measuredPitchHistoryRef.current = [];
+    measuredSymmetryHistoryRef.current = [];
+    voiceOnsetLatencyMsRef.current = null;
+    sessionStartRef.current = null;
     recordedChunksRef.current = [];
     if (videoRef.current) {
       videoRef.current.srcObject = null;
@@ -313,6 +515,18 @@ function BrainSingPageContent() {
     recordedChunksRef.current = [];
 
     try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const audioContext = new AudioCtx();
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.2;
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+      measurementAudioContextRef.current = audioContext;
+      measurementAnalyserRef.current = analyser;
+      measurementSourceRef.current = source;
+      measurementDataRef.current = new Float32Array(analyser.fftSize) as Float32Array<ArrayBuffer>;
+
       const recorder = new MediaRecorder(new MediaStream(audioTracks));
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -323,40 +537,59 @@ function BrainSingPageContent() {
       mediaRecorderRef.current = recorder;
     } catch (error) {
       console.warn("[brain-sing] voice recording start failed", error);
+      if (measurementSourceRef.current) {
+        measurementSourceRef.current.disconnect();
+        measurementSourceRef.current = null;
+      }
+      if (measurementAnalyserRef.current) {
+        measurementAnalyserRef.current.disconnect();
+        measurementAnalyserRef.current = null;
+      }
+      if (measurementAudioContextRef.current) {
+        void measurementAudioContextRef.current.close();
+        measurementAudioContextRef.current = null;
+      }
+      measurementDataRef.current = null;
       mediaRecorderRef.current = null;
       recordedChunksRef.current = [];
     }
   };
 
-  const stopVoiceRecording = async () => {
+  const stopVoiceRecording = async (): Promise<{
+    dataUrl: string | null;
+    blob: Blob | null;
+  }> => {
     const recorder = mediaRecorderRef.current;
-    if (!recorder) return null;
+    if (!recorder) return { dataUrl: null, blob: null };
 
     if (recorder.state === "inactive") {
       mediaRecorderRef.current = null;
-      if (!recordedChunksRef.current.length) return null;
+      if (!recordedChunksRef.current.length) return { dataUrl: null, blob: null };
       const blob = new Blob(recordedChunksRef.current, {
         type: recorder.mimeType || "audio/webm",
       });
       recordedChunksRef.current = [];
-      return blobToDataUrl(blob);
+      return {
+        dataUrl: await blobToDataUrl(blob),
+        blob,
+      };
     }
 
-    return new Promise<string | null>((resolve) => {
+    return new Promise<{ dataUrl: string | null; blob: Blob | null }>((resolve) => {
       recorder.onstop = async () => {
         try {
           if (!recordedChunksRef.current.length) {
-            resolve(null);
+            resolve({ dataUrl: null, blob: null });
             return;
           }
           const blob = new Blob(recordedChunksRef.current, {
             type: recorder.mimeType || "audio/webm",
           });
           const dataUrl = await blobToDataUrl(blob);
-          resolve(dataUrl);
+          resolve({ dataUrl, blob });
         } catch (error) {
           console.warn("[brain-sing] voice recording finalize failed", error);
-          resolve(null);
+          resolve({ dataUrl: null, blob: null });
         } finally {
           recordedChunksRef.current = [];
           mediaRecorderRef.current = null;
@@ -386,6 +619,9 @@ function BrainSingPageContent() {
     if (!requestedSong) return;
     setSong(requestedSong);
     setPhase("ready");
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem("brain-sing-last-song", requestedSong);
+    }
   }, [requestedSong]);
 
   const prepareSong = (selected: SongKey) => {
@@ -400,9 +636,34 @@ function BrainSingPageContent() {
     setRtSi("0.0");
     setRtLatency("-- ms");
     setScanStatus("READY");
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem("brain-sing-last-song", selected);
+    }
   };
 
   const startCountdown = async () => {
+    const beginCountdown = () => {
+      setCountdown(3);
+      setPhase("countdown");
+      setScanStatus("CALIBRATING");
+
+      countdownTimerRef.current = window.setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            if (countdownTimerRef.current !== null) {
+              window.clearInterval(countdownTimerRef.current);
+              countdownTimerRef.current = null;
+            }
+            window.setTimeout(() => {
+              startSinging();
+            }, 450);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    };
+
     try {
       if (songAudioRef.current) {
         try {
@@ -427,77 +688,87 @@ function BrainSingPageContent() {
         sideVideoRef.current.srcObject = stream;
       }
 
-      setCountdown(3);
-      setPhase("countdown");
-      setScanStatus("CALIBRATING");
-
-      countdownTimerRef.current = window.setInterval(() => {
-        setCountdown((prev) => {
-          if (prev <= 1) {
-            if (countdownTimerRef.current !== null) {
-              window.clearInterval(countdownTimerRef.current);
-              countdownTimerRef.current = null;
-            }
-            window.setTimeout(() => {
-              startSinging();
-            }, 450);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
+      beginCountdown();
     } catch {
-      window.alert("카메라 및 마이크 권한이 필요합니다.");
+      console.warn("[brain-sing] media permission unavailable, continuing in fallback mode");
+      streamRef.current = null;
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      if (sideVideoRef.current) {
+        sideVideoRef.current.srcObject = null;
+      }
+      setScanStatus("FALLBACK");
+      beginCountdown();
     }
   };
 
   const finishSinging = async (jitterData: number[], siData: number[]) => {
     stopAnalysisLoopKeepingCamera();
-    const reviewAudioUrl = await stopVoiceRecording();
-    const patient = loadPatientProfile();
-    let uploadedReviewAudio: {
-      mediaId: string;
-      objectKey: string;
-    } | null = null;
-    let reviewAudioUploadState: "uploaded" | "failed" | "not_recorded" =
-      reviewAudioUrl ? "failed" : "not_recorded";
-    let reviewAudioUploadError: string | null = null;
-
-    if (reviewAudioUrl && patient) {
-      try {
-        const reviewAudioBlob = await dataUrlToBlob(reviewAudioUrl);
-        uploadedReviewAudio = await uploadClinicalMedia({
-          patient,
-          sourceSessionKey: patient.sessionId,
-          trainingType: "sing-training",
-          mediaType: "audio",
-          captureRole: "review-audio",
-          labelSegment: song,
-          blob: reviewAudioBlob,
-          fileExtension: reviewAudioBlob.type.includes("mpeg") ? "mp3" : "webm",
-        });
-        reviewAudioUploadState = "uploaded";
-      } catch (error) {
-        console.error("[sing-training] failed to upload review audio", error);
-        reviewAudioUploadState = "failed";
-        reviewAudioUploadError =
-          error instanceof Error ? error.message : "failed_to_upload_review_audio";
-      }
-    }
+    const reviewAudio = await stopVoiceRecording();
+    const reviewAudioUploadState: "uploaded" | "failed" | "not_recorded" | "pending_result_sync" =
+      reviewAudio.dataUrl ? "pending_result_sync" : "not_recorded";
+    const reviewAudioUploadError: string | null = null;
+    const expectedLyrics = buildExpectedSongLyrics(song);
 
     const avgJ =
       jitterData.length > 0
         ? jitterData.reduce((sum, value) => sum + value, 0) / jitterData.length
-        : 0.32;
+        : null;
     const avgS =
       siData.length > 0
         ? siData.reduce((sum, value) => sum + value, 0) / siData.length
-        : 96.2;
-    const score = Math.round(avgS * 0.52 + (100 - avgJ * 12) * 0.48);
+        : null;
+    const latencyMs = voiceOnsetLatencyMsRef.current;
+    const pronunciation = await analyzeSongPronunciation({
+      audioBlob: reviewAudio.blob,
+      expectedLyrics,
+    });
+    const hasMeasuredPronunciation =
+      pronunciation.consonantAccuracy != null &&
+      pronunciation.vowelAccuracy != null &&
+      pronunciation.lyricAccuracy != null;
+    const hasMeasuredFace =
+      avgS != null && siData.length >= MIN_MEASURED_FACE_SAMPLES;
+    const metricSource = hasMeasuredPronunciation ? "measured" : "demo";
+    const effectiveJitter = avgJ ?? 0;
+    const effectiveSymmetry = avgS ?? 0;
+    const score = calculateCompositeSingScore({
+      consonantAccuracy: pronunciation.consonantAccuracy,
+      vowelAccuracy: pronunciation.vowelAccuracy,
+      lyricAccuracy: pronunciation.lyricAccuracy,
+      facialSymmetry: hasMeasuredFace ? effectiveSymmetry : null,
+      latencyMs,
+    });
 
-    const finalJitterText = avgJ.toFixed(2);
-    const finalSiText = avgS.toFixed(1);
-    const finalComment = `가창 분석 결과 성대 안정성은 ${avgJ.toFixed(2)}% 수준으로 유지되었고, 안면 대칭 지수는 ${avgS.toFixed(1)}점으로 비교적 안정적인 신경 협응 흐름을 보였습니다.`;
+    const finalJitterText = effectiveJitter.toFixed(2);
+    const finalSiText = hasMeasuredFace ? effectiveSymmetry.toFixed(1) : "--";
+    const finalLatencyText = latencyMs == null ? "-- ms" : `${Math.round(latencyMs)} ms`;
+    const finalConsonantText =
+      pronunciation.consonantAccuracy == null
+        ? "--"
+        : pronunciation.consonantAccuracy.toFixed(1);
+    const finalVowelText =
+      pronunciation.vowelAccuracy == null
+        ? "--"
+        : pronunciation.vowelAccuracy.toFixed(1);
+    const lyricAccuracyText =
+      pronunciation.lyricAccuracy == null
+        ? "--"
+        : pronunciation.lyricAccuracy.toFixed(1);
+    const finalComment =
+      metricSource === "measured"
+        ? buildMeasuredComment({
+            jitterPct: effectiveJitter,
+            facialSymmetry: hasMeasuredFace ? effectiveSymmetry : null,
+            latencyMs,
+            consonantAccuracy: pronunciation.consonantAccuracy ?? 0,
+            vowelAccuracy: pronunciation.vowelAccuracy ?? 0,
+            lyricAccuracy: pronunciation.lyricAccuracy ?? 0,
+          })
+        : pronunciation.errorReason === "dev_mode_mock"
+          ? "개발 모드에서는 실제 STT를 호출하지 않기 때문에 자음·모음 분석 결과를 확정하지 않습니다."
+          : "자음·모음 또는 안면 측정 데이터가 충분하지 않아 노래방 점수는 로컬 참고용으로만 표시됩니다.";
 
     setFinalScore(score);
     setFinalJitter(finalJitterText);
@@ -527,13 +798,18 @@ function BrainSingPageContent() {
           score,
           finalJitter: finalJitterText,
           finalSi: finalSiText,
-          rtLatency,
+          rtLatency: finalLatencyText,
+          finalConsonant: finalConsonantText,
+          finalVowel: finalVowelText,
+          lyricAccuracy: lyricAccuracyText,
+          transcript: pronunciation.transcript,
+          metricSource,
           comment: finalComment,
           rankings: rows,
           completedAt: Date.now(),
-          reviewAudioUrl,
-          reviewAudioMediaId: uploadedReviewAudio?.mediaId ?? null,
-          reviewAudioObjectKey: uploadedReviewAudio?.objectKey ?? null,
+          reviewAudioUrl: reviewAudio.dataUrl,
+          reviewAudioMediaId: null,
+          reviewAudioObjectKey: null,
           reviewAudioUploadState,
           reviewAudioUploadError,
           governance: {
@@ -568,6 +844,10 @@ function BrainSingPageContent() {
     const startedAt = performance.now();
     const jitterData: number[] = [];
     const siData: number[] = [];
+    sessionStartRef.current = startedAt;
+    measuredPitchHistoryRef.current = [];
+    measuredSymmetryHistoryRef.current = [];
+    voiceOnsetLatencyMsRef.current = null;
     finishGuardRef.current = false;
     audioEndedRef.current = false;
 
@@ -661,15 +941,56 @@ function BrainSingPageContent() {
         setLyricFillPct(0);
       }
 
-      const jitter = Number((0.22 + Math.random() * 0.16).toFixed(2));
-      const si = Number((94.5 + Math.random() * 3.8).toFixed(1));
-      jitterData.push(jitter);
-      siData.push(si);
-      setJitterHistory([...jitterData]);
-      setSiHistory([...siData]);
-      setRtJitter(`${jitter.toFixed(2)}%`);
-      setRtSi(si.toFixed(1));
-      setRtLatency(`${(110 + Math.random() * 18).toFixed(0)} ms`);
+      const analyser = measurementAnalyserRef.current;
+      const measurementData = measurementDataRef.current;
+      const audioContext = measurementAudioContextRef.current;
+      if (analyser && measurementData && audioContext) {
+        (analyser as any).getFloatTimeDomainData(measurementData);
+        const rms = computeRms(measurementData);
+        if (voiceOnsetLatencyMsRef.current == null && rms >= AUDIO_LEVEL_ONSET_THRESHOLD) {
+          voiceOnsetLatencyMsRef.current = Math.max(0, performance.now() - startedAt);
+        }
+
+        const pitchHz = estimatePitchHz(measurementData, audioContext.sampleRate);
+        if (pitchHz && Number.isFinite(pitchHz)) {
+          const pitchHistory = measuredPitchHistoryRef.current;
+          pitchHistory.push(pitchHz);
+          if (pitchHistory.length > 60) pitchHistory.shift();
+          if (pitchHistory.length >= 2) {
+            const prevPitch = pitchHistory[pitchHistory.length - 2];
+            const jitterPct = clamp(
+              Math.abs(pitchHz - prevPitch) / Math.max(prevPitch, 1) * 100,
+              0,
+              100,
+            );
+            jitterData.push(jitterPct);
+            if (jitterData.length > 60) jitterData.shift();
+            const jitterAvg =
+              jitterData.reduce((sum, value) => sum + value, 0) / jitterData.length;
+            setRtJitter(`${jitterAvg.toFixed(2)}%`);
+            setJitterHistory([...jitterData]);
+          }
+        }
+      }
+
+      if (sidebarMetrics.faceDetected) {
+        const symmetryScore = clamp((sidebarMetrics.facialSymmetry || 0) * 100, 0, 100);
+        measuredSymmetryHistoryRef.current.push(symmetryScore);
+        if (measuredSymmetryHistoryRef.current.length > 60) {
+          measuredSymmetryHistoryRef.current.shift();
+        }
+        siData.push(symmetryScore);
+        if (siData.length > 60) siData.shift();
+        const symmetryAvg = siData.reduce((sum, value) => sum + value, 0) / siData.length;
+        setRtSi(symmetryAvg.toFixed(1));
+        setSiHistory([...siData]);
+      }
+
+      if (voiceOnsetLatencyMsRef.current != null) {
+        setRtLatency(`${Math.round(voiceOnsetLatencyMsRef.current)} ms`);
+      } else {
+        setRtLatency("-- ms");
+      }
 
       if (audioEndedRef.current) {
         finalizeIfNeeded();

@@ -36,6 +36,8 @@ const INITIAL_METRICS: MetricsData = {
     dynamicSymmetryScore: 100,
     eyebrowLiftPct: 0,
     eyeClosureStrengthPct: 0,
+    trackingQualityPct: 100,
+    rollAngleDeg: 0,
   },
 };
 

@@ -233,7 +233,7 @@ export default function SignupPage() {
             <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-500">
               Patient
             </p>
-            <p className="mt-2 text-base font-black text-slate-900">환자 회원가입</p>
+            <p className="mt-2 text-base font-black text-slate-900">사용자 회원가입</p>
             <p className="mt-1 text-xs font-semibold text-slate-500">
               훈련과 결과 확인을 위한 기본 사용자 계정입니다.
             </p>
@@ -252,7 +252,7 @@ export default function SignupPage() {
             </p>
             <p className="mt-2 text-base font-black text-slate-900">관리자 회원가입</p>
             <p className="mt-1 text-xs font-semibold text-slate-500">
-              환자 리포트와 전체 로그를 확인하는 관리자 계정입니다.
+              사용자 리포트와 전체 로그를 확인하는 관리자 계정입니다.
             </p>
           </button>
         </div>

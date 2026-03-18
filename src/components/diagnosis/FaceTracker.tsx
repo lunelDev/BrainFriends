@@ -9,6 +9,9 @@ import {
 import { calculateLipMetrics, LipMetrics } from "@/utils/faceAnalysis";
 
 const TFLITE_XNNPACK_INFO = "Created TensorFlow Lite XNNPACK delegate for CPU";
+const LOCAL_MEDIAPIPE_WASM_PATH = "/mediapipe/wasm";
+const LOCAL_FACE_LANDMARKER_MODEL_PATH =
+  "/mediapipe/models/face_landmarker.task";
 
 function hasNoisyTfliteMessage(value: unknown): boolean {
   if (typeof value === "string") return value.includes(TFLITE_XNNPACK_INFO);
@@ -45,6 +48,7 @@ export default function FaceTracker({
   const lastTickRef = useRef(0);
   const lastUpdateRef = useRef(0);
   const lastDeliveredAtRef = useRef(0);
+  const smoothedMetricsRef = useRef<ExtendedMetrics | null>(null);
 
   const tick = () => {
     const now = performance.now();
@@ -78,15 +82,64 @@ export default function FaceTracker({
 
           if (face) {
             const metrics = calculateLipMetrics(face);
-            onMetricsUpdate({
+            const nextMetrics: ExtendedMetrics = {
               ...metrics,
               landmarks: face,
               faceDetected: true,
               processingMs: Number(processingMs.toFixed(2)),
               frameGapMs: Number(frameGapMs.toFixed(2)),
               fps: Number(fps.toFixed(1)),
-            });
+            };
+            const previous = smoothedMetricsRef.current;
+            const alpha = metrics.trackingQualityPct >= 70 ? 0.28 : 0.14;
+            const smoothValue = (currentValue: number, previousValue?: number) =>
+              Number(
+                (
+                  (previousValue ?? currentValue) * (1 - alpha) +
+                  currentValue * alpha
+                ).toFixed(2),
+              );
+            const smoothed: ExtendedMetrics = {
+              ...nextMetrics,
+              symmetryScore: smoothValue(
+                nextMetrics.symmetryScore,
+                previous?.symmetryScore,
+              ),
+              openingRatio: smoothValue(
+                nextMetrics.openingRatio,
+                previous?.openingRatio,
+              ),
+              mouthWidth: smoothValue(nextMetrics.mouthWidth, previous?.mouthWidth),
+              deviation: smoothValue(nextMetrics.deviation, previous?.deviation),
+              staticSymmetryScore: smoothValue(
+                nextMetrics.staticSymmetryScore,
+                previous?.staticSymmetryScore,
+              ),
+              dynamicSymmetryScore: smoothValue(
+                nextMetrics.dynamicSymmetryScore,
+                previous?.dynamicSymmetryScore,
+              ),
+              eyebrowLiftPct: smoothValue(
+                nextMetrics.eyebrowLiftPct,
+                previous?.eyebrowLiftPct,
+              ),
+              eyeClosureStrengthPct: smoothValue(
+                nextMetrics.eyeClosureStrengthPct,
+                previous?.eyeClosureStrengthPct,
+              ),
+              trackingQualityPct: smoothValue(
+                nextMetrics.trackingQualityPct,
+                previous?.trackingQualityPct,
+              ),
+              rollAngleDeg: smoothValue(
+                nextMetrics.rollAngleDeg,
+                previous?.rollAngleDeg,
+              ),
+            };
+            smoothedMetricsRef.current = smoothed;
+            onMetricsUpdate(smoothed);
           } else {
+            smoothedMetricsRef.current = null;
             onMetricsUpdate({
               ...calculateLipMetrics([]),
               landmarks: [],
@@ -123,14 +176,13 @@ export default function FaceTracker({
     const init = async () => {
       try {
         const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm",
+          LOCAL_MEDIAPIPE_WASM_PATH,
         );
         if (cancelled) return;
 
         landmarkerRef.current = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+            modelAssetPath: LOCAL_FACE_LANDMARKER_MODEL_PATH,
             delegate: "GPU",
           },
           runningMode: "VIDEO",
@@ -151,7 +203,15 @@ export default function FaceTracker({
           };
         }
       } catch (error) {
-        console.error("FaceTracker 초기화 실패:", error);
+        onMetricsUpdate({
+          ...calculateLipMetrics([]),
+          landmarks: [],
+          faceDetected: false,
+          processingMs: 0,
+          frameGapMs: 0,
+          fps: 0,
+        });
+        console.warn("FaceTracker initialization skipped:", error);
       }
     };
 
@@ -164,6 +224,7 @@ export default function FaceTracker({
         const stream = videoRef.current.srcObject as MediaStream;
         stream.getTracks().forEach((track) => track.stop());
       }
+      smoothedMetricsRef.current = null;
     };
   }, []);
 

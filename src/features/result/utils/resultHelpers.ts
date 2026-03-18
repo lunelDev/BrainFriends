@@ -263,6 +263,25 @@ export function buildFacialReport(
   const prevAsymmetryRisk = toNum(previous?.facialAnalysisSnapshot?.asymmetryRisk);
   const asymmetryDelta =
     prevAsymmetryRisk > 0 ? Number((asymmetryRisk - prevAsymmetryRisk).toFixed(1)) : null;
+  const oralCommissureAsymmetry = toNum(
+    current?.facialAnalysisSnapshot?.sessionAverage?.oralCommissureAsymmetry,
+  );
+  const lipClosureAsymmetry = toNum(
+    current?.facialAnalysisSnapshot?.sessionAverage?.lipClosureAsymmetry,
+  );
+  const vowelArticulationVariance = toNum(
+    current?.facialAnalysisSnapshot?.sessionAverage?.vowelArticulationVariance,
+  );
+  const oralCommissureDelta =
+    toNum(current?.facialAnalysisSnapshot?.longitudinalDelta?.oralCommissureAsymmetry) ??
+    toNum(current?.facialAnalysisSnapshot?.delta?.oralCommissureAsymmetry);
+  const lipClosureDelta =
+    toNum(current?.facialAnalysisSnapshot?.longitudinalDelta?.lipClosureAsymmetry) ??
+    toNum(current?.facialAnalysisSnapshot?.delta?.lipClosureAsymmetry);
+  const vowelArticulationDelta =
+    toNum(current?.facialAnalysisSnapshot?.longitudinalDelta?.vowelArticulationVariance) ??
+    toNum(current?.facialAnalysisSnapshot?.delta?.vowelArticulationVariance);
+  const trackingQuality = toNum(current?.facialAnalysisSnapshot?.trackingQuality);
   const articulationGap =
     toNum(current?.facialAnalysisSnapshot?.articulationGap) ||
     Number(Math.abs(overallConsonant - overallVowel).toFixed(1));
@@ -288,6 +307,13 @@ export function buildFacialReport(
     asymmetryDelta,
     articulationGap,
     riskLabel,
+    trackingQuality,
+    oralCommissureAsymmetry,
+    oralCommissureDelta,
+    lipClosureAsymmetry,
+    lipClosureDelta,
+    vowelArticulationVariance,
+    vowelArticulationDelta,
     summary:
       current?.facialAnalysisSnapshot?.articulationFaceMatchSummary ||
       "음성-안면 매칭 추적 데이터가 아직 충분하지 않습니다.",

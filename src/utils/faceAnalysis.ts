@@ -19,6 +19,8 @@ export interface LipMetrics {
   dynamicSymmetryScore: number; // articulation/dynamic symmetry
   eyebrowLiftPct: number; // upper-face metric
   eyeClosureStrengthPct: number; // upper-face metric
+  trackingQualityPct: number; // 0~100
+  rollAngleDeg: number; // head tilt estimate
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -43,17 +45,47 @@ export const calculateLipMetrics = (landmarks: any[]): LipMetrics => {
       dynamicSymmetryScore: 0,
       eyebrowLiftPct: 0,
       eyeClosureStrengthPct: 0,
+      trackingQualityPct: 0,
+      rollAngleDeg: 0,
     };
   }
 
   const leftCheek = landmarks?.[234];
   const rightCheek = landmarks?.[454];
+  const leftOuterEye = landmarks?.[33];
+  const rightOuterEye = landmarks?.[263];
+  const faceWidth = Math.max(
+    0.001,
+    Math.abs((rightCheek?.x ?? right.x) - (leftCheek?.x ?? left.x)),
+  );
+  const eyeDx = (rightOuterEye?.x ?? right.x) - (leftOuterEye?.x ?? left.x);
+  const eyeDy = (rightOuterEye?.y ?? right.y) - (leftOuterEye?.y ?? left.y);
+  const rollAngleRad = Math.atan2(eyeDy, eyeDx || 0.001);
+  const rollAngleDeg = (rollAngleRad * 180) / Math.PI;
+  const centerX = (leftCheek?.x ?? left.x) + faceWidth / 2;
+  const centerY =
+    ((leftCheek?.y ?? left.y) + (rightCheek?.y ?? right.y) + nose.y + top.y + bottom.y) /
+    4;
+  const rotatePoint = (point: { x: number; y: number }, cx: number, cy: number) => {
+    const tx = point.x - cx;
+    const ty = point.y - cy;
+    const cos = Math.cos(-rollAngleRad);
+    const sin = Math.sin(-rollAngleRad);
+    return {
+      x: tx * cos - ty * sin + cx,
+      y: tx * sin + ty * cos + cy,
+    };
+  };
+  const rotatedLeft = rotatePoint(left, centerX, centerY);
+  const rotatedRight = rotatePoint(right, centerX, centerY);
+  const rotatedTop = rotatePoint(top, centerX, centerY);
+  const rotatedBottom = rotatePoint(bottom, centerX, centerY);
 
-  const verticalDiff = Math.abs(left.y - right.y);
-  const symmetryScore = clamp(100 - verticalDiff * 2500, 0, 100);
+  const verticalDiff = Math.abs(rotatedLeft.y - rotatedRight.y);
+  const symmetryScore = clamp(100 - verticalDiff * 1800, 0, 100);
 
-  const openingRatio = Math.abs(bottom.y - top.y) * 500;
-  const mouthWidth = Math.abs(right.x - left.x);
+  const openingRatio = Math.abs(rotatedBottom.y - rotatedTop.y) * 500;
+  const mouthWidth = Math.abs(rotatedRight.x - rotatedLeft.x);
 
   const midX = nose.x;
   const leftDist = Math.abs(midX - left.x);
@@ -62,19 +94,20 @@ export const calculateLipMetrics = (landmarks: any[]): LipMetrics => {
 
   const leftBrow = landmarks?.[105];
   const rightBrow = landmarks?.[334];
+  const rotatedLeftBrow = leftBrow ? rotatePoint(leftBrow, centerX, centerY) : null;
+  const rotatedRightBrow = rightBrow
+    ? rotatePoint(rightBrow, centerX, centerY)
+    : null;
   const browAsym =
-    leftBrow && rightBrow ? Math.abs(leftBrow.y - rightBrow.y) : 0;
-  const staticSymmetryScore = clamp(100 - browAsym * 2800, 0, 100);
+    rotatedLeftBrow && rotatedRightBrow
+      ? Math.abs(rotatedLeftBrow.y - rotatedRightBrow.y)
+      : 0;
+  const staticSymmetryScore = clamp(100 - browAsym * 2200, 0, 100);
 
   const motionStrength = clamp(openingRatio / 35, 0, 1);
   const dynamicPenalty =
-    Math.abs(verticalDiff - browAsym) * 1800 * motionStrength;
+    Math.abs(verticalDiff - browAsym) * 1200 * motionStrength;
   const dynamicSymmetryScore = clamp(symmetryScore - dynamicPenalty, 0, 100);
-
-  const faceWidth = Math.max(
-    0.001,
-    Math.abs((rightCheek?.x ?? right.x) - (leftCheek?.x ?? left.x)),
-  );
   const browLiftSpan =
     leftBrow && rightBrow
       ? (nose.y - leftBrow.y + (nose.y - rightBrow.y)) / 2
@@ -89,9 +122,6 @@ export const calculateLipMetrics = (landmarks: any[]): LipMetrics => {
   const leftLowerEye = landmarks?.[145];
   const rightUpperEye = landmarks?.[386];
   const rightLowerEye = landmarks?.[374];
-  const leftOuterEye = landmarks?.[33];
-  const rightOuterEye = landmarks?.[263];
-
   const leftEyeGap =
     leftUpperEye && leftLowerEye
       ? Math.abs(leftLowerEye.y - leftUpperEye.y)
@@ -111,6 +141,17 @@ export const calculateLipMetrics = (landmarks: any[]): LipMetrics => {
     0,
     100,
   );
+  const noseOffsetX = Math.abs(nose.x - centerX) / faceWidth;
+  const noseOffsetY = Math.abs(nose.y - centerY) / Math.max(faceWidth, 0.001);
+  const faceAreaConfidence = clamp(faceWidth / 0.22, 0, 1);
+  const centerConfidence = clamp(1 - noseOffsetX * 2.2 - noseOffsetY * 0.8, 0, 1);
+  const rollConfidence = clamp(1 - Math.abs(rollAngleDeg) / 18, 0, 1);
+  const trackingQualityPct = Number(
+    (
+      (faceAreaConfidence * 0.4 + centerConfidence * 0.35 + rollConfidence * 0.25) *
+      100
+    ).toFixed(1),
+  );
 
   return {
     symmetryScore: Number(symmetryScore.toFixed(1)),
@@ -122,5 +163,7 @@ export const calculateLipMetrics = (landmarks: any[]): LipMetrics => {
     dynamicSymmetryScore: Number(dynamicSymmetryScore.toFixed(1)),
     eyebrowLiftPct: Number(eyebrowLiftPct.toFixed(1)),
     eyeClosureStrengthPct: Number(eyeClosureStrengthPct.toFixed(1)),
+    trackingQualityPct,
+    rollAngleDeg: Number(rollAngleDeg.toFixed(1)),
   };
 };

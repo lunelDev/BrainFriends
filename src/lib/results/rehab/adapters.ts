@@ -30,9 +30,26 @@ export type FacialReport = {
   asymmetryRisk: number;
   consonant: number;
   vowel: number;
+  overallConsonant: number;
+  overallVowel: number;
+  step2Consonant: number;
+  step2Vowel: number;
+  step4Consonant: number;
+  step4Vowel: number;
+  step5Consonant: number;
+  step5Vowel: number;
   riskLabel: string;
   riskDelta: number | null;
+  asymmetryDelta: number | null;
+  articulationGap: number;
   summary: string;
+  trackingQuality: number;
+  oralCommissureAsymmetry: number;
+  oralCommissureDelta: number | null;
+  lipClosureAsymmetry: number;
+  lipClosureDelta: number | null;
+  vowelArticulationVariance: number;
+  vowelArticulationDelta: number | null;
 };
 
 export const toNumberOrNull = (value: unknown): number | null => {
@@ -500,6 +517,26 @@ export function buildFacialReport(
   );
   const riskDelta =
     prevRisk === null ? null : Number((asymmetryRisk - prevRisk).toFixed(1));
+  const oralCommissureAsymmetry = Number(
+    snap?.sessionAverage?.oralCommissureAsymmetry ?? asymmetryRisk,
+  );
+  const lipClosureAsymmetry = Number(
+    snap?.sessionAverage?.lipClosureAsymmetry ?? asymmetryRisk,
+  );
+  const vowelArticulationVariance = Number(
+    snap?.sessionAverage?.vowelArticulationVariance ??
+      Math.abs(consonant - vowel),
+  );
+  const trackingQuality = Number(snap?.trackingQuality ?? 0);
+  const oralCommissureDelta =
+    toNumberOrNull(snap?.longitudinalDelta?.oralCommissureAsymmetry) ??
+    toNumberOrNull(snap?.delta?.oralCommissureAsymmetry);
+  const lipClosureDelta =
+    toNumberOrNull(snap?.longitudinalDelta?.lipClosureAsymmetry) ??
+    toNumberOrNull(snap?.delta?.lipClosureAsymmetry);
+  const vowelArticulationDelta =
+    toNumberOrNull(snap?.longitudinalDelta?.vowelArticulationVariance) ??
+    toNumberOrNull(snap?.delta?.vowelArticulationVariance);
   const riskLabel =
     asymmetryRisk >= 45 ? "고위험" : asymmetryRisk >= 30 ? "주의" : "저위험";
   const hasCameraData = consonant > 0 || vowel > 0 || asymmetryRisk > 0;
@@ -507,8 +544,25 @@ export function buildFacialReport(
     asymmetryRisk,
     consonant,
     vowel,
+    overallConsonant: consonant,
+    overallVowel: vowel,
+    step2Consonant: consonant,
+    step2Vowel: vowel,
+    step4Consonant: consonant,
+    step4Vowel: vowel,
+    step5Consonant: consonant,
+    step5Vowel: vowel,
     riskLabel,
     riskDelta,
+    asymmetryDelta: riskDelta,
+    articulationGap: Number(Math.abs(consonant - vowel).toFixed(1)),
+    trackingQuality,
+    oralCommissureAsymmetry,
+    oralCommissureDelta,
+    lipClosureAsymmetry,
+    lipClosureDelta,
+    vowelArticulationVariance,
+    vowelArticulationDelta,
     summary:
       snap?.articulationFaceMatchSummary ||
       (hasCameraData

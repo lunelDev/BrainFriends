@@ -188,14 +188,14 @@ export default function TrainingUsageTimelinePage() {
             Training Usage Timeline
           </p>
           <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-900">
-            환자 사용 타임라인
+            사용자 사용 타임라인
           </h1>
           <p className="mt-2 text-sm font-medium text-slate-500">
             DB에 저장된 훈련 진입, 중간 저장, 최종 결과 이벤트를 시간순으로 확인합니다.
           </p>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <SummaryCard label="환자명" value={patientName || "-"} />
+            <SummaryCard label="사용자명" value={patientName || "-"} />
             <SummaryCard
               label="나이"
               value={patientAge === null ? "-" : `${patientAge}세`}

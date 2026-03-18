@@ -198,7 +198,7 @@ export default function LoginPage() {
               Included
             </p>
             <p className="mt-3 text-sm font-semibold leading-7 text-slate-100">
-              환자 기본정보 저장, 계정 인증, 세션 유지, 기존 훈련 화면 연동을 포함합니다.
+              사용자 기본정보 저장, 계정 인증, 세션 유지, 기존 훈련 화면 연동을 포함합니다.
             </p>
           </div>
         </section>
@@ -212,7 +212,7 @@ export default function LoginPage() {
               회원 로그인
             </h2>
             <p className="mt-2 text-sm font-medium text-slate-500">
-              등록한 환자 계정으로 로그인해 주세요.
+              등록한 사용자 계정으로 로그인해 주세요.
             </p>
 
             <div className="mt-8 space-y-4">

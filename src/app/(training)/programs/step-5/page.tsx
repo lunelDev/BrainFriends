@@ -18,7 +18,6 @@ import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { loadPatientProfile } from "@/lib/patientStorage";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
-import { uploadClinicalMedia } from "@/lib/client/clinicalMediaUpload";
 import {
   analyzeArticulation,
   calculateArticulationWritingConsistency,
@@ -857,23 +856,6 @@ function Step5Content() {
                 .slice(0, texts.length);
               localStorage.setItem(STEP5_STORAGE_KEY, JSON.stringify(next));
               saveResumeMeta(STEP5_STORAGE_KEY, stepSignature, next.length);
-              const patient = loadPatientProfile();
-              if (patient) {
-                uploadClinicalMedia({
-                  patient,
-                  sourceSessionKey: patient.sessionId,
-                  trainingType: clinicalTrainingType,
-                  stepNo: 5,
-                  mediaType: "audio",
-                  captureRole: "step5-audio",
-                  labelSegment: currentItem.text,
-                  blob: audioBlob,
-                  fileExtension: audioBlob.type.includes("mpeg") ? "mp3" : "webm",
-                  durationMs: recognitionResponseMs,
-                }).catch((uploadError) => {
-                  console.error("[Step5] failed to upload clinical audio", uploadError);
-                });
-              }
               updateRuntimeStatus({
                 pageError: false,
                 needsRetry: false,

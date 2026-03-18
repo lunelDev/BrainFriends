@@ -14,6 +14,11 @@ export type PersistedSingResult = {
   finalJitter: string;
   finalSi: string;
   rtLatency: string;
+  finalConsonant?: string;
+  finalVowel?: string;
+  lyricAccuracy?: string;
+  transcript?: string;
+  metricSource?: "measured" | "demo";
   comment: string;
   rankings: Array<{
     name: string;
@@ -181,6 +186,9 @@ export async function saveSingResultToDatabase(params: {
   const latencyMs = parseLatencyMs(result.rtLatency);
   const jitter = parseMetric(result.finalJitter);
   const facialSymmetry = parseMetric(result.finalSi);
+  const consonantAccuracy = parseMetric(result.finalConsonant ?? "");
+  const vowelAccuracy = parseMetric(result.finalVowel ?? "");
+  const lyricAccuracy = parseMetric(result.lyricAccuracy ?? "");
 
   try {
     await client.query("BEGIN");
@@ -240,11 +248,15 @@ export async function saveSingResultToDatabase(params: {
           jitter,
           facial_symmetry,
           latency_ms,
+          consonant_accuracy,
+          vowel_accuracy,
+          lyric_accuracy,
+          recognized_lyrics,
           comment,
           version_snapshot,
           created_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, NOW())
         ON CONFLICT (result_id) DO UPDATE
         SET
           song_key = EXCLUDED.song_key,
@@ -252,6 +264,10 @@ export async function saveSingResultToDatabase(params: {
           jitter = EXCLUDED.jitter,
           facial_symmetry = EXCLUDED.facial_symmetry,
           latency_ms = EXCLUDED.latency_ms,
+          consonant_accuracy = EXCLUDED.consonant_accuracy,
+          vowel_accuracy = EXCLUDED.vowel_accuracy,
+          lyric_accuracy = EXCLUDED.lyric_accuracy,
+          recognized_lyrics = EXCLUDED.recognized_lyrics,
           comment = EXCLUDED.comment,
           version_snapshot = EXCLUDED.version_snapshot
       `,
@@ -264,6 +280,10 @@ export async function saveSingResultToDatabase(params: {
         jitter,
         facialSymmetry,
         latencyMs,
+        consonantAccuracy,
+        vowelAccuracy,
+        lyricAccuracy,
+        result.transcript ?? null,
         result.comment,
         result.versionSnapshot ? JSON.stringify(result.versionSnapshot) : null,
       ],

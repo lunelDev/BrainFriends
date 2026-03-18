@@ -2,6 +2,7 @@ import { getDbPool } from "@/lib/server/postgres";
 import { buildPatientProfile, getAuthenticatedSessionContext } from "@/lib/server/accountAuth";
 import type {
   SingHistoryResult,
+  TrainingMode,
   TrainingHistoryEntry,
 } from "@/lib/kwab/SessionManager";
 
@@ -65,6 +66,7 @@ export async function listHistoryForAuthenticatedUser(
           ltr.step_details,
           ltr.articulation_scores,
           ltr.facial_analysis_snapshot,
+          ltr.measurement_quality,
           ltr.step_version_snapshots,
           NULL::numeric AS jitter,
           NULL::numeric AS facial_symmetry,
@@ -100,6 +102,10 @@ export async function listHistoryForAuthenticatedUser(
           sr.jitter,
           sr.facial_symmetry,
           sr.latency_ms,
+          sr.consonant_accuracy,
+          sr.vowel_accuracy,
+          sr.lyric_accuracy,
+          sr.recognized_lyrics,
           sr.comment,
           sr.version_snapshot
         FROM sing_results sr
@@ -145,10 +151,11 @@ export async function listHistoryForAuthenticatedUser(
       age: Number(patient.age ?? 0),
       educationYears: Number(patient.educationYears ?? 0),
       place: "home",
-      trainingMode:
+      trainingMode: (
         row.training_mode === "rehab"
           ? "rehab"
-          : "self",
+          : "self"
+      ) as TrainingMode,
       rehabStep:
         row.rehab_step == null ? undefined : Number(row.rehab_step),
       completedAt: new Date(row.completed_at).getTime(),
@@ -175,6 +182,9 @@ export async function listHistoryForAuthenticatedUser(
       facialAnalysisSnapshot:
         (row.facial_analysis_snapshot as TrainingHistoryEntry["facialAnalysisSnapshot"]) ??
         undefined,
+      measurementQuality:
+        (row.measurement_quality as TrainingHistoryEntry["measurementQuality"]) ??
+        undefined,
       stepVersionSnapshots:
         (row.step_version_snapshots as TrainingHistoryEntry["stepVersionSnapshots"]) ??
         undefined,
@@ -188,7 +198,7 @@ export async function listHistoryForAuthenticatedUser(
       age: Number(patient.age ?? 0),
       educationYears: Number(patient.educationYears ?? 0),
       place: "brain-sing",
-      trainingMode: "sing",
+      trainingMode: "sing" as TrainingMode,
       completedAt: new Date(row.completed_at).getTime(),
       aq: Number(row.score ?? 0),
       singResult: {
@@ -197,6 +207,14 @@ export async function listHistoryForAuthenticatedUser(
         finalJitter: row.jitter == null ? "-" : String(row.jitter),
         finalSi: row.facial_symmetry == null ? "-" : String(row.facial_symmetry),
         rtLatency: row.latency_ms == null ? "-" : String(row.latency_ms),
+        finalConsonant:
+          row.consonant_accuracy == null ? "-" : String(row.consonant_accuracy),
+        finalVowel:
+          row.vowel_accuracy == null ? "-" : String(row.vowel_accuracy),
+        lyricAccuracy:
+          row.lyric_accuracy == null ? "-" : String(row.lyric_accuracy),
+        transcript:
+          row.recognized_lyrics == null ? "" : String(row.recognized_lyrics),
         comment: row.comment ? String(row.comment) : "",
         rankings: [],
         versionSnapshot: row.version_snapshot ?? undefined,

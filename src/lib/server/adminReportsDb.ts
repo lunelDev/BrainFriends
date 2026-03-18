@@ -2,6 +2,7 @@ import { getAuthenticatedSessionContext } from "@/lib/server/accountAuth";
 import { getDbPool } from "@/lib/server/postgres";
 import type {
   SingHistoryResult,
+  TrainingMode,
   TrainingHistoryEntry,
 } from "@/lib/kwab/SessionManager";
 
@@ -136,6 +137,7 @@ export async function getAdminPatientReportDetail(
           ltr.step_details,
           ltr.articulation_scores,
           ltr.facial_analysis_snapshot,
+          ltr.measurement_quality,
           ltr.step_version_snapshots
         FROM language_training_results ltr
         JOIN clinical_sessions cs ON cs.session_id = ltr.session_id
@@ -155,6 +157,10 @@ export async function getAdminPatientReportDetail(
           sr.jitter,
           sr.facial_symmetry,
           sr.latency_ms,
+          sr.consonant_accuracy,
+          sr.vowel_accuracy,
+          sr.lyric_accuracy,
+          sr.recognized_lyrics,
           sr.comment,
           sr.version_snapshot,
           cs.completed_at
@@ -179,7 +185,7 @@ export async function getAdminPatientReportDetail(
       age: 0,
       educationYears: 0,
       place: "home",
-      trainingMode: row.training_mode === "rehab" ? "rehab" : "self",
+      trainingMode: (row.training_mode === "rehab" ? "rehab" : "self") as TrainingMode,
       rehabStep: row.rehab_step == null ? undefined : Number(row.rehab_step),
       completedAt: new Date(row.completed_at).getTime(),
       aq: Number(row.aq ?? 0),
@@ -205,6 +211,9 @@ export async function getAdminPatientReportDetail(
       facialAnalysisSnapshot:
         (row.facial_analysis_snapshot as TrainingHistoryEntry["facialAnalysisSnapshot"]) ??
         undefined,
+      measurementQuality:
+        (row.measurement_quality as TrainingHistoryEntry["measurementQuality"]) ??
+        undefined,
       stepVersionSnapshots:
         (row.step_version_snapshots as TrainingHistoryEntry["stepVersionSnapshots"]) ??
         undefined,
@@ -218,7 +227,7 @@ export async function getAdminPatientReportDetail(
       age: 0,
       educationYears: 0,
       place: "brain-sing",
-      trainingMode: "sing",
+      trainingMode: "sing" as TrainingMode,
       completedAt: new Date(row.completed_at).getTime(),
       aq: Number(row.score ?? 0),
       singResult: {
@@ -227,6 +236,14 @@ export async function getAdminPatientReportDetail(
         finalJitter: row.jitter == null ? "-" : String(row.jitter),
         finalSi: row.facial_symmetry == null ? "-" : String(row.facial_symmetry),
         rtLatency: row.latency_ms == null ? "-" : String(row.latency_ms),
+        finalConsonant:
+          row.consonant_accuracy == null ? "-" : String(row.consonant_accuracy),
+        finalVowel:
+          row.vowel_accuracy == null ? "-" : String(row.vowel_accuracy),
+        lyricAccuracy:
+          row.lyric_accuracy == null ? "-" : String(row.lyric_accuracy),
+        transcript:
+          row.recognized_lyrics == null ? "" : String(row.recognized_lyrics),
         comment: row.comment ? String(row.comment) : "",
         rankings: [],
         versionSnapshot: row.version_snapshot ?? undefined,

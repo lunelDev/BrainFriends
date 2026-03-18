@@ -70,7 +70,7 @@ export function HistorySidebar({
           >
             Patient
           </p>
-          <p className="text-sm font-bold text-slate-700">{patientName || "환자 정보 없음"}</p>
+          <p className="text-sm font-bold text-slate-700">{patientName || "사용자 정보 없음"}</p>
         </div>
         <div className="absolute right-4 top-4 flex items-start gap-1.5">
           <div className="relative">

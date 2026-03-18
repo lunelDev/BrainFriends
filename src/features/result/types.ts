@@ -61,4 +61,11 @@ export type FacialReport = {
   articulationGap: number;
   riskLabel: string;
   summary: string;
+  trackingQuality: number;
+  oralCommissureAsymmetry: number;
+  oralCommissureDelta: number | null;
+  lipClosureAsymmetry: number;
+  lipClosureDelta: number | null;
+  vowelArticulationVariance: number;
+  vowelArticulationDelta: number | null;
 };
