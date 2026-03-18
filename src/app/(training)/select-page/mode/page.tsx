@@ -4,7 +4,6 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { ChevronRight } from "lucide-react";
-import { clearAllStorage } from "@/lib/patientStorage";
 
 const BRAIN_SING_ACCENT = "from-emerald-600/40 to-emerald-900/60";
 
@@ -57,7 +56,6 @@ export default function ModeSelectPage() {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
-      clearAllStorage();
       if (typeof window !== "undefined") {
         window.location.replace("/");
         return;

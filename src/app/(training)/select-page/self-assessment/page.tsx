@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { ChevronRight } from "lucide-react";
-import { clearAllStorage } from "@/lib/patientStorage";
 import {
   clearTrainingExitProgress,
   getTrainingExitProgress,
@@ -131,7 +130,6 @@ export default function SelectPage() {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
-      clearAllStorage();
       if (typeof window !== "undefined") {
         window.location.replace("/");
         return;

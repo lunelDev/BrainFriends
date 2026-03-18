@@ -11,7 +11,7 @@ import {
   Sparkles,
   Trophy,
 } from "lucide-react";
-import { loadPatientProfile, type PatientProfile } from "@/lib/patientStorage";
+import type { PatientProfile } from "@/lib/patientStorage";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import type { VersionSnapshot } from "@/lib/analysis/versioning";
 import { fetchMyHistoryEntries } from "@/lib/client/historyApi";
@@ -22,6 +22,15 @@ import {
   SONGS,
 } from "@/features/sing-training/data/songs";
 import type { SongKey } from "@/features/sing-training/types";
+import { useTrainingSession } from "@/hooks/useTrainingSession";
+
+type SingKeyFrame = {
+  dataUrl: string;
+  capturedAt: string;
+  label: string;
+  mediaId?: string | null;
+  objectKey?: string | null;
+};
 
 export const dynamic = "force-static";
 
@@ -50,6 +59,7 @@ type SingResult = {
   rankings: RankRow[];
   completedAt: number;
   reviewAudioUrl?: string | null;
+  reviewKeyFrames?: SingKeyFrame[];
   reviewAudioMediaId?: string | null;
   reviewAudioObjectKey?: string | null;
   reviewAudioUploadState?:
@@ -117,6 +127,7 @@ function buildFallbackSingResult(
     rankings: EMPTY_RANKINGS,
     completedAt: Date.now(),
     reviewAudioUrl: null,
+    reviewKeyFrames: [],
     reviewAudioMediaId: null,
     reviewAudioObjectKey: null,
     reviewAudioUploadState: "not_recorded",
@@ -179,6 +190,48 @@ async function persistToDatabase(
               ? error.message
               : "failed_to_upload_review_audio",
         },
+      };
+    }
+  }
+
+  if (Array.isArray(nextResult.reviewKeyFrames) && nextResult.reviewKeyFrames.length > 0) {
+    try {
+      const uploadedFrames = [] as SingKeyFrame[];
+      for (let index = 0; index < nextResult.reviewKeyFrames.length; index += 1) {
+        const frame = nextResult.reviewKeyFrames[index];
+        const frameBlob = await dataUrlToBlob(frame.dataUrl);
+        const uploadedFrame = await uploadClinicalMedia({
+          patient,
+          sourceSessionKey: patient.sessionId,
+          trainingType: "sing-training",
+          mediaType: "image",
+          captureRole: `face-keyframe-${index + 1}`,
+          labelSegment: `${result.song}-${frame.label}`,
+          blob: frameBlob,
+          fileExtension: "jpg",
+          capturedAt: frame.capturedAt,
+        });
+        uploadedFrames.push({
+          ...frame,
+          mediaId: uploadedFrame.mediaId,
+          objectKey: uploadedFrame.objectKey,
+        });
+      }
+
+      nextResult = {
+        ...nextResult,
+        reviewKeyFrames: uploadedFrames,
+      };
+    } catch (error) {
+      return {
+        ranking: null,
+        skipped: false,
+        ok: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "failed_to_upload_review_keyframes",
+        nextResult,
       };
     }
   }
@@ -249,7 +302,7 @@ export default function SingTrainingResultPage() {
   >("idle");
   const [isPlayingReview, setIsPlayingReview] = useState(false);
   const [myRank, setMyRank] = useState<RankRow | null>(null);
-  const patient = useMemo(() => loadPatientProfile(), []);
+  const { patient } = useTrainingSession();
   const lastPersistedKeyRef = useRef<string | null>(null);
   const reviewAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -377,6 +430,7 @@ export default function SingTrainingResultPage() {
           transcript: latestSing.singResult.transcript,
           comment: latestSing.singResult.comment,
           measurementReason: latestSing.singResult.measurementReason,
+          reviewKeyFrames: latestSing.singResult.reviewKeyFrames ?? [],
           rankings: latestSing.singResult.rankings ?? [],
           completedAt: latestSing.completedAt,
           governance: latestSing.singResult.governance,
@@ -690,6 +744,33 @@ export default function SingTrainingResultPage() {
                       : "인식된 가사 텍스트가 없습니다."}
                   </p>
                 </div>
+                {result.reviewKeyFrames?.length ? (
+                  <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">
+                      Face Key Frames
+                    </p>
+                    <p className="mt-2 text-sm text-slate-500">
+                      노래 중 수집한 안면 반응 대표 프레임입니다.
+                    </p>
+                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      {result.reviewKeyFrames.map((frame, index) => (
+                        <div
+                          key={`${frame.label}-${frame.capturedAt}-${index}`}
+                          className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
+                        >
+                          <img
+                            src={frame.dataUrl}
+                            alt={`노래방 key frame ${index + 1}`}
+                            className="h-32 w-full object-cover"
+                          />
+                          <div className="border-t border-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">
+                            {frame.label} · {new Date(frame.capturedAt).toLocaleTimeString("ko-KR")}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="rounded-[24px] border border-emerald-200 bg-white/70 p-4">
                   <p className="flex items-center gap-2 text-base font-black text-emerald-700">
                     <ArrowUpRight className="h-5 w-5" />

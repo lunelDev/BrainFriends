@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { SessionManager } from "@/lib/kwab/SessionManager";
-import { clearAllStorage } from "@/lib/patientStorage";
 import {
   Headphones,
   MessageSquare,
@@ -137,7 +136,6 @@ export default function RehabPage() {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
-      clearAllStorage();
       if (typeof window !== "undefined") {
         window.location.replace("/");
         return;

@@ -17,7 +17,7 @@ import { RuntimeStatusBanner } from "@/components/training/RuntimeStatusBanner";
 import { useTraining } from "../../TrainingContext";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { SessionManager } from "@/lib/kwab/SessionManager";
-import { loadPatientProfile } from "@/lib/patientStorage";
+import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
 import {
   analyzeArticulation,
@@ -103,6 +103,7 @@ function Step4Content() {
     updateRuntimeStatus,
     resetRuntimeStatus,
   } = useTraining();
+  const { patient: sessionPatient, sessionId } = useTrainingSession();
   const place = (searchParams.get("place") as PlaceType) || "home";
   const step3Score = searchParams.get("step3") || "0";
   const isRehabMode =
@@ -116,22 +117,37 @@ function Step4Content() {
     ? "bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition-all"
     : trainingButtonStyles.orangeSoft;
   const clinicalTrainingType = isRehabMode ? "speech-rehab" : "self-assessment";
+  const patientProfile = useMemo(
+    () =>
+      sessionPatient ??
+      ({
+        sessionId,
+        name: "user",
+        birthDate: "",
+        gender: "U",
+        age: 70,
+        educationYears: 12,
+        hand: "U",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      } as const),
+    [sessionId, sessionPatient],
+  );
 
   useEffect(() => {
-    const patient = loadPatientProfile();
     void logTrainingEvent({
       eventType: "training_step_viewed",
       trainingType: clinicalTrainingType,
       stepNo: 4,
       pagePath: "/programs/step-4",
-      sessionId: patient?.sessionId ?? null,
+      sessionId,
       payload: {
         place,
         isRehabMode,
         rehabTargetStep: Number(searchParams.get("targetStep") || "0") || null,
       },
     });
-  }, [clinicalTrainingType, isRehabMode, place, searchParams]);
+  }, [clinicalTrainingType, isRehabMode, place, searchParams, sessionId]);
 
   const accentSolid = isRehabMode
     ? "bg-sky-500 text-white border border-sky-500 hover:bg-sky-600 transition-all"
@@ -991,11 +1007,7 @@ function Step4Content() {
       setCurrentIndex((prev) => prev + 1);
     } else {
       try {
-        const patient = loadPatientProfile();
-        const sm = new SessionManager(
-          (patient || { age: 70, educationYears: 12 }) as any,
-          place,
-        );
+        const sm = new SessionManager(patientProfile as any, place);
         const averageKwabScore =
           allResults.length > 0
             ? allResults.reduce((sum, r) => sum + r.kwabScore, 0) /
@@ -1098,11 +1110,7 @@ function Step4Content() {
       localStorage.setItem(STEP4_STORAGE_KEY, JSON.stringify(demoItems));
       saveResumeMeta(STEP4_STORAGE_KEY, stepSignature, demoItems.length);
 
-      const patient = loadPatientProfile();
-      const sessionManager = new SessionManager(
-        (patient || { age: 70, educationYears: 12 }) as any,
-        place,
-      );
+      const sessionManager = new SessionManager(patientProfile as any, place);
       const averageKwabScore =
         demoItems.reduce((acc, curr) => acc + curr.kwabScore, 0) /
         Math.max(1, demoItems.length);

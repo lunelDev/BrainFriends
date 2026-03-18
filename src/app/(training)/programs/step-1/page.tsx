@@ -11,7 +11,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 
 import { PlaceType } from "@/constants/trainingData";
 import { SessionManager } from "@/lib/kwab/SessionManager";
-import { loadPatientProfile } from "@/lib/patientStorage";
+import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { buildVersionSnapshot } from "@/lib/analysis/versioning";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
@@ -51,20 +51,36 @@ function Step1Content() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const placeParam = (searchParams.get("place") as PlaceType) || "home";
+  const { patient: sessionPatient, sessionId } = useTrainingSession();
   const isRehabMode =
     searchParams.get("trainMode") === "rehab" ||
     (typeof window !== "undefined" &&
       sessionStorage.getItem("btt.trainingMode") === "rehab");
   const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
+  const patientProfile = useMemo(
+    () =>
+      sessionPatient ??
+      ({
+        sessionId,
+        name: "user",
+        birthDate: "",
+        gender: "U",
+        age: 70,
+        educationYears: 12,
+        hand: "U",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      } as const),
+    [sessionId, sessionPatient],
+  );
 
   useEffect(() => {
-    const patient = loadPatientProfile();
     void logTrainingEvent({
       eventType: "training_step_viewed",
       trainingType: isRehabMode ? "speech-rehab" : "self-assessment",
       stepNo: 1,
       pagePath: "/programs/step-1",
-      sessionId: patient?.sessionId ?? null,
+      sessionId,
       payload: {
         place: placeParam,
         isRehabMode,
@@ -218,11 +234,7 @@ function Step1Content() {
   const saveStep1Results = useCallback(
     (results: any[], finalScore: number) => {
       try {
-        const patient = loadPatientProfile();
-        const sessionManager = new SessionManager(
-          (patient || { age: 70, educationYears: 12 }) as any,
-          placeParam,
-        );
+        const sessionManager = new SessionManager(patientProfile as any, placeParam);
 
         // 1. ✅ Result 페이지용 백업 (text 필드 사용)
         const formattedForResult = results.map((r) => ({
@@ -271,7 +283,7 @@ function Step1Content() {
         console.error("❌ Step 1 저장 실패:", error);
       }
     },
-    [placeParam, stepSignature],
+    [patientProfile, placeParam, stepSignature],
   );
 
   const handleSkipStep = useCallback(() => {
@@ -293,11 +305,7 @@ function Step1Content() {
       const scoring = calculateCompositeScore(demoResults, demoResults.length);
       saveStep1Results(demoResults, finalScore);
 
-      const patient = loadPatientProfile();
-      const sessionManager = new SessionManager(
-        (patient || { age: 70, educationYears: 12 }) as any,
-        placeParam,
-      );
+      const sessionManager = new SessionManager(patientProfile as any, placeParam);
       sessionManager.saveStep1Result({
         correctAnswers: scoring.correctCount,
         totalQuestions: demoResults.length,
@@ -321,7 +329,7 @@ function Step1Content() {
     } catch (error) {
       console.error("Step1 skip failed:", error);
     }
-  }, [placeParam, router, saveStep1Results, trainingData]);
+  }, [patientProfile, placeParam, router, saveStep1Results, trainingData]);
 
   const handleAnswer = useCallback(
     (userAnswer: boolean | null) => {

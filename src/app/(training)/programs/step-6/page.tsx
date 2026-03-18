@@ -12,7 +12,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { PlaceType } from "@/constants/trainingData";
 import { WRITING_WORDS } from "@/constants/writingData";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
-import { loadPatientProfile } from "@/lib/patientStorage";
+import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
@@ -49,6 +49,7 @@ const RESULT_PRAISES = [
 function Step6Content() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { patient: sessionPatient, sessionId } = useTrainingSession();
 
   const place = (searchParams.get("place") as PlaceType) || "home";
   const isRehabMode =
@@ -63,22 +64,37 @@ function Step6Content() {
     ? "bg-sky-500 text-white border border-sky-500 hover:bg-sky-600 transition-all"
     : trainingButtonStyles.orangeSolid;
   const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
+  const patientProfile = useMemo(
+    () =>
+      sessionPatient ??
+      ({
+        sessionId,
+        name: "user",
+        birthDate: "",
+        gender: "U",
+        age: 70,
+        educationYears: 12,
+        hand: "U",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      } as const),
+    [sessionId, sessionPatient],
+  );
 
   useEffect(() => {
-    const patient = loadPatientProfile();
     void logTrainingEvent({
       eventType: "training_step_viewed",
       trainingType: clinicalTrainingType,
       stepNo: 6,
       pagePath: "/programs/step-6",
-      sessionId: patient?.sessionId ?? null,
+      sessionId,
       payload: {
         place,
         isRehabMode,
         rehabTargetStep: rehabTargetStep || null,
       },
     });
-  }, [clinicalTrainingType, isRehabMode, place, rehabTargetStep]);
+  }, [clinicalTrainingType, isRehabMode, place, rehabTargetStep, sessionId]);
 
   const handleGoHome = () => {
     setIsHomeExitModalOpen(true);
@@ -201,8 +217,7 @@ function Step6Content() {
     try {
       const rawSession = localStorage.getItem("kwab_training_session");
       const existingSession = rawSession ? JSON.parse(rawSession) : null;
-      const patientData = existingSession?.patient ||
-        loadPatientProfile() || { name: "user" };
+      const patientData = existingSession?.patient || patientProfile;
       const sm = new SessionManager(patientData as any, place);
       const session = sm.getSession();
       const consonant =
@@ -537,8 +552,7 @@ function Step6Content() {
       try {
         const rawSession = localStorage.getItem("kwab_training_session");
         const existingSession = rawSession ? JSON.parse(rawSession) : null;
-        const patientData = existingSession?.patient ||
-          loadPatientProfile() || { name: "user" };
+        const patientData = existingSession?.patient || patientProfile;
         const sm = new SessionManager(patientData as any, place);
         const recordedRows = JSON.parse(
           localStorage.getItem(STEP6_STORAGE_KEY) || "[]",
@@ -702,8 +716,7 @@ function Step6Content() {
 
       const rawSession = localStorage.getItem("kwab_training_session");
       const existingSession = rawSession ? JSON.parse(rawSession) : null;
-      const patientData = existingSession?.patient ||
-        loadPatientProfile() || { name: "user" };
+      const patientData = existingSession?.patient || patientProfile;
       const sessionManager = new SessionManager(patientData as any, place);
       const step6Accuracy = Number(
         (

@@ -29,6 +29,35 @@ function getTrainingType(entry: TrainingHistoryEntry) {
   return entry.trainingMode === "rehab" ? "speech-rehab" : "self-assessment";
 }
 
+function sanitizeHistoryEntryForDatabase(
+  historyEntry: TrainingHistoryEntry,
+): TrainingHistoryEntry {
+  const compactItems = (items: any[]) =>
+    (Array.isArray(items) ? items : []).map((item) => ({
+      ...item,
+      audioUrl: undefined,
+      userImage: undefined,
+      cameraFrameImage: undefined,
+      cameraFrameFrames: undefined,
+      imageData: undefined,
+    }));
+
+  return {
+    ...historyEntry,
+    stepDetails: historyEntry.stepDetails
+      ? {
+          ...historyEntry.stepDetails,
+          step1: compactItems(historyEntry.stepDetails.step1),
+          step2: compactItems(historyEntry.stepDetails.step2),
+          step3: compactItems(historyEntry.stepDetails.step3),
+          step4: compactItems(historyEntry.stepDetails.step4),
+          step5: compactItems(historyEntry.stepDetails.step5),
+          step6: compactItems(historyEntry.stepDetails.step6),
+        }
+      : historyEntry.stepDetails,
+  };
+}
+
 export async function syncTrainingMediaForHistory(
   patient: PatientProfile,
   historyEntry: TrainingHistoryEntry,
@@ -133,12 +162,14 @@ export async function persistTrainingHistoryToDatabase(
     }
   }
 
+  const sanitizedHistoryEntry = sanitizeHistoryEntryForDatabase(historyEntry);
+
   const response = await fetch("/api/clinical-results", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ patient, historyEntry }),
+    body: JSON.stringify({ patient, historyEntry: sanitizedHistoryEntry }),
   });
 
   const payload = await response.json().catch(() => ({}));

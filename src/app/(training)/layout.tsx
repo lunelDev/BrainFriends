@@ -6,6 +6,22 @@ import { TrainingProvider, useTraining } from "./TrainingContext";
 import FaceTracker from "@/components/diagnosis/FaceTracker";
 import { DeveloperKpiPanel } from "@/components/training/DeveloperKpiPanel";
 
+function stopAllAttachedMediaStreams() {
+  if (typeof document === "undefined") return;
+
+  const mediaElements = Array.from(
+    document.querySelectorAll("video, audio"),
+  ) as Array<HTMLVideoElement | HTMLAudioElement>;
+
+  for (const element of mediaElements) {
+    const stream = element.srcObject;
+    if (stream instanceof MediaStream) {
+      stream.getTracks().forEach((track) => track.stop());
+      element.srcObject = null;
+    }
+  }
+}
+
 function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isReportRoute = pathname === "/report";
@@ -77,6 +93,8 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (showLiveTrainingChrome) return;
+
+    stopAllAttachedMediaStreams();
 
     prevLandmarksRef.current = null;
     latencyEmaRef.current = 0;

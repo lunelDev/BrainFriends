@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { Music, ChevronRight } from "lucide-react";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { SONG_KEYS, SONGS } from "@/features/sing-training/data/songs";
-import { clearAllStorage } from "@/lib/patientStorage";
 
 export default function SelectSingPage() {
   const router = useRouter();
@@ -22,7 +21,6 @@ export default function SelectSingPage() {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
-      clearAllStorage();
       if (typeof window !== "undefined") {
         window.location.replace("/");
         return;

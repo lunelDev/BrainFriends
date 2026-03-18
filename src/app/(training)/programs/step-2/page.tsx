@@ -17,7 +17,7 @@ import { AnalysisSidebar } from "@/components/training/AnalysisSidebar";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { RuntimeStatusBanner } from "@/components/training/RuntimeStatusBanner";
 import { SessionManager } from "@/lib/kwab/SessionManager";
-import { loadPatientProfile } from "@/lib/patientStorage";
+import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
 import {
   analyzeArticulation,
@@ -64,6 +64,7 @@ function Step2Content() {
     updateRuntimeStatus,
     resetRuntimeStatus,
   } = useTraining();
+  const { patient: sessionPatient, sessionId } = useTrainingSession();
   const place = (searchParams?.get("place") as PlaceType) || "home";
   const isRehabMode =
     searchParams.get("trainMode") === "rehab" ||
@@ -80,22 +81,37 @@ function Step2Content() {
     : trainingButtonStyles.orangeSolid;
   const clinicalTrainingType = isRehabMode ? "speech-rehab" : "self-assessment";
   const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
+  const patientProfile = useMemo(
+    () =>
+      sessionPatient ??
+      ({
+        sessionId,
+        name: "user",
+        birthDate: "",
+        gender: "U",
+        age: 70,
+        educationYears: 12,
+        hand: "U",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      } as const),
+    [sessionId, sessionPatient],
+  );
 
   useEffect(() => {
-    const patient = loadPatientProfile();
     void logTrainingEvent({
       eventType: "training_step_viewed",
       trainingType: clinicalTrainingType,
       stepNo: 2,
       pagePath: "/programs/step-2",
-      sessionId: patient?.sessionId ?? null,
+      sessionId,
       payload: {
         place,
         isRehabMode,
         rehabTargetStep: rehabTargetStep || null,
       },
     });
-  }, [clinicalTrainingType, isRehabMode, place, rehabTargetStep]);
+  }, [clinicalTrainingType, isRehabMode, place, rehabTargetStep, sessionId]);
 
   const pushStep3OrRehabResult = useCallback(
     (step2Score: number) => {
@@ -729,11 +745,7 @@ function Step2Content() {
       setReplayCount(0);
     } else {
       try {
-        const patient = loadPatientProfile();
-        const sm = new SessionManager(
-          (patient || { age: 70, educationYears: 12 }) as any,
-          place,
-        );
+        const sm = new SessionManager(patientProfile as any, place);
         const avgSymmetry =
           analysisResults.length > 0
             ? analysisResults.reduce((a, b) => a + b.faceScore, 0) /
@@ -857,11 +869,7 @@ function Step2Content() {
       localStorage.setItem(STEP2_AUDIO_STORAGE_KEY, JSON.stringify(demoItems));
       saveResumeMeta(STEP2_AUDIO_STORAGE_KEY, stepSignature, demoItems.length);
 
-      const patient = loadPatientProfile();
-      const sessionManager = new SessionManager(
-        (patient || { age: 70, educationYears: 12 }) as any,
-        place,
-      );
+      const sessionManager = new SessionManager(patientProfile as any, place);
       const averageSymmetry =
         demoItems.reduce((acc, curr) => acc + curr.faceScore, 0) /
         Math.max(1, demoItems.length);

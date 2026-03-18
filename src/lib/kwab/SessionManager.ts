@@ -253,6 +253,13 @@ export interface SingHistoryResult {
   lyricAccuracy?: string;
   transcript?: string;
   measurementReason?: string | null;
+  reviewKeyFrames?: Array<{
+    dataUrl: string;
+    capturedAt: string;
+    label: string;
+    mediaId?: string | null;
+    objectKey?: string | null;
+  }>;
   comment: string;
   governance?: {
     catalogVersion: string;

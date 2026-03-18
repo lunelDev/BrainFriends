@@ -45,6 +45,8 @@ function getBootstrappedPatientProfile(): PatientProfile | null {
 
 export function getOrCreateSessionId(): string {
   if (typeof window === "undefined") return "server";
+  const bootstrapped = getBootstrappedPatientProfile();
+  if (bootstrapped?.sessionId) return bootstrapped.sessionId;
   const existing = sessionStoreAdapter.getItem("btt.sessionId");
   if (existing) return existing;
 
@@ -65,14 +67,13 @@ export function getOrCreateSessionId(): string {
 
 export function loadPatientProfile(): PatientProfile | null {
   if (typeof window === "undefined") return null;
+  const bootstrapped = getBootstrappedPatientProfile();
+  if (bootstrapped) {
+    sessionStoreAdapter.setItem("btt.sessionId", bootstrapped.sessionId);
+    return bootstrapped;
+  }
   const raw = sessionStoreAdapter.getItem(KEY);
   if (!raw) {
-    const bootstrapped = getBootstrappedPatientProfile();
-    if (bootstrapped) {
-      sessionStoreAdapter.setItem(KEY, JSON.stringify(bootstrapped));
-      sessionStoreAdapter.setItem("btt.sessionId", bootstrapped.sessionId);
-      return bootstrapped;
-    }
     return null;
   }
   try {
@@ -87,8 +88,7 @@ export function loadPatientProfile(): PatientProfile | null {
       hemianopsia: parsed.hemianopsia ?? "NONE",
     } as PatientProfile;
   } catch {
-    const bootstrapped = getBootstrappedPatientProfile();
-    return bootstrapped;
+    return null;
   }
 }
 

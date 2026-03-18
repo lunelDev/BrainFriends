@@ -2,7 +2,6 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { loadPatientProfile } from "@/lib/patientStorage";
 import {
   MeasurementQualityLevel,
   SessionManager,
@@ -28,6 +27,7 @@ import {
   cancelSpeechPlayback,
   speakKoreanText,
 } from "@/lib/client/speechSynthesis";
+import { useTrainingSession } from "@/hooks/useTrainingSession";
 
 function getMeasurementQualityUi(level?: MeasurementQualityLevel) {
   switch (level) {
@@ -59,6 +59,8 @@ function ResultRehabPage() {
   >("idle");
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const persistedHistoryIdRef = useRef<string | null>(null);
+  const finalizedResultRef = useRef<string | null>(null);
+  const { patient } = useTrainingSession();
 
   const place = (searchParams.get("place") || "home").toLowerCase();
   const targetStep = Number(searchParams.get("targetStep") || "1");
@@ -67,15 +69,17 @@ function ResultRehabPage() {
   const detailKey =
     `step${safeStep}` as keyof TrainingHistoryEntry["stepDetails"];
   const currentScore = Number(searchParams.get(stepKey) || "0");
-  const patient = useMemo(() => loadPatientProfile(), []);
 
   useEffect(() => {
     if (!patient) return;
+    const finalizeKey = `${patient.sessionId}:${place}:rehab:${safeStep}`;
+    if (finalizedResultRef.current === finalizeKey) return;
     let cancelled = false;
 
     try {
       const sm = new SessionManager(patient as any, place);
       sm.finalizeSessionAndSaveHistory("rehab", safeStep);
+      finalizedResultRef.current = finalizeKey;
     } catch (e) {
       console.error("[result-rehab] finalize failed:", e);
     }

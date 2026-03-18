@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { replacePatientProfile } from "@/lib/patientStorage";
+import type { PatientProfile } from "@/lib/patientStorage";
 
 type LoginForm = {
   loginId: string;
@@ -23,9 +23,16 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [showFirstDiagnosisModal, setShowFirstDiagnosisModal] = useState(false);
-  const [pendingPatient, setPendingPatient] =
-    useState<Parameters<typeof replacePatientProfile>[0] | null>(null);
+  const [pendingPatient, setPendingPatient] = useState<PatientProfile | null>(
+    null,
+  );
   const [isRequestingPermissions, setIsRequestingPermissions] = useState(false);
+
+  const bootstrapPatient = (patient: PatientProfile) => {
+    if (typeof window !== "undefined") {
+      window.__BRAINFRIENDS_PATIENT__ = patient;
+    }
+  };
 
   const requestPermissions = async () => {
     setIsRequestingPermissions(true);
@@ -44,10 +51,8 @@ export default function LoginPage() {
     }
   };
 
-  const moveAfterPermission = async (
-    patient: Parameters<typeof replacePatientProfile>[0],
-  ) => {
-    replacePatientProfile(patient);
+  const moveAfterPermission = async (patient: PatientProfile) => {
+    bootstrapPatient(patient);
     let hasSelfDiagnosisHistory = false;
 
     try {
@@ -78,9 +83,9 @@ export default function LoginPage() {
     router.replace(hasSelfDiagnosisHistory ? "/select-page/mode" : "/");
   };
 
-  const routeAfterAuth = (patient: Parameters<typeof replacePatientProfile>[0]) => {
+  const routeAfterAuth = (patient: PatientProfile) => {
+    bootstrapPatient(patient);
     if (patient.userRole === "admin") {
-      replacePatientProfile(patient);
       router.replace("/select-page/mode");
       return;
     }
@@ -88,10 +93,8 @@ export default function LoginPage() {
     setShowPermissionModal(true);
   };
 
-  const startFirstDiagnosis = (
-    patient: Parameters<typeof replacePatientProfile>[0],
-  ) => {
-    replacePatientProfile(patient);
+  const startFirstDiagnosis = (patient: PatientProfile) => {
+    bootstrapPatient(patient);
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem("btt.trialMode", "1");
     }

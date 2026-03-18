@@ -55,6 +55,7 @@ export async function listHistoryForAuthenticatedUser(
           ltr.training_mode,
           ltr.rehab_step,
           cs.session_id::text AS session_id,
+          cs.source_session_key,
           ltr.result_id::text AS result_id,
           ltr.source_history_id,
           ltr.aq,
@@ -139,56 +140,115 @@ export async function listHistoryForAuthenticatedUser(
     .sort((a, b) => b.completedAt.localeCompare(a.completedAt));
 
   const patient = context.patient;
+  const sourceSessionKeys = Array.from(
+    new Set(
+      languageRows.rows
+        .map((row: any) => String(row.source_session_key ?? "").trim())
+        .filter((value: string) => value.length > 0),
+    ),
+  );
+
+  const step6ImageRows =
+    sourceSessionKeys.length > 0
+      ? await pool.query(
+          `
+            SELECT
+              source_session_key,
+              object_key,
+              uploaded_at
+            FROM clinical_media_objects
+            WHERE patient_pseudonym_id = $1
+              AND training_type IN ('self-assessment', 'speech-rehab')
+              AND step_no = 6
+              AND media_type = 'image'
+              AND capture_role = 'step6-image'
+              AND source_session_key = ANY($2::text[])
+            ORDER BY source_session_key ASC, uploaded_at ASC
+          `,
+          [context.patientPseudonymId, sourceSessionKeys],
+        )
+      : { rows: [] as any[] };
+
+  const step6ImageMap = new Map<string, string[]>();
+  for (const row of step6ImageRows.rows) {
+    const sourceSessionKey = String(row.source_session_key ?? "").trim();
+    const objectKey = String(row.object_key ?? "").trim();
+    if (!sourceSessionKey || !objectKey) continue;
+    const next = step6ImageMap.get(sourceSessionKey) ?? [];
+    next.push(`/api/media/access?objectKey=${encodeURIComponent(objectKey)}`);
+    step6ImageMap.set(sourceSessionKey, next);
+  }
+
   const entries: TrainingHistoryEntry[] = [
-    ...languageRows.rows.map((row: any) => ({
-      historyId: row.source_history_id
-        ? String(row.source_history_id)
-        : String(row.result_id),
-      sessionId: String(row.session_id),
-      patientKey: context.patientPseudonymId,
-      patientName: patient.name,
-      birthDate: patient.birthDate,
-      age: Number(patient.age ?? 0),
-      educationYears: Number(patient.educationYears ?? 0),
-      place: "home",
-      trainingMode: (
-        row.training_mode === "rehab"
-          ? "rehab"
-          : "self"
-      ) as TrainingMode,
-      rehabStep:
-        row.rehab_step == null ? undefined : Number(row.rehab_step),
-      completedAt: new Date(row.completed_at).getTime(),
-      aq: Number(row.aq ?? 0),
-      stepScores: (row.step_scores as TrainingHistoryEntry["stepScores"]) ?? {
-        step1: 0,
-        step2: 0,
-        step3: 0,
-        step4: 0,
-        step5: 0,
-        step6: 0,
-      },
-      stepDetails: (row.step_details as TrainingHistoryEntry["stepDetails"]) ?? {
-        step1: [],
-        step2: [],
-        step3: [],
-        step4: [],
-        step5: [],
-        step6: [],
-      },
-      articulationScores:
-        (row.articulation_scores as TrainingHistoryEntry["articulationScores"]) ??
-        undefined,
-      facialAnalysisSnapshot:
-        (row.facial_analysis_snapshot as TrainingHistoryEntry["facialAnalysisSnapshot"]) ??
-        undefined,
-      measurementQuality:
-        (row.measurement_quality as TrainingHistoryEntry["measurementQuality"]) ??
-        undefined,
-      stepVersionSnapshots:
-        (row.step_version_snapshots as TrainingHistoryEntry["stepVersionSnapshots"]) ??
-        undefined,
-    })),
+    ...languageRows.rows.map((row: any) => {
+      const sourceSessionKey = String(row.source_session_key ?? "").trim();
+      const imageUrls = step6ImageMap.get(sourceSessionKey) ?? [];
+      const baseStepDetails =
+        (row.step_details as TrainingHistoryEntry["stepDetails"]) ?? {
+          step1: [],
+          step2: [],
+          step3: [],
+          step4: [],
+          step5: [],
+          step6: [],
+        };
+
+      const stepDetails: TrainingHistoryEntry["stepDetails"] = {
+        ...baseStepDetails,
+        step6: Array.isArray(baseStepDetails.step6)
+          ? baseStepDetails.step6.map((item: any, index: number) => ({
+              ...item,
+              userImage:
+                typeof item?.userImage === "string" && item.userImage.trim().length > 0
+                  ? item.userImage
+                  : imageUrls[index] ?? undefined,
+            }))
+          : [],
+      };
+
+      return {
+        historyId: row.source_history_id
+          ? String(row.source_history_id)
+          : String(row.result_id),
+        sessionId: String(row.session_id),
+        patientKey: context.patientPseudonymId,
+        patientName: patient.name,
+        birthDate: patient.birthDate,
+        age: Number(patient.age ?? 0),
+        educationYears: Number(patient.educationYears ?? 0),
+        place: "home",
+        trainingMode: (
+          row.training_mode === "rehab"
+            ? "rehab"
+            : "self"
+        ) as TrainingMode,
+        rehabStep:
+          row.rehab_step == null ? undefined : Number(row.rehab_step),
+        completedAt: new Date(row.completed_at).getTime(),
+        aq: Number(row.aq ?? 0),
+        stepScores: (row.step_scores as TrainingHistoryEntry["stepScores"]) ?? {
+          step1: 0,
+          step2: 0,
+          step3: 0,
+          step4: 0,
+          step5: 0,
+          step6: 0,
+        },
+        stepDetails,
+        articulationScores:
+          (row.articulation_scores as TrainingHistoryEntry["articulationScores"]) ??
+          undefined,
+        facialAnalysisSnapshot:
+          (row.facial_analysis_snapshot as TrainingHistoryEntry["facialAnalysisSnapshot"]) ??
+          undefined,
+        measurementQuality:
+          (row.measurement_quality as TrainingHistoryEntry["measurementQuality"]) ??
+          undefined,
+        stepVersionSnapshots:
+          (row.step_version_snapshots as TrainingHistoryEntry["stepVersionSnapshots"]) ??
+          undefined,
+      };
+    }),
     ...singRows.rows.map((row: any) => ({
       historyId: `history_sing_${new Date(row.completed_at).getTime()}`,
       sessionId: String(row.session_id),

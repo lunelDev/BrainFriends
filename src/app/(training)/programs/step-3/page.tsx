@@ -17,7 +17,7 @@ import {
 import { useTraining } from "../../TrainingContext";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { SessionManager } from "@/lib/kwab/SessionManager";
-import { loadPatientProfile } from "@/lib/patientStorage";
+import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
 import {
   analyzeArticulation,
@@ -87,6 +87,7 @@ function Step3Content() {
   const searchParams = useSearchParams();
 
   const { sidebarMetrics, updateSidebar } = useTraining();
+  const { patient: sessionPatient, sessionId } = useTrainingSession();
   const place = (searchParams?.get("place") as PlaceType) || "home";
   const isRehabMode =
     searchParams.get("trainMode") === "rehab" ||
@@ -103,22 +104,37 @@ function Step3Content() {
     : trainingButtonStyles.orangeSolid;
   const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
   const clinicalTrainingType = isRehabMode ? "speech-rehab" : "self-assessment";
+  const patientProfile = useMemo(
+    () =>
+      sessionPatient ??
+      ({
+        sessionId,
+        name: "user",
+        birthDate: "",
+        gender: "U",
+        age: 70,
+        educationYears: 12,
+        hand: "U",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      } as const),
+    [sessionId, sessionPatient],
+  );
 
   useEffect(() => {
-    const patient = loadPatientProfile();
     void logTrainingEvent({
       eventType: "training_step_viewed",
       trainingType: clinicalTrainingType,
       stepNo: 3,
       pagePath: "/programs/step-3",
-      sessionId: patient?.sessionId ?? null,
+      sessionId,
       payload: {
         place,
         isRehabMode,
         rehabTargetStep: rehabTargetStep || null,
       },
     });
-  }, [clinicalTrainingType, isRehabMode, place, rehabTargetStep]);
+  }, [clinicalTrainingType, isRehabMode, place, rehabTargetStep, sessionId]);
 
   const pushStep4OrRehabResult = useCallback(
     (step3Score: number) => {
@@ -650,11 +666,7 @@ function Step3Content() {
 
         // ✅ SessionManager 통합 저장
         try {
-          const patient = loadPatientProfile();
-          const sm = new SessionManager(
-            (patient || { age: 70, educationYears: 12 }) as any,
-            place,
-          );
+          const sm = new SessionManager(patientProfile as any, place);
 
           sm.saveStep3Result({
             items: updatedResults,
@@ -727,11 +739,7 @@ function Step3Content() {
       const scoring = calculateCompositeScore(demoResults, totalCount);
       const score = scoring.compositeScore;
 
-      const patient = loadPatientProfile();
-      const sessionManager = new SessionManager(
-        (patient || { age: 70, educationYears: 12 }) as any,
-        place,
-      );
+      const sessionManager = new SessionManager(patientProfile as any, place);
       sessionManager.saveStep3Result({
         items: demoResults,
         score,
@@ -761,7 +769,7 @@ function Step3Content() {
     } catch (error) {
       console.error("Step3 skip failed:", error);
     }
-  }, [place, protocol, pushStep4OrRehabResult, stepSignature]);
+  }, [patientProfile, place, protocol, pushStep4OrRehabResult, stepSignature]);
 
   if (!isMounted || !currentItem) return null;
 

@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useMemo, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { loadPatientProfile } from "@/lib/patientStorage";
 import { PlaceType } from "@/constants/trainingData";
 import { calculateKWABScores, getAQNormalComparison } from "@/lib/kwab/KWABScoring";
 import {
@@ -38,6 +37,7 @@ import {
   Database,
   Printer,
 } from "lucide-react";
+import { useTrainingSession } from "@/hooks/useTrainingSession";
 
 function getMeasurementQualityUi(level?: MeasurementQualityLevel) {
   switch (level) {
@@ -77,6 +77,8 @@ function ResultContent() {
     "idle" | "saving" | "saved" | "failed" | "local_only"
   >("idle");
   const persistedHistoryIdRef = useRef<string | null>(null);
+  const finalizedResultRef = useRef<string | null>(null);
+  const { patient: patientProfile } = useTrainingSession();
 
   const place = useMemo(
     () => (searchParams.get("place") as PlaceType) || "home",
@@ -85,7 +87,6 @@ function ResultContent() {
   const isRehabResult = searchParams.get("trainMode") === "rehab";
   const currentTrainingMode = isRehabResult ? "rehab" : "self";
   const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
-  const patientProfile = useMemo(() => loadPatientProfile(), []);
   const patientForHistory = useMemo(() => {
     if (!patientProfile) return null;
     return {
@@ -126,8 +127,8 @@ function ResultContent() {
 
     const scorePack = calculateKWABScores(
       {
-        age: Number(loadPatientProfile()?.age ?? 65),
-        educationYears: Number(loadPatientProfile()?.educationYears ?? 6),
+        age: Number(patientProfile?.age ?? 65),
+        educationYears: Number(patientProfile?.educationYears ?? 6),
       },
       {
         spontaneousSpeech,
@@ -163,7 +164,7 @@ function ResultContent() {
       },
     );
     return { ...scorePack, aq: Number(scorePack.aq.toFixed(1)) } as any;
-  }, [place, queryScores, sessionData]);
+  }, [patientProfile?.age, patientProfile?.educationYears, place, queryScores, sessionData]);
 
   const stepDetails = useMemo(() => {
     return buildStepDetails(sessionData, queryScores);
@@ -378,9 +379,12 @@ function ResultContent() {
 
   useEffect(() => {
     if (!patientProfile) return;
+    const finalizeKey = `${patientProfile.sessionId}:${place}:${currentTrainingMode}`;
+    if (finalizedResultRef.current === finalizeKey) return;
     try {
       const sm = new SessionManager(patientProfile as any, place);
       sm.finalizeSessionAndSaveHistory(currentTrainingMode);
+      finalizedResultRef.current = finalizeKey;
       setHistoryRefreshKey((v) => v + 1);
     } catch (e) {
       console.error("Result finalize/save history failed:", e);
@@ -411,7 +415,7 @@ function ResultContent() {
 
   const handleExportData = () => {
     if (!sessionData) return;
-    const patient = loadPatientProfile();
+    const patient = patientProfile;
     const historyForPatient = patient
       ? SessionManager.getHistoryFor(patient as any).sort(
           (a, b) => b.completedAt - a.completedAt,

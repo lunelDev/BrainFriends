@@ -22,7 +22,6 @@ import { SongKey, SyllableCue } from "@/features/sing-training/types";
 import { useTraining } from "../../TrainingContext";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { buildVersionSnapshot, type VersionSnapshot } from "@/lib/analysis/versioning";
-import { loadPatientProfile } from "@/lib/patientStorage";
 import { logTrainingEvent } from "@/lib/client/trainingEventsApi";
 import {
   PronunciationAnalyzer,
@@ -36,6 +35,12 @@ type RankRow = {
   score: number;
   region: string;
   me?: boolean;
+};
+
+type SingKeyFrame = {
+  dataUrl: string;
+  capturedAt: string;
+  label: string;
 };
 
 type SingResultEnvelope = {
@@ -55,6 +60,7 @@ type SingResultEnvelope = {
   rankings: RankRow[];
   completedAt: number;
   reviewAudioUrl?: string | null;
+  reviewKeyFrames?: SingKeyFrame[];
   reviewAudioMediaId?: string | null;
   reviewAudioObjectKey?: string | null;
   reviewAudioUploadState?:
@@ -77,7 +83,9 @@ const AUDIO_LEVEL_ONSET_THRESHOLD = 0.02;
 const MIN_VOICED_RMS = 0.015;
 const MIN_MEASURED_PITCH_SAMPLES = 8;
 const MIN_MEASURED_FACE_SAMPLES = 8;
-const MIN_SING_TRANSCRIPT_CHARS = 6;
+const MIN_SING_TRANSCRIPT_CHARS = 2;
+const MAX_SING_KEY_FRAMES = 3;
+const KEY_FRAME_CAPTURE_INTERVAL_MS = 5000;
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -140,6 +148,23 @@ function normalizeLyricsForAnalysis(text: string) {
     .replace(/\s+/g, " ")
     .replace(/[~"'.,!?]/g, "")
     .trim();
+}
+
+function captureKeyFrame(videoEl: HTMLVideoElement | null, label: string): SingKeyFrame | null {
+  if (!videoEl || videoEl.videoWidth <= 0 || videoEl.videoHeight <= 0) return null;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = videoEl.videoWidth;
+  canvas.height = videoEl.videoHeight;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+
+  context.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+  return {
+    dataUrl: canvas.toDataURL("image/jpeg", 0.82),
+    capturedAt: new Date().toISOString(),
+    label,
+  };
 }
 
 function describeSingMeasurementReason(params: {
@@ -369,6 +394,8 @@ function BrainSingPageContent() {
   const finishGuardRef = useRef(false);
   const audioEndedRef = useRef(false);
   const sessionStartRef = useRef<number | null>(null);
+  const keyFramesRef = useRef<SingKeyFrame[]>([]);
+  const lastKeyFrameCapturedAtRef = useRef<number>(0);
   const measuredPitchHistoryRef = useRef<number[]>([]);
   const measuredSymmetryHistoryRef = useRef<number[]>([]);
   const voiceOnsetLatencyMsRef = useRef<number | null>(null);
@@ -506,6 +533,8 @@ function BrainSingPageContent() {
       songAudioRef.current.currentTime = 0;
     }
     audioEndedRef.current = false;
+    keyFramesRef.current = [];
+    lastKeyFrameCapturedAtRef.current = 0;
   };
 
   const stopAnalysisLoopKeepingCamera = () => {
@@ -525,6 +554,25 @@ function BrainSingPageContent() {
       songAudioRef.current.onended = null;
       songAudioRef.current.pause();
     }
+  };
+
+  const collectSingKeyFrame = (force = false) => {
+    const now = Date.now();
+    if (
+      !force &&
+      (keyFramesRef.current.length >= MAX_SING_KEY_FRAMES ||
+        now - lastKeyFrameCapturedAtRef.current < KEY_FRAME_CAPTURE_INTERVAL_MS)
+    ) {
+      return;
+    }
+
+    const keyFrame =
+      captureKeyFrame(videoRef.current, `frame-${keyFramesRef.current.length + 1}`) ??
+      captureKeyFrame(sideVideoRef.current, `frame-${keyFramesRef.current.length + 1}`);
+
+    if (!keyFrame) return;
+    keyFramesRef.current = [...keyFramesRef.current, keyFrame].slice(0, MAX_SING_KEY_FRAMES);
+    lastKeyFrameCapturedAtRef.current = now;
   };
 
   const blobToDataUrl = (blob: Blob) =>
@@ -741,6 +789,7 @@ function BrainSingPageContent() {
 
   const finishSinging = async (jitterData: number[], siData: number[]) => {
     stopAnalysisLoopKeepingCamera();
+    collectSingKeyFrame(true);
     const reviewAudio = await stopVoiceRecording();
     const reviewAudioUploadState: "uploaded" | "failed" | "not_recorded" | "pending_result_sync" =
       reviewAudio.dataUrl ? "pending_result_sync" : "not_recorded";
@@ -849,10 +898,11 @@ function BrainSingPageContent() {
           measurementReason,
           comment: finalComment,
           rankings: rows,
-          completedAt: Date.now(),
-          reviewAudioUrl: reviewAudio.dataUrl,
-          reviewAudioMediaId: null,
-          reviewAudioObjectKey: null,
+            completedAt: Date.now(),
+            reviewAudioUrl: reviewAudio.dataUrl,
+            reviewKeyFrames: keyFramesRef.current,
+            reviewAudioMediaId: null,
+            reviewAudioObjectKey: null,
           reviewAudioUploadState,
           reviewAudioUploadError,
           governance: {
@@ -878,6 +928,7 @@ function BrainSingPageContent() {
 
     if (typeof window !== "undefined") {
       window.setTimeout(() => {
+        stopActiveSession();
         window.location.replace("/result-page/sing-training");
       }, 2000);
     }
@@ -949,6 +1000,7 @@ function BrainSingPageContent() {
       const effectiveDuration = finishAtSec;
       const remain = Math.max(0, effectiveDuration - elapsed).toFixed(1);
       setRemaining(remain);
+      collectSingKeyFrame();
 
       const firstLine = currentSong.lyrics[0] ?? null;
       const lastStartedIndex = currentSong.lyrics.reduce((foundIndex, line, index) => {
@@ -1095,14 +1147,20 @@ function BrainSingPageContent() {
           <div className="flex items-center gap-2 sm:gap-3">
             <button
               type="button"
-              onClick={() => router.push("/select-page/sing-training")}
+              onClick={() => {
+                stopActiveSession();
+                router.push("/select-page/sing-training");
+              }}
               className="rounded-full border border-emerald-500 bg-gradient-to-r from-emerald-600 to-emerald-500 px-4 py-2 text-[11px] sm:text-xs font-black text-white shadow-sm"
             >
               곡선택
             </button>
             <button
               type="button"
-              onClick={() => router.push("/select-page/mode")}
+              onClick={() => {
+                stopActiveSession();
+                router.push("/select-page/mode");
+              }}
               className="rounded-full border border-slate-200 bg-white px-4 py-2 text-[11px] sm:text-xs font-black text-slate-700 shadow-sm"
             >
               활동선택
