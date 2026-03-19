@@ -48,6 +48,50 @@ import {
   speakKoreanText,
 } from "@/lib/client/speechSynthesis";
 
+function isMeasuredSingReportEntry(entry: TrainingHistoryEntry | null) {
+  if (!entry?.singResult) return false;
+  return (
+    entry.singResult.finalConsonant !== "-" ||
+    entry.singResult.finalVowel !== "-" ||
+    entry.singResult.lyricAccuracy !== "-" ||
+    entry.singResult.finalSi !== "-"
+  );
+}
+
+function shouldShowServerExcludedBadge(entry: TrainingHistoryEntry | null) {
+  if (!entry) return false;
+  if (entry.trainingMode === "sing") {
+    return !isMeasuredSingReportEntry(entry);
+  }
+  return entry.measurementQuality?.overall !== "measured";
+}
+
+function isDemoSkipEntry(entry: TrainingHistoryEntry | null) {
+  if (!entry) return false;
+  if (entry.trainingMode === "sing") {
+    const reason = String(entry.singResult?.measurementReason || "");
+    const comment = String(entry.singResult?.comment || "");
+    return reason.includes("관리자 skip") || comment.includes("관리자 skip");
+  }
+  return entry.measurementQuality?.overall === "demo";
+}
+
+function ServerExcludedBadge() {
+  return (
+    <div className="inline-flex items-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-black text-amber-700 sm:text-xs">
+      서버 저장 제외됨(실측 아님)
+    </div>
+  );
+}
+
+function DemoResultBadge() {
+  return (
+    <div className="inline-flex items-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-black text-emerald-700 sm:text-xs">
+      시연용 결과
+    </div>
+  );
+}
+
 function ReportContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -787,6 +831,12 @@ function ReportContent() {
                 : "border-orange-100"
             }`}
           >
+          {selected && shouldShowServerExcludedBadge(selected) ? (
+            <div className="mb-4 flex flex-wrap gap-2">
+              {isDemoSkipEntry(selected) ? <DemoResultBadge /> : null}
+              <ServerExcludedBadge />
+            </div>
+          ) : null}
           {!selected ? (
             <div className="rounded-xl border border-dashed border-slate-200 p-6 text-sm font-bold text-slate-500">
               선택된 리포트가 없습니다.
@@ -835,7 +885,9 @@ function ReportContent() {
                     <h3 className="text-lg font-black text-slate-900">전문 AI 분석</h3>
                   </div>
                   <p className="mt-4 text-base font-bold text-slate-900">
-                    {selected.singResult?.comment || "노래 리듬과 안면 반응을 기반으로 분석한 결과입니다."}
+                    {isDemoSkipEntry(selected)
+                      ? "관리자 skip으로 생성된 시연용 결과입니다. 결과 화면 시연만 가능하며 서버 원장 반영 대상은 아닙니다."
+                      : selected.singResult?.comment || "노래 리듬과 안면 반응을 기반으로 분석한 결과입니다."}
                   </p>
                   <p className="mt-3 text-sm font-medium leading-relaxed text-slate-600">
                     성대 안정도, 기준 얼굴 대비 안면 반응 변화, 반응 지연 시간을 종합해 현재 회복 흐름을 추적합니다.

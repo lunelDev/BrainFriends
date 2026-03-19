@@ -133,6 +133,7 @@ function Step4Content() {
       } as const),
     [sessionId, sessionPatient],
   );
+  const isAdmin = sessionPatient?.userRole === "admin";
 
   useEffect(() => {
     void logTrainingEvent({
@@ -1053,6 +1054,20 @@ function Step4Content() {
   };
 
   const handleSkipStep = useCallback(() => {
+    if (!isAdmin) return;
+    void logTrainingEvent({
+      eventType: "training_step_skipped",
+      eventStatus: "skipped",
+      trainingType: clinicalTrainingType,
+      stepNo: 4,
+      pagePath: "/programs/step-4",
+      sessionId,
+      payload: {
+        place,
+        isRehabMode,
+        rehabTargetStep: rehabTargetStep || null,
+      },
+    });
     try {
       const randomFloat = (min: number, max: number, digits = 1) =>
         Number((Math.random() * (max - min) + min).toFixed(digits));
@@ -1138,7 +1153,17 @@ function Step4Content() {
       pushStep5OrRehabResult(score);
     } catch (error) {
     }
-  }, [place, pushStep5OrRehabResult, scenarios, stepSignature]);
+  }, [
+    clinicalTrainingType,
+    isAdmin,
+    isRehabMode,
+    place,
+    pushStep5OrRehabResult,
+    rehabTargetStep,
+    scenarios,
+    sessionId,
+    stepSignature,
+  ]);
 
   if (!isMounted || !currentScenario) return null;
 
@@ -1167,13 +1192,15 @@ function Step4Content() {
           </h2>
         </div>
         <div className="flex items-center gap-2 ml-auto flex-wrap justify-end">
-          <button
-            type="button"
-            onClick={handleSkipStep}
-            className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${trainingButtonStyles.slateSoft}`}
-          >
-            SKIP
-          </button>
+          {isAdmin ? (
+            <button
+              type="button"
+              onClick={handleSkipStep}
+              className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${trainingButtonStyles.slateSoft}`}
+            >
+              SKIP
+            </button>
+          ) : null}
           <div
             className={`px-4 py-1.5 rounded-full font-black text-xs ${isRehabMode ? "bg-sky-50 text-sky-700 border border-sky-200" : "bg-orange-50 text-orange-700"}`}
           >

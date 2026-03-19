@@ -437,12 +437,60 @@ function renderProgressLyric(
   ));
 }
 
+function buildSkippedSingResult(params: {
+  song: SongKey;
+  userName: string;
+  governance: {
+    catalogVersion: string;
+    analysisVersion: string;
+    requirementIds: string[];
+    failureModes: string[];
+  };
+}): SingResultEnvelope {
+  return {
+    song: params.song,
+    userName: params.userName || "사용자",
+    score: 0,
+    finalJitter: "--",
+    finalSi: "--",
+    facialResponseDelta: "--",
+    rtLatency: "-- ms",
+    finalConsonant: "--",
+    finalVowel: "--",
+    lyricAccuracy: "--",
+    transcript: "",
+    metricSource: "demo",
+    measurementReason: "관리자 skip으로 인해 실측을 수행하지 않았습니다.",
+    comment:
+      "관리자 skip으로 생성된 화면 확인용 결과입니다. 실측 데이터가 아니므로 서버 저장과 랭킹 반영은 수행되지 않습니다.",
+    rankings: [],
+    completedAt: Date.now(),
+    reviewAudioUrl: null,
+    reviewKeyFrames: [],
+    reviewAudioMediaId: null,
+    reviewAudioObjectKey: null,
+    reviewAudioUploadState: "not_recorded",
+    reviewAudioUploadError: null,
+    governance: params.governance,
+    versionSnapshot: buildVersionSnapshot("sing", {
+      algorithm_version: params.governance.analysisVersion,
+      model_version: params.governance.analysisVersion,
+      requirements: params.governance.requirementIds,
+      config_version: params.governance.catalogVersion,
+      measurement_metadata: {
+        facial_response_delta: null,
+      },
+    }),
+  };
+}
+
 
 function BrainSingPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { patient, ageGroup } = useTrainingSession();
   const { sidebarMetrics } = useTraining();
+  const isAdmin = patient?.userRole === "admin";
 
   useEffect(() => {
     void logTrainingEvent({
@@ -741,11 +789,13 @@ function BrainSingPageContent() {
   const primeSongAudio = async () => {
     if (!songAudioRef.current) return;
     try {
-      songAudioRef.current.muted = isBgmMuted;
+      const originalMuted = songAudioRef.current.muted;
+      songAudioRef.current.muted = true;
       songAudioRef.current.currentTime = 0;
       await songAudioRef.current.play();
       songAudioRef.current.pause();
       songAudioRef.current.currentTime = 0;
+      songAudioRef.current.muted = isBgmMuted || originalMuted;
     } catch {
       setAudioReady(false);
     }
@@ -1354,6 +1404,43 @@ function BrainSingPageContent() {
     setMediaAccessError(null);
   };
 
+  const handleSkipSong = () => {
+    if (!isAdmin || typeof window === "undefined") return;
+    stopActiveSession();
+    const skippedResult = buildSkippedSingResult({
+      song,
+      userName: patient?.name ?? "관리자",
+      governance: {
+        catalogVersion:
+          currentSong.governance.catalogVersion ?? SING_TRAINING_CATALOG_VERSION,
+        analysisVersion:
+          currentSong.governance.analysisVersion ?? SING_TRAINING_ANALYSIS_VERSION,
+        requirementIds: currentSong.governance.requirementIds,
+        failureModes: currentSong.governance.failureModes,
+      },
+    });
+    window.sessionStorage.setItem(
+      SING_RESULT_SESSION_KEY,
+      JSON.stringify(skippedResult),
+    );
+    window.sessionStorage.setItem(SING_LAST_SONG_SESSION_KEY, song);
+    void logTrainingEvent({
+      eventType: "sing_training_skipped",
+      eventStatus: "skipped",
+      trainingType: "sing-training",
+      pagePath: "/programs/sing-training",
+      stepNo: 0,
+      sessionId: patient?.sessionId ?? null,
+      payload: {
+        song,
+        ageGroup,
+      },
+    });
+    window.location.replace(
+      `/result-page/sing-training?song=${encodeURIComponent(song)}&demo=skip`,
+    );
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#f7faf8] text-slate-900">
       <header className="shrink-0 border-b border-emerald-100 bg-white/95 px-4 sm:px-6 py-3 backdrop-blur-md">
@@ -1381,6 +1468,15 @@ function BrainSingPageContent() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            {isAdmin ? (
+              <button
+                type="button"
+                onClick={handleSkipSong}
+                className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-[11px] font-black text-emerald-700 shadow-sm sm:text-xs"
+              >
+                SKIP
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => {

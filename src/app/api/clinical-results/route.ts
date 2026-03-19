@@ -35,6 +35,10 @@ function isValidHistoryEntry(
   );
 }
 
+function shouldPersistHistoryEntry(entry: TrainingHistoryEntry) {
+  return entry.measurementQuality?.overall === "measured";
+}
+
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as RequestBody;
   const cookieStore = await cookies();
@@ -73,6 +77,50 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { ok: false, error: "invalid_history_entry_payload" },
       { status: 400 },
+    );
+  }
+
+  if (!shouldPersistHistoryEntry(body.historyEntry)) {
+    await appendClinicalAuditLog(
+      buildTrainingHistoryAuditLog({
+        request: req,
+        patient: body.patient,
+        sessionId: body.patient.sessionId,
+        status: "skipped",
+        historyEntry: body.historyEntry,
+        failureReason: "non_measured_result_not_persisted",
+        storageTargets: ["data/audit/clinical-events.ndjson"],
+      }),
+    );
+
+    if (sessionToken) {
+      await recordTrainingUsageEvent(sessionToken, {
+        eventType: "clinical_result_skipped",
+        eventStatus: "skipped",
+        trainingType:
+          body.historyEntry.trainingMode === "rehab"
+            ? "speech-rehab"
+            : "self-assessment",
+        stepNo: body.historyEntry.rehabStep ?? null,
+        pagePath:
+          body.historyEntry.trainingMode === "rehab"
+            ? "/result-page/speech-rehab"
+            : "/result-page/self-assessment",
+        sessionId: body.historyEntry.sessionId,
+        payload: {
+          historyId: body.historyEntry.historyId,
+          measurementQuality: body.historyEntry.measurementQuality?.overall ?? null,
+        },
+      }).catch(() => undefined);
+    }
+
+    return NextResponse.json(
+      {
+        ok: true,
+        skipped: true,
+        reason: "non_measured_result_not_persisted",
+      },
+      { status: 200 },
     );
   }
 

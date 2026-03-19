@@ -42,7 +42,7 @@ dist/
 build/
 out/
 coverage/
-# Next.js ºôµå °á°ú¹° Ãß°¡
+# Next.js ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ß°ï¿½
 .next/
 
 # ===============================
@@ -50,7 +50,8 @@ coverage/
 # ===============================
 .cache/
 .eslintcache
-# TypeScript ºôµå Á¤º¸ ¹× Next.js SDK °ü·Ã
+# TypeScript ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ Next.js SDK ï¿½ï¿½ï¿½ï¿½
 *.tsbuildinfo
 next-env.d.ts
 .vercel
+data/audit/*.ndjson

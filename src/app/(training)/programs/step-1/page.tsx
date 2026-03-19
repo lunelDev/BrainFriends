@@ -57,6 +57,7 @@ function Step1Content() {
     (typeof window !== "undefined" &&
       sessionStorage.getItem("btt.trainingMode") === "rehab");
   const rehabTargetStep = Number(searchParams.get("targetStep") || "0");
+  const clinicalTrainingType = isRehabMode ? "speech-rehab" : "self-assessment";
   const patientProfile = useMemo(
     () =>
       sessionPatient ??
@@ -73,11 +74,12 @@ function Step1Content() {
       } as const),
     [sessionId, sessionPatient],
   );
+  const isAdmin = sessionPatient?.userRole === "admin";
 
   useEffect(() => {
     void logTrainingEvent({
       eventType: "training_step_viewed",
-      trainingType: isRehabMode ? "speech-rehab" : "self-assessment",
+      trainingType: clinicalTrainingType,
       stepNo: 1,
       pagePath: "/programs/step-1",
       sessionId,
@@ -87,7 +89,7 @@ function Step1Content() {
         rehabTargetStep: rehabTargetStep || null,
       },
     });
-  }, [isRehabMode, placeParam, rehabTargetStep]);
+  }, [clinicalTrainingType, isRehabMode, placeParam, rehabTargetStep, sessionId]);
 
   const [isMounted, setIsMounted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -269,6 +271,20 @@ function Step1Content() {
   );
 
   const handleSkipStep = useCallback(() => {
+    if (!isAdmin) return;
+    void logTrainingEvent({
+      eventType: "training_step_skipped",
+      eventStatus: "skipped",
+      trainingType: clinicalTrainingType,
+      stepNo: 1,
+      pagePath: "/programs/step-1",
+      sessionId,
+      payload: {
+        place: placeParam,
+        isRehabMode,
+        rehabTargetStep: rehabTargetStep || null,
+      },
+    });
     try {
       const randomInt = (min: number, max: number) =>
         Math.floor(Math.random() * (max - min + 1)) + min;
@@ -310,7 +326,18 @@ function Step1Content() {
       }
     } catch (error) {
     }
-  }, [patientProfile, placeParam, router, saveStep1Results, trainingData]);
+  }, [
+    clinicalTrainingType,
+    isAdmin,
+    isRehabMode,
+    patientProfile,
+    placeParam,
+    rehabTargetStep,
+    router,
+    saveStep1Results,
+    sessionId,
+    trainingData,
+  ]);
 
   const handleAnswer = useCallback(
     (userAnswer: boolean | null) => {
@@ -448,13 +475,15 @@ function Step1Content() {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3 ml-auto flex-wrap justify-end">
-          <button
-            type="button"
-            onClick={handleSkipStep}
-            className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${trainingButtonStyles.slateSoft}`}
-          >
-            SKIP
-          </button>
+          {isAdmin ? (
+            <button
+              type="button"
+              onClick={handleSkipStep}
+              className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${trainingButtonStyles.slateSoft}`}
+            >
+              SKIP
+            </button>
+          ) : null}
           <div
             className={`px-3 py-1.5 rounded-full font-black text-[11px] transition-all border ${
               isSpeaking

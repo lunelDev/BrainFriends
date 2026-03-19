@@ -14,6 +14,10 @@ export type PersistClinicalHistoryResult = {
   skipped: boolean;
 };
 
+function shouldPersistClinicalHistory(historyEntry: TrainingHistoryEntry) {
+  return historyEntry.measurementQuality?.overall === "measured";
+}
+
 const CLINICAL_SYNC_PREFIX = "clinical-db-sync:";
 const CLINICAL_MEDIA_SYNC_PREFIX = "clinical-media-sync:";
 
@@ -62,6 +66,9 @@ export async function syncTrainingMediaForHistory(
   patient: PatientProfile,
   historyEntry: TrainingHistoryEntry,
 ) {
+  if (!shouldPersistClinicalHistory(historyEntry)) {
+    return { synced: false, skipped: true as const };
+  }
   if (typeof window !== "undefined") {
     const cached = window.sessionStorage.getItem(getMediaPersistKey(historyEntry));
     if (cached) {
@@ -155,6 +162,9 @@ export async function persistTrainingHistoryToDatabase(
   patient: PatientProfile,
   historyEntry: TrainingHistoryEntry,
 ): Promise<PersistClinicalHistoryResult> {
+  if (!shouldPersistClinicalHistory(historyEntry)) {
+    return { skipped: true };
+  }
   if (typeof window !== "undefined") {
     const cached = window.sessionStorage.getItem(getPersistKey(historyEntry));
     if (cached) {

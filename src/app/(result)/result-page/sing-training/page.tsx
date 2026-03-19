@@ -112,6 +112,32 @@ function parseMeasuredNumber(value: string | null | undefined) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function isMeasuredSingResult(result: SingResult | null) {
+  return result?.metricSource === "measured";
+}
+
+function isDemoSkipSingResult(result: SingResult | null) {
+  const reason = String(result?.measurementReason || "");
+  const comment = String(result?.comment || "");
+  return reason.includes("관리자 skip") || comment.includes("관리자 skip");
+}
+
+function ServerExcludedBadge() {
+  return (
+    <div className="inline-flex items-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-black text-amber-700 sm:text-xs">
+      서버 저장 제외됨(실측 아님)
+    </div>
+  );
+}
+
+function DemoResultBadge() {
+  return (
+    <div className="inline-flex items-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-black text-emerald-700 sm:text-xs">
+      시연용 결과
+    </div>
+  );
+}
+
 function buildFallbackSingResult(
   song: SongKey,
   patientName: string,
@@ -133,6 +159,46 @@ function buildFallbackSingResult(
     measurementReason: "저장된 측정 결과가 없어 화면 확인용 기본 결과를 표시합니다.",
     comment:
       "음성 또는 안면 측정 데이터가 충분하지 않아 임상 결과를 확정할 수 없습니다. 화면 확인용 결과만 표시되며 서버 저장은 수행되지 않습니다.",
+    rankings: EMPTY_RANKINGS,
+    completedAt: Date.now(),
+    reviewAudioUrl: null,
+    reviewKeyFrames: [],
+    reviewAudioMediaId: null,
+    reviewAudioObjectKey: null,
+    reviewAudioUploadState: "not_recorded",
+    reviewAudioUploadError: null,
+    governance: {
+      catalogVersion:
+        songMeta.governance.catalogVersion ?? SING_TRAINING_CATALOG_VERSION,
+      analysisVersion:
+        songMeta.governance.analysisVersion ?? SING_TRAINING_ANALYSIS_VERSION,
+      requirementIds: songMeta.governance.requirementIds,
+      failureModes: songMeta.governance.failureModes,
+    },
+  };
+}
+
+function buildSkippedDemoSingResult(
+  song: SongKey,
+  patientName: string,
+): SingResult {
+  const songMeta = SONGS[song];
+  return {
+    song,
+    userName: patientName || "관리자",
+    score: 0,
+    finalJitter: "--",
+    finalSi: "--",
+    facialResponseDelta: "--",
+    rtLatency: "-- ms",
+    finalConsonant: "--",
+    finalVowel: "--",
+    lyricAccuracy: "--",
+    transcript: "",
+    metricSource: "demo",
+    measurementReason: "관리자 skip으로 인해 실측을 수행하지 않았습니다.",
+    comment:
+      "관리자 skip으로 생성된 화면 확인용 결과입니다. 실측 데이터가 아니므로 서버 저장과 랭킹 반영은 수행되지 않습니다.",
     rankings: EMPTY_RANKINGS,
     completedAt: Date.now(),
     reviewAudioUrl: null,
@@ -416,12 +482,24 @@ export default function SingTrainingResultPage() {
     });
 
     const raw = window.sessionStorage.getItem(SING_RESULT_SESSION_KEY);
+    const isSkipDemo = searchParams.get("demo") === "skip";
     if (!raw) {
       const lastSong =
         window.sessionStorage.getItem(SING_LAST_SONG_SESSION_KEY) ??
         searchParams.get("song");
       if (lastSong && lastSong in SONGS) {
         setFallbackSong(lastSong as SongKey);
+        if (isSkipDemo) {
+          setResult(
+            buildSkippedDemoSingResult(
+              lastSong as SongKey,
+              patient?.name || "관리자",
+            ),
+          );
+          setMyRank(null);
+          setHasLoadedResult(true);
+          return;
+        }
       } else {
         setFallbackSong(null);
       }
@@ -451,6 +529,12 @@ export default function SingTrainingResultPage() {
 
   useEffect(() => {
     if (!patient) return;
+    const isSkipDemo = searchParams.get("demo") === "skip";
+    if (isSkipDemo) {
+      setDbSaveState("local_only");
+      setHasLoadedResult(true);
+      return;
+    }
 
     const needsStoredResultSync =
       !result || result.metricSource !== "measured" || dbSaveState === "local_only";
@@ -466,7 +550,15 @@ export default function SingTrainingResultPage() {
         const latestSing = entries.find((row) => row.trainingMode === "sing");
         if (!latestSing?.singResult) {
           if (!result && fallbackSong) {
-            setResult(buildFallbackSingResult(fallbackSong, patient.name || "사용자"));
+            const isSkipDemo = searchParams.get("demo") === "skip";
+            setResult(
+              isSkipDemo
+                ? buildSkippedDemoSingResult(
+                    fallbackSong,
+                    patient.name || "관리자",
+                  )
+                : buildFallbackSingResult(fallbackSong, patient.name || "사용자"),
+            );
             setMyRank(null);
           }
           setHasLoadedResult(true);
@@ -488,7 +580,15 @@ export default function SingTrainingResultPage() {
       .catch(() => {
         if (!cancelled) {
           if (!result && fallbackSong) {
-            setResult(buildFallbackSingResult(fallbackSong, patient.name || "사용자"));
+            const isSkipDemo = searchParams.get("demo") === "skip";
+            setResult(
+              isSkipDemo
+                ? buildSkippedDemoSingResult(
+                    fallbackSong,
+                    patient.name || "관리자",
+                  )
+                : buildFallbackSingResult(fallbackSong, patient.name || "사용자"),
+            );
             setMyRank(null);
           }
           setHasLoadedResult(true);
@@ -498,14 +598,19 @@ export default function SingTrainingResultPage() {
     return () => {
       cancelled = true;
     };
-  }, [dbSaveState, fallbackSong, patient, result]);
+  }, [dbSaveState, fallbackSong, patient, result, searchParams]);
 
   useEffect(() => {
     if (result || patient || !fallbackSong) return;
-    setResult(buildFallbackSingResult(fallbackSong, "사용자"));
+    const isSkipDemo = searchParams.get("demo") === "skip";
+    setResult(
+      isSkipDemo
+        ? buildSkippedDemoSingResult(fallbackSong, "관리자")
+        : buildFallbackSingResult(fallbackSong, "사용자"),
+    );
     setMyRank(null);
     setHasLoadedResult(true);
-  }, [fallbackSong, patient, result]);
+  }, [fallbackSong, patient, result, searchParams]);
 
   useEffect(() => {
     return () => {
@@ -598,7 +703,9 @@ export default function SingTrainingResultPage() {
     );
   }
 
-  const isMeasuredResult = result.metricSource === "measured";
+  const isMeasuredResult = isMeasuredSingResult(result);
+  const isDemoSkipResult = isDemoSkipSingResult(result);
+  const isServerExcluded = dbSaveState === "local_only" || !isMeasuredResult;
   const facialResponseChangeScore = parseMeasuredNumber(result.facialResponseDelta);
   const jitterScore = parseMeasuredNumber(result.finalJitter);
   const consonantScore = parseMeasuredNumber(result.finalConsonant);
@@ -648,7 +755,7 @@ export default function SingTrainingResultPage() {
     <div className="min-h-screen bg-[linear-gradient(180deg,#f5fbf8_0%,#eef8f3_100%)] px-4 py-6 sm:px-6 sm:py-8">
       <div className="mx-auto max-w-6xl">
         <div className="rounded-[34px] border border-emerald-100 bg-white p-6 shadow-[0_24px_70px_rgba(16,185,129,0.08)] sm:p-8">
-          <div className="flex flex-col gap-5 border-b border-emerald-100 pb-6 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-5 border-b border-emerald-100 pb-6 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.24em] text-emerald-600">
                 Brain Karaoke Result
@@ -673,31 +780,24 @@ export default function SingTrainingResultPage() {
                 {dbSaveState === "failed" && "DB Sync Failed - Local backup kept"}
                 {dbSaveState === "idle" && "DB Sync Pending"}
               </p>
+              {isServerExcluded ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {isDemoSkipResult ? <DemoResultBadge /> : null}
+                  <ServerExcludedBadge />
+                </div>
+              ) : null}
             </div>
-              <div className="flex gap-3">
-                {result.reviewAudioUrl ? (
-                  <div className="flex flex-col gap-1">
-                    <button
-                      type="button"
-                      onClick={playReviewAudio}
-                      className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 font-black text-emerald-700"
-                    >
-                      <Music className="h-4 w-4" />
-                      {isPlayingReview ? "재생 중..." : "내 노래 듣기"}
-                    </button>
-                    <p className="text-xs font-semibold text-slate-500">
-                      {result.reviewAudioUploadState === "uploaded" &&
-                        "NCP 업로드 및 DB 메타데이터 저장 완료"}
-                      {result.reviewAudioUploadState === "pending_result_sync" &&
-                        "결과 저장 시 서버 업로드 대기 중"}
-                      {result.reviewAudioUploadState === "failed" &&
-                        `업로드 실패: ${result.reviewAudioUploadError || "--"}`}
-                      {result.reviewAudioUploadState === "not_recorded" &&
-                        "녹음 파일이 생성되지 않았습니다."}
-                      {!result.reviewAudioUploadState && "로컬 녹음만 생성되었습니다."}
-                    </p>
-                  </div>
-                ) : null}
+            <div className="flex flex-wrap gap-3">
+              {result.reviewAudioUrl ? (
+                <button
+                  type="button"
+                  onClick={playReviewAudio}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 font-black text-emerald-700"
+                >
+                  <Music className="h-4 w-4" />
+                  {isPlayingReview ? "재생 중..." : "내 노래 듣기"}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => window.print()}
@@ -717,46 +817,28 @@ export default function SingTrainingResultPage() {
             </div>
           </div>
 
-          <div className="mt-6 grid grid-cols-1 gap-5 xl:grid-cols-[1.02fr_0.98fr]">
-            <section className="rounded-[30px] bg-[linear-gradient(145deg,#059669_0%,#10b981_52%,#6ee7b7_100%)] p-6 text-white shadow-[0_22px_55px_rgba(16,185,129,0.24)] sm:p-8">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.24em] text-white/75">
-                    Brain Speech Score
-                  </p>
-                  <h2 className="mt-3 text-6xl font-black leading-none sm:text-7xl">
-                    {scoreLabel}
-                    {isMeasuredResult ? (
-                      <span className="ml-2 text-3xl sm:text-4xl">점</span>
-                    ) : null}
-                  </h2>
-                </div>
-                <div className="flex h-16 w-16 items-center justify-center rounded-[22px] border border-white/18 bg-white/12">
-                  <Brain className="h-8 w-8" />
-                </div>
-              </div>
-              <p className="mt-5 max-w-[520px] text-lg font-bold leading-relaxed text-white/92">
-                자음, 모음, 가사 일치도와 기준 얼굴 대비 안면 반응 변화를 함께 반영한 언어재활형 노래 훈련 결과입니다.
-              </p>
-              <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <MetricPill title="자음 정확도" value={consonantLabel} />
-                <MetricPill title="모음 정확도" value={vowelLabel} />
-                <MetricPill title="가사 일치도" value={lyricAccuracyLabel} />
-                <MetricPill title="안면 반응 변화" value={facialResponseLabel} />
-              </div>
-              <div className="mt-6 rounded-[24px] border border-white/14 bg-black/10 p-4">
-                <p className="text-sm font-black uppercase tracking-[0.18em] text-white/70">
-                  Speech Signal
-                </p>
-                <p className="mt-2 text-xl font-bold leading-relaxed text-white">
-                  {vitalityComment}
-                </p>
-              </div>
-            </section>
+          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <SummaryCard title="이번 결과" value={scoreLabel} accent="primary" />
+            <SummaryCard title="자음 정확도" value={consonantLabel} />
+            <SummaryCard title="모음 정확도" value={vowelLabel} />
+            <SummaryCard title="가사 일치도" value={lyricAccuracyLabel} />
+            <SummaryCard title="안면 반응 변화" value={facialResponseLabel} />
+          </div>
 
-            <section className="rounded-[30px] border border-emerald-100 bg-[linear-gradient(180deg,#f5f7e8_0%,#ecfbf5_100%)] p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] sm:p-8">
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+            <SummaryCard title="반응 지연 시간" value={result.rtLatency === "-- ms" ? "미측정" : result.rtLatency} />
+            <SummaryCard title="발성 안정도" value={jitterLabel} />
+            <SummaryCard
+              title="내 최고 기록"
+              value={myRank && hasDbRanking ? `${myRank.score}점` : "--"}
+              helper={myRank && hasDbRanking ? `현재 순위 ${myRank.rank}위` : "랭킹 집계 전"}
+            />
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+            <section className="rounded-[30px] border border-emerald-100 bg-[linear-gradient(180deg,#f7fcfa_0%,#eefbf4_100%)] p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] sm:p-8">
               <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/80 text-emerald-700 shadow-sm">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
                   <Sparkles className="h-6 w-6" />
                 </div>
                 <div>
@@ -777,23 +859,90 @@ export default function SingTrainingResultPage() {
                 </p>
                 <p>
                   {isMeasuredResult
-                    ? `자음과 모음 산출 점수를 기반으로 보면 발화 명료도가 안정적이었고, 가사 흐름을 따라가는 수행도도 양호했습니다. 보조 지표로 기준 얼굴 대비 안면 반응 변화와 반응 속도도 함께 확인했습니다.`
-                    : `${result.measurementReason || "마이크 입력 또는 안면 추적 데이터가 부족하면 임상 결과를 확정할 수 없습니다."} 곡 재생과 결과 UI는 확인할 수 있지만, 서버 저장과 레포트 반영은 수행되지 않습니다.`}
+                    ? "자음과 모음 산출 점수를 기반으로 보면 발화 명료도가 안정적이었고, 가사 흐름을 따라가는 수행도도 양호했습니다. 보조 지표로 기준 얼굴 대비 안면 반응 변화와 반응 속도도 함께 확인했습니다."
+                    : isDemoSkipResult
+                      ? "관리자 skip으로 생성된 시연용 결과입니다. 곡 재생과 결과 UI 확인만 가능하며 서버 저장과 리포트 원장 반영은 수행하지 않습니다."
+                      : `${result.measurementReason || "마이크 입력 또는 안면 추적 데이터가 부족하면 임상 결과를 확정할 수 없습니다."} 곡 재생과 결과 UI는 확인할 수 있지만, 서버 저장과 레포트 반영은 수행되지 않습니다.`}
                 </p>
                 <p>{result.comment}</p>
-                <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">
-                    Speech Metrics
-                  </p>
-                  <p className="mt-2 text-base font-semibold text-slate-700">
-                    자음 {consonantLabel} · 모음 {vowelLabel} · 가사 일치도 {lyricAccuracyLabel} · 반응속도 {result.rtLatency === "-- ms" ? "미측정" : result.rtLatency}
-                  </p>
-                  <p className="mt-2 text-sm text-slate-500">
-                    {result.transcript?.trim()
-                      ? `인식 가사: "${result.transcript}"`
-                      : "인식된 가사 텍스트가 없습니다."}
-                  </p>
+              </div>
+            </section>
+
+            <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] sm:p-8">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-800">
+                  <Brain className="h-6 w-6" />
                 </div>
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">
+                    Speech Signal
+                  </p>
+                  <h2 className="mt-1 text-2xl font-black text-slate-900">
+                    측정 신호 요약
+                  </h2>
+                </div>
+              </div>
+              <div className="mt-6 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">
+                  Speech Metrics
+                </p>
+                <p className="mt-2 text-base font-semibold text-slate-700">
+                  자음 {consonantLabel} · 모음 {vowelLabel} · 가사 일치도 {lyricAccuracyLabel} · 반응속도 {result.rtLatency === "-- ms" ? "미측정" : result.rtLatency}
+                </p>
+                <p className="mt-2 text-sm text-slate-500">
+                  {result.transcript?.trim()
+                    ? `인식 가사: "${result.transcript}"`
+                    : "인식된 가사 텍스트가 없습니다."}
+                </p>
+              </div>
+              <div className="mt-4 rounded-[24px] border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+                <p className="text-sm font-black">발화 산출과 가사 추종이 전반적으로 안정적인 흐름을 보였습니다.</p>
+                <p className="mt-2 text-base font-medium text-emerald-800">
+                  노래방의 핵심 평가는 발화 점수이며, 안면 반응 변화는 기준 얼굴 대비 보조 반응 지표로 함께 해석합니다.
+                </p>
+              </div>
+            </section>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+            <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] sm:p-8">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-800">
+                  <Music className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">
+                    Review
+                  </p>
+                  <h2 className="mt-1 text-2xl font-black text-slate-900">
+                    재생 및 프레임 확인
+                  </h2>
+                </div>
+              </div>
+              <div className="mt-6 space-y-4">
+                {result.reviewAudioUrl ? (
+                  <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 p-4">
+                    <button
+                      type="button"
+                      onClick={playReviewAudio}
+                      className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-white px-5 font-black text-emerald-700"
+                    >
+                      <Music className="h-4 w-4" />
+                      {isPlayingReview ? "재생 중..." : "내 노래 듣기"}
+                    </button>
+                    <p className="mt-3 text-sm font-semibold text-slate-500">
+                      {result.reviewAudioUploadState === "uploaded" &&
+                        "NCP 업로드 및 DB 메타데이터 저장 완료"}
+                      {result.reviewAudioUploadState === "pending_result_sync" &&
+                        "결과 저장 시 서버 업로드 대기 중"}
+                      {result.reviewAudioUploadState === "failed" &&
+                        `업로드 실패: ${result.reviewAudioUploadError || "--"}`}
+                      {result.reviewAudioUploadState === "not_recorded" &&
+                        "녹음 파일이 생성되지 않았습니다."}
+                      {!result.reviewAudioUploadState && "로컬 녹음만 생성되었습니다."}
+                    </p>
+                  </div>
+                ) : null}
                 {result.reviewKeyFrames?.length ? (
                   <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
                     <p className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">
@@ -821,20 +970,9 @@ export default function SingTrainingResultPage() {
                     </div>
                   </div>
                 ) : null}
-                <div className="rounded-[24px] border border-emerald-200 bg-white/70 p-4">
-                  <p className="flex items-center gap-2 text-base font-black text-emerald-700">
-                    <ArrowUpRight className="h-5 w-5" />
-                    따뜻한 격려 메시지
-                  </p>
-                  <p className="mt-2 text-base font-medium text-slate-700">
-                    오늘처럼 가사를 끝까지 또박또박 따라 부르는 연습을 반복하면 자음·모음 산출 안정성과 문장 길이 유지에 도움이 됩니다. 안면 반응 변화는 보조 지표로 함께 추적합니다.
-                  </p>
-                </div>
               </div>
             </section>
-          </div>
 
-          <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[0.95fr_1.05fr]">
             <section className="rounded-[30px] border border-emerald-100 bg-[#fbfefc] p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] sm:p-8">
               <div className="flex items-center gap-3">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
@@ -907,13 +1045,13 @@ export default function SingTrainingResultPage() {
                     Overall Ranking
                   </p>
                   <h2 className="mt-1 text-2xl font-black text-slate-900">
-                    전체 랭킹 Top 5
+                    전체 랭킹 Top 5 (곡별 최고 기록 기준)
                   </h2>
                 </div>
               </div>
               <p className="mt-4 text-base font-medium text-slate-500">
-                {result.song} 곡 기준 전체 사용자 최고 점수 상위 5명을 표시합니다.
-                </p>
+                {result.song} 곡에서 각 사용자의 최고 기록만 반영해 상위 5명을 표시합니다.
+              </p>
 
               <div className="mt-5 rounded-[24px] border border-emerald-200 bg-emerald-50 p-4">
                 <p className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-700">
@@ -928,13 +1066,13 @@ export default function SingTrainingResultPage() {
                         ? "로컬 모드"
                         : "--"}
                   </p>
-                  <p className="mt-1 text-sm font-medium text-slate-600">
+                <p className="mt-1 text-sm font-medium text-slate-600">
                     {myRank && hasDbRanking
-                      ? `${myRank.name}님의 현재 ${result.song} 전체 랭킹 위치입니다.`
+                      ? `나의 최고 기록 ${myRank.score}점 · 이번 결과 ${result.score}점`
                       : dbSaveState === "local_only"
                         ? "실측 지표가 없어 서버 저장과 DB 랭킹 계산을 생략했습니다."
                         : `${result.song} 기준 DB 랭킹 데이터가 아직 없습니다.`}
-                  </p>
+                </p>
               </div>
 
               <div className="mt-5 space-y-3">
@@ -958,6 +1096,42 @@ export default function SingTrainingResultPage() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SummaryCard({
+  title,
+  value,
+  helper,
+  accent = "default",
+}: {
+  title: string;
+  value: string;
+  helper?: string;
+  accent?: "default" | "primary";
+}) {
+  return (
+    <div
+      className={`rounded-[24px] border p-5 shadow-[0_14px_35px_rgba(15,23,42,0.04)] ${
+        accent === "primary"
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-slate-200 bg-white"
+      }`}
+    >
+      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+        {title}
+      </p>
+      <p
+        className={`mt-3 text-4xl font-black tracking-tight ${
+          accent === "primary" ? "text-emerald-700" : "text-slate-900"
+        }`}
+      >
+        {value}
+      </p>
+      {helper ? (
+        <p className="mt-2 text-sm font-medium text-slate-500">{helper}</p>
+      ) : null}
     </div>
   );
 }

@@ -164,6 +164,7 @@ function Step5Content() {
       } as const),
     [sessionId, sessionPatient],
   );
+  const isAdmin = sessionPatient?.userRole === "admin";
 
   useEffect(() => {
     void logTrainingEvent({
@@ -1021,6 +1022,20 @@ function Step5Content() {
   };
 
   const handleSkipStep = useCallback(() => {
+    if (!isAdmin) return;
+    void logTrainingEvent({
+      eventType: "training_step_skipped",
+      eventStatus: "skipped",
+      trainingType: clinicalTrainingType,
+      stepNo: 5,
+      pagePath: "/programs/step-5",
+      sessionId,
+      payload: {
+        place,
+        isRehabMode,
+        rehabTargetStep: rehabTargetStep || null,
+      },
+    });
     try {
       const randomFloat = (min: number, max: number, digits = 1) =>
         Number((Math.random() * (max - min) + min).toFixed(digits));
@@ -1111,7 +1126,18 @@ function Step5Content() {
     } catch (error) {
       pushStep6OrRehabResult(80);
     }
-  }, [pushStep6OrRehabResult, resetRuntimeStatus, texts, stepSignature]);
+  }, [
+    clinicalTrainingType,
+    isAdmin,
+    isRehabMode,
+    pushStep6OrRehabResult,
+    rehabTargetStep,
+    resetRuntimeStatus,
+    sessionId,
+    stepSignature,
+    texts,
+    place,
+  ]);
 
   if (!isMounted || !currentItem) return null;
 
@@ -1146,13 +1172,15 @@ function Step5Content() {
           </div>
         </div>
         <div className="flex items-center gap-2 ml-auto flex-wrap justify-end">
-          <button
-            type="button"
-            onClick={handleSkipStep}
-            className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${trainingButtonStyles.slateSoft}`}
-          >
-            SKIP
-          </button>
+          {isAdmin ? (
+            <button
+              type="button"
+              onClick={handleSkipStep}
+              className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${trainingButtonStyles.slateSoft}`}
+            >
+              SKIP
+            </button>
+          ) : null}
           <div
             className={`px-4 py-1.5 rounded-full font-black text-xs border ${isRehabMode ? "bg-sky-50 text-sky-700 border-sky-200" : "bg-orange-50 text-orange-700 border-orange-200"}`}
           >

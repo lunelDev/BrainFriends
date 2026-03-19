@@ -59,6 +59,22 @@ function getMeasurementQualityUi(level?: MeasurementQualityLevel) {
   }
 }
 
+function ServerExcludedBadge() {
+  return (
+    <div className="inline-flex items-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-black text-amber-700 sm:text-xs">
+      서버 저장 제외됨(실측 아님)
+    </div>
+  );
+}
+
+function DemoResultBadge() {
+  return (
+    <div className="inline-flex items-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-black text-emerald-700 sm:text-xs">
+      시연용 결과
+    </div>
+  );
+}
+
 function ResultContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -252,6 +268,10 @@ function ResultContent() {
   const qualityUi = getMeasurementQualityUi(
     currentHistoryEntry?.measurementQuality?.overall,
   );
+  const isServerExcluded =
+    dbSaveState === "local_only" ||
+    currentHistoryEntry?.measurementQuality?.overall !== "measured";
+  const isDemoResult = currentHistoryEntry?.measurementQuality?.overall === "demo";
 
   const previousHistory = useMemo(() => {
     if (!patientForHistory) return [];
@@ -599,6 +619,12 @@ function ResultContent() {
                 {dbSaveState === "failed" && "DB Sync Failed - Local backup kept"}
                 {dbSaveState === "idle" && "DB Sync Pending"}
               </div>
+              {isServerExcluded ? (
+                <div className="flex flex-wrap gap-2">
+                  {isDemoResult ? <DemoResultBadge /> : null}
+                  <ServerExcludedBadge />
+                </div>
+              ) : null}
               <div className={`px-3 py-2 rounded-xl border text-[11px] sm:text-xs font-bold ${qualityUi.className}`}>
                 측정 품질 · {qualityUi.label}
               </div>

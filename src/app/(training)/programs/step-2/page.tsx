@@ -97,6 +97,7 @@ function Step2Content() {
       } as const),
     [sessionId, sessionPatient],
   );
+  const isAdmin = sessionPatient?.userRole === "admin";
 
   useEffect(() => {
     void logTrainingEvent({
@@ -831,6 +832,20 @@ function Step2Content() {
   ]);
 
   const handleSkipStep = useCallback(() => {
+    if (!isAdmin) return;
+    void logTrainingEvent({
+      eventType: "training_step_skipped",
+      eventStatus: "skipped",
+      trainingType: clinicalTrainingType,
+      stepNo: 2,
+      pagePath: "/programs/step-2",
+      sessionId,
+      payload: {
+        place,
+        isRehabMode,
+        rehabTargetStep: rehabTargetStep || null,
+      },
+    });
     try {
       const randomFloat = (min: number, max: number, digits = 1) =>
         Number((Math.random() * (max - min) + min).toFixed(digits));
@@ -910,10 +925,15 @@ function Step2Content() {
     } catch (error) {
     }
   }, [
+    clinicalTrainingType,
+    isAdmin,
+    isRehabMode,
     place,
     protocol,
     pushStep3OrRehabResult,
+    rehabTargetStep,
     resetRuntimeStatus,
+    sessionId,
     stepSignature,
   ]);
 
@@ -1296,13 +1316,15 @@ function Step2Content() {
           </div>
         </div>
         <div className="flex items-center gap-2 ml-auto">
-          <button
-            type="button"
-            onClick={handleSkipStep}
-            className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${trainingButtonStyles.slateSoft}`}
-          >
-            SKIP
-          </button>
+          {isAdmin ? (
+            <button
+              type="button"
+              onClick={handleSkipStep}
+              className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${trainingButtonStyles.slateSoft}`}
+            >
+              SKIP
+            </button>
+          ) : null}
           <div
             className={`px-4 py-1.5 rounded-full font-black text-xs border ${isRehabMode ? "bg-sky-50 text-sky-700 border-sky-200" : "bg-orange-50 text-orange-700 border-orange-200"}`}
           >

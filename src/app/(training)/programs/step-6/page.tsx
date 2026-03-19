@@ -80,6 +80,7 @@ function Step6Content() {
       } as const),
     [sessionId, sessionPatient],
   );
+  const isAdmin = sessionPatient?.userRole === "admin";
 
   useEffect(() => {
     void logTrainingEvent({
@@ -672,6 +673,20 @@ function Step6Content() {
   };
 
   const handleSkipStep = useCallback(() => {
+    if (!isAdmin) return;
+    void logTrainingEvent({
+      eventType: "training_step_skipped",
+      eventStatus: "skipped",
+      trainingType: clinicalTrainingType,
+      stepNo: 6,
+      pagePath: "/programs/step-6",
+      sessionId,
+      payload: {
+        place,
+        isRehabMode,
+        rehabTargetStep: rehabTargetStep || null,
+      },
+    });
     try {
       const randomFloat = (min: number, max: number, digits = 1) =>
         Number((Math.random() * (max - min) + min).toFixed(digits));
@@ -761,13 +776,16 @@ function Step6Content() {
   }, [
     articulationBaseline.consonant,
     articulationBaseline.vowel,
+    clinicalTrainingType,
     getExpectedStrokeCount,
+    isAdmin,
+    isRehabMode,
     place,
     questions,
-    router,
-    stepParams,
-    isRehabMode,
     rehabTargetStep,
+    router,
+    sessionId,
+    stepParams,
     stepSignature,
   ]);
 
@@ -799,13 +817,15 @@ function Step6Content() {
           </div>
         </div>
         <div className="flex items-center gap-2 ml-auto flex-wrap justify-end">
-          <button
-            type="button"
-            onClick={handleSkipStep}
-            className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${trainingButtonStyles.slateSoft}`}
-          >
-            SKIP
-          </button>
+          {isAdmin ? (
+            <button
+              type="button"
+              onClick={handleSkipStep}
+              className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${trainingButtonStyles.slateSoft}`}
+            >
+              SKIP
+            </button>
+          ) : null}
           <div className={`px-4 py-1.5 rounded-full font-black text-xs border ${isRehabMode ? "bg-sky-50 text-sky-700 border-sky-200" : "bg-orange-50 text-orange-700 border-orange-200"}`}>
             {currentIndex + 1} / {questions.length}
           </div>
