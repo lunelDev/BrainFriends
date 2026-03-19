@@ -48,6 +48,7 @@ type SingResult = {
   score: number;
   finalJitter: string;
   finalSi: string;
+  facialResponseDelta?: string;
   rtLatency: string;
   finalConsonant?: string;
   finalVowel?: string;
@@ -93,6 +94,10 @@ type PersistDatabaseResult = {
   nextResult?: SingResult | null;
 };
 
+type HistorySingEntry = Awaited<
+  ReturnType<typeof fetchMyHistoryEntries>
+>["entries"][number];
+
 const EMPTY_RANKINGS: RankRow[] = Array.from({ length: 5 }, (_, index) => ({
   rank: index + 1,
   name: "--",
@@ -118,6 +123,7 @@ function buildFallbackSingResult(
     score: 0,
     finalJitter: "--",
     finalSi: "--",
+    facialResponseDelta: "--",
     rtLatency: "-- ms",
     finalConsonant: "--",
     finalVowel: "--",
@@ -143,6 +149,44 @@ function buildFallbackSingResult(
       requirementIds: songMeta.governance.requirementIds,
       failureModes: songMeta.governance.failureModes,
     },
+  };
+}
+
+function buildResultFromHistoryEntry(entry: HistorySingEntry): SingResult {
+  const hasMeasuredFromHistory =
+    entry.singResult?.finalConsonant !== "-" ||
+    entry.singResult?.finalVowel !== "-" ||
+    entry.singResult?.lyricAccuracy !== "-" ||
+    entry.singResult?.finalSi !== "-";
+
+  return {
+    song: entry.singResult?.song || "아리랑",
+    userName: entry.patientName,
+    score: entry.singResult?.score || 0,
+    finalJitter: entry.singResult?.finalJitter || "--",
+    finalSi: entry.singResult?.finalSi || "--",
+    facialResponseDelta:
+      entry.singResult?.facialResponseDelta ??
+      (entry.singResult?.versionSnapshot?.measurement_metadata?.facial_response_delta == null
+        ? "--"
+        : String(entry.singResult.versionSnapshot.measurement_metadata.facial_response_delta)),
+    rtLatency: entry.singResult?.rtLatency || "-- ms",
+    finalConsonant: entry.singResult?.finalConsonant,
+    finalVowel: entry.singResult?.finalVowel,
+    lyricAccuracy: entry.singResult?.lyricAccuracy,
+    transcript: entry.singResult?.transcript,
+    metricSource: hasMeasuredFromHistory ? "measured" : "demo",
+    comment: entry.singResult?.comment || "",
+    measurementReason: entry.singResult?.measurementReason,
+    reviewAudioUrl: entry.singResult?.reviewAudioUrl ?? null,
+    reviewKeyFrames: entry.singResult?.reviewKeyFrames ?? [],
+    rankings: entry.singResult?.rankings ?? [],
+    completedAt: entry.completedAt,
+    reviewAudioUploadState: entry.singResult?.reviewAudioUrl
+      ? "uploaded"
+      : "not_recorded",
+    governance: entry.singResult?.governance,
+    versionSnapshot: entry.singResult?.versionSnapshot,
   };
 }
 
@@ -314,6 +358,7 @@ export default function SingTrainingResultPage() {
   const searchParams = useSearchParams();
   const [result, setResult] = useState<SingResult | null>(null);
   const [hasLoadedResult, setHasLoadedResult] = useState(false);
+  const [fallbackSong, setFallbackSong] = useState<SongKey | null>(null);
   const [dbSaveState, setDbSaveState] = useState<
     "idle" | "saving" | "saved" | "failed" | "local_only"
   >("idle");
@@ -376,14 +421,13 @@ export default function SingTrainingResultPage() {
         window.sessionStorage.getItem(SING_LAST_SONG_SESSION_KEY) ??
         searchParams.get("song");
       if (lastSong && lastSong in SONGS) {
-        const fallbackResult = buildFallbackSingResult(
-          lastSong as SongKey,
-          patient?.name || "사용자",
-        );
-        setResult(fallbackResult);
-        setMyRank(null);
+        setFallbackSong(lastSong as SongKey);
+      } else {
+        setFallbackSong(null);
       }
-      setHasLoadedResult(true);
+      if (!patient) {
+        setHasLoadedResult(true);
+      }
       return;
     }
 
@@ -391,6 +435,7 @@ export default function SingTrainingResultPage() {
       const parsed = JSON.parse(raw) as SingResult;
       window.sessionStorage.removeItem(SING_RESULT_SESSION_KEY);
       window.sessionStorage.removeItem(SING_LAST_SONG_SESSION_KEY);
+      setFallbackSong(null);
       setResult(parsed);
       const parsedMyRank = parsed.rankings.find(
         (item) => item.me && Number.isFinite(Number(item.rank)),
@@ -405,7 +450,14 @@ export default function SingTrainingResultPage() {
   }, [patient, searchParams]);
 
   useEffect(() => {
-    if (result || !patient) return;
+    if (!patient) return;
+
+    const needsStoredResultSync =
+      !result || result.metricSource !== "measured" || dbSaveState === "local_only";
+
+    if (!needsStoredResultSync) {
+      return;
+    }
 
     let cancelled = false;
     void fetchMyHistoryEntries()
@@ -413,39 +465,19 @@ export default function SingTrainingResultPage() {
         if (cancelled) return;
         const latestSing = entries.find((row) => row.trainingMode === "sing");
         if (!latestSing?.singResult) {
+          if (!result && fallbackSong) {
+            setResult(buildFallbackSingResult(fallbackSong, patient.name || "사용자"));
+            setMyRank(null);
+          }
           setHasLoadedResult(true);
           return;
         }
 
-        const hasMeasuredFromHistory =
-          latestSing.singResult.finalConsonant !== "-" ||
-          latestSing.singResult.finalVowel !== "-" ||
-          latestSing.singResult.lyricAccuracy !== "-" ||
-          latestSing.singResult.finalSi !== "-";
-
-        setResult({
-          song: latestSing.singResult.song,
-          userName: latestSing.patientName,
-          score: latestSing.singResult.score,
-          finalJitter: latestSing.singResult.finalJitter,
-          finalSi: latestSing.singResult.finalSi,
-          rtLatency: latestSing.singResult.rtLatency,
-          finalConsonant: latestSing.singResult.finalConsonant,
-          finalVowel: latestSing.singResult.finalVowel,
-          lyricAccuracy: latestSing.singResult.lyricAccuracy,
-          transcript: latestSing.singResult.transcript,
-          metricSource: hasMeasuredFromHistory ? "measured" : "demo",
-          comment: latestSing.singResult.comment,
-          measurementReason: latestSing.singResult.measurementReason,
-          reviewAudioUrl: latestSing.singResult.reviewAudioUrl ?? null,
-          reviewKeyFrames: latestSing.singResult.reviewKeyFrames ?? [],
-          rankings: latestSing.singResult.rankings ?? [],
-          completedAt: latestSing.completedAt,
-          reviewAudioUploadState: latestSing.singResult.reviewAudioUrl
-            ? "uploaded"
-            : "not_recorded",
-          governance: latestSing.singResult.governance,
-          versionSnapshot: latestSing.singResult.versionSnapshot,
+        const nextStoredResult = buildResultFromHistoryEntry(latestSing);
+        setResult((prev) => {
+          if (!prev) return nextStoredResult;
+          if (prev.metricSource !== "measured") return nextStoredResult;
+          return latestSing.completedAt >= prev.completedAt ? nextStoredResult : prev;
         });
         setMyRank(
           latestSing.singResult.rankings?.find((item) => item.me) ?? null,
@@ -455,6 +487,10 @@ export default function SingTrainingResultPage() {
       })
       .catch(() => {
         if (!cancelled) {
+          if (!result && fallbackSong) {
+            setResult(buildFallbackSingResult(fallbackSong, patient.name || "사용자"));
+            setMyRank(null);
+          }
           setHasLoadedResult(true);
         }
       });
@@ -462,7 +498,14 @@ export default function SingTrainingResultPage() {
     return () => {
       cancelled = true;
     };
-  }, [patient, result]);
+  }, [dbSaveState, fallbackSong, patient, result]);
+
+  useEffect(() => {
+    if (result || patient || !fallbackSong) return;
+    setResult(buildFallbackSingResult(fallbackSong, "사용자"));
+    setMyRank(null);
+    setHasLoadedResult(true);
+  }, [fallbackSong, patient, result]);
 
   useEffect(() => {
     return () => {
@@ -556,19 +599,19 @@ export default function SingTrainingResultPage() {
   }
 
   const isMeasuredResult = result.metricSource === "measured";
-  const facialSymmetryScore = parseMeasuredNumber(result.finalSi);
+  const facialResponseChangeScore = parseMeasuredNumber(result.facialResponseDelta);
   const jitterScore = parseMeasuredNumber(result.finalJitter);
   const consonantScore = parseMeasuredNumber(result.finalConsonant);
   const vowelScore = parseMeasuredNumber(result.finalVowel);
   const lyricAccuracyScore = parseMeasuredNumber(result.lyricAccuracy);
   const mouthImprovement =
-    facialSymmetryScore == null
+    facialResponseChangeScore == null
       ? null
-      : Math.max(8, Math.round((facialSymmetryScore - 80) * 0.9));
+      : Math.max(6, Math.round(facialResponseChangeScore * 1.8));
   const eyeImprovement =
-    facialSymmetryScore == null
+    facialResponseChangeScore == null
       ? null
-      : Math.max(6, Math.round((facialSymmetryScore - 82) * 0.65));
+      : Math.max(5, Math.round(facialResponseChangeScore * 1.4));
   const rhythmCoordination =
     jitterScore == null
       ? null
@@ -591,8 +634,10 @@ export default function SingTrainingResultPage() {
     consonantScore == null ? "미측정" : `${consonantScore.toFixed(1)}점`;
   const vowelLabel =
     vowelScore == null ? "미측정" : `${vowelScore.toFixed(1)}점`;
-  const facialSymmetryLabel =
-    facialSymmetryScore == null ? "미측정" : `${facialSymmetryScore.toFixed(1)}점`;
+  const facialResponseLabel =
+    facialResponseChangeScore == null
+      ? "미측정"
+      : `${facialResponseChangeScore.toFixed(1)}점 변화`;
   const jitterLabel =
     jitterScore == null ? "미측정" : `${jitterScore.toFixed(2)}%`;
   const rhythmCoordinationLabel =
@@ -692,13 +737,13 @@ export default function SingTrainingResultPage() {
                 </div>
               </div>
               <p className="mt-5 max-w-[520px] text-lg font-bold leading-relaxed text-white/92">
-                자음, 모음, 가사 일치도와 안면 반응을 함께 반영한 언어재활형 노래 훈련 결과입니다.
+                자음, 모음, 가사 일치도와 기준 얼굴 대비 안면 반응 변화를 함께 반영한 언어재활형 노래 훈련 결과입니다.
               </p>
               <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <MetricPill title="자음 정확도" value={consonantLabel} />
                 <MetricPill title="모음 정확도" value={vowelLabel} />
                 <MetricPill title="가사 일치도" value={lyricAccuracyLabel} />
-                <MetricPill title="안면 대칭" value={facialSymmetryLabel} />
+                <MetricPill title="안면 반응 변화" value={facialResponseLabel} />
               </div>
               <div className="mt-6 rounded-[24px] border border-white/14 bg-black/10 p-4">
                 <p className="text-sm font-black uppercase tracking-[0.18em] text-white/70">
@@ -733,7 +778,7 @@ export default function SingTrainingResultPage() {
                 </p>
                 <p>
                   {isMeasuredResult
-                    ? `자음과 모음 산출 점수를 기반으로 보면 발화 명료도가 안정적이었고, 가사 흐름을 따라가는 수행도도 양호했습니다. 보조 지표로 안면 대칭과 반응 속도도 함께 확인했습니다.`
+                    ? `자음과 모음 산출 점수를 기반으로 보면 발화 명료도가 안정적이었고, 가사 흐름을 따라가는 수행도도 양호했습니다. 보조 지표로 기준 얼굴 대비 안면 반응 변화와 반응 속도도 함께 확인했습니다.`
                     : `${result.measurementReason || "마이크 입력 또는 안면 추적 데이터가 부족하면 임상 결과를 확정할 수 없습니다."} 곡 재생과 결과 UI는 확인할 수 있지만, 서버 저장과 레포트 반영은 수행되지 않습니다.`}
                 </p>
                 <p>{result.comment}</p>
@@ -783,7 +828,7 @@ export default function SingTrainingResultPage() {
                     따뜻한 격려 메시지
                   </p>
                   <p className="mt-2 text-base font-medium text-slate-700">
-                    오늘처럼 가사를 끝까지 또박또박 따라 부르는 연습을 반복하면 자음·모음 산출 안정성과 문장 길이 유지에 도움이 됩니다. 안면 대칭은 보조 지표로 함께 추적합니다.
+                    오늘처럼 가사를 끝까지 또박또박 따라 부르는 연습을 반복하면 자음·모음 산출 안정성과 문장 길이 유지에 도움이 됩니다. 안면 반응 변화는 보조 지표로 함께 추적합니다.
                   </p>
                 </div>
               </div>
@@ -825,16 +870,16 @@ export default function SingTrainingResultPage() {
                 />
                 <SymmetryRow
                   label="표정-발성 보조 협응 지수"
-                  before={facialSymmetryScore == null ? null : 78}
+                  before={facialResponseChangeScore == null ? null : 4}
                   after={
-                    facialSymmetryScore == null
+                    facialResponseChangeScore == null
                       ? null
-                      : Math.min(98, Math.round(facialSymmetryScore))
+                      : Math.min(98, Math.round(4 + facialResponseChangeScore))
                   }
                   feedback={
-                    facialSymmetryScore == null
+                    facialResponseChangeScore == null
                       ? "미측정"
-                      : `${Math.max(8, Math.round(facialSymmetryScore - 78))}% 향상`
+                      : `${Math.max(4, Math.round(facialResponseChangeScore))}점 변화`
                   }
                 />
               </div>
@@ -842,12 +887,12 @@ export default function SingTrainingResultPage() {
               <div className="mt-6 rounded-[24px] bg-emerald-50 p-4 text-emerald-900">
                 <p className="text-sm font-black">
                   {isMeasuredResult
-                    ? `노래 발화 중 입 주위 반응과 눈매 대칭을 보조 지표로 함께 기록했습니다.`
-                    : "안면 측정 데이터가 부족해 보조 안면 그래프는 기준값만 표시합니다."}
+                    ? `노래 발화 중 기준 얼굴 대비 입 주위 반응과 눈매 반응 변화를 보조 지표로 함께 기록했습니다.`
+                    : "안면 반응 측정 데이터가 부족해 보조 안면 그래프는 계산하지 않았습니다."}
                 </p>
                 <p className="mt-2 text-base font-medium text-emerald-800">
                   {isMeasuredResult
-                    ? "노래방의 핵심 평가는 발화 점수이며, 안면 반응은 발화 시 보조 반응 지표로 함께 해석합니다."
+                    ? "노래방의 핵심 평가는 발화 점수이며, 안면 반응 변화는 기준 얼굴 대비 보조 반응 지표로 함께 해석합니다."
                     : "측정이 충분한 세션에서만 안면 보조 지표를 레포트에 함께 반영합니다."}
                 </p>
               </div>
@@ -954,7 +999,7 @@ function SymmetryRow({
       </div>
       {unavailable ? (
         <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm font-semibold text-slate-500">
-          안면 대칭 측정 데이터가 충분하지 않아 이 보조 지표는 계산하지 않았습니다.
+          안면 반응 변화 측정 데이터가 충분하지 않아 이 보조 지표는 계산하지 않았습니다.
         </div>
       ) : (
         <div className="mt-4 space-y-3">

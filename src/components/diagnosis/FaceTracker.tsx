@@ -7,6 +7,10 @@ import {
   DrawingUtils,
 } from "@mediapipe/tasks-vision";
 import { calculateLipMetrics, LipMetrics } from "@/utils/faceAnalysis";
+import {
+  registerMediaStream,
+  unregisterMediaStream,
+} from "@/lib/client/mediaStreamRegistry";
 
 const TFLITE_XNNPACK_INFO = "Created TensorFlow Lite XNNPACK delegate for CPU";
 const LOCAL_MEDIAPIPE_WASM_PATH = "/mediapipe/wasm";
@@ -193,6 +197,7 @@ export default function FaceTracker({
           video: { width: 640, height: 480 },
           audio: false,
         });
+        registerMediaStream(stream);
 
         if (videoRef.current && !cancelled) {
           videoRef.current.srcObject = stream;
@@ -223,6 +228,8 @@ export default function FaceTracker({
       if (videoRef.current?.srcObject) {
         const stream = videoRef.current.srcObject as MediaStream;
         stream.getTracks().forEach((track) => track.stop());
+        unregisterMediaStream(stream);
+        videoRef.current.srcObject = null;
       }
       smoothedMetricsRef.current = null;
     };

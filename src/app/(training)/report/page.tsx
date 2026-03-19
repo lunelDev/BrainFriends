@@ -813,9 +813,9 @@ function ReportContent() {
                   </p>
                 </div>
                 <div className="rounded-xl border border-emerald-200 bg-white px-4 py-3 shadow-sm">
-                  <p className="text-sm font-black text-slate-500">안면 대칭</p>
+                  <p className="text-sm font-black text-slate-500">안면 반응 변화</p>
                   <p className="text-2xl font-black text-slate-900 mt-1">
-                    {selected.singResult?.finalSi ?? "-"}
+                    {selected.singResult?.facialResponseDelta ?? "-"}
                   </p>
                 </div>
                 <div className="rounded-xl border border-emerald-200 bg-white px-4 py-3 shadow-sm">
@@ -838,7 +838,7 @@ function ReportContent() {
                     {selected.singResult?.comment || "노래 리듬과 안면 반응을 기반으로 분석한 결과입니다."}
                   </p>
                   <p className="mt-3 text-sm font-medium leading-relaxed text-slate-600">
-                    성대 안정도, 안면 대칭도, 반응 지연 시간을 종합해 현재 회복 흐름을 추적합니다.
+                    성대 안정도, 기준 얼굴 대비 안면 반응 변화, 반응 지연 시간을 종합해 현재 회복 흐름을 추적합니다.
                   </p>
                 </div>
 

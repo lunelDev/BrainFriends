@@ -26,6 +26,11 @@ import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { buildVersionSnapshot, type VersionSnapshot } from "@/lib/analysis/versioning";
 import { logTrainingEvent } from "@/lib/client/trainingEventsApi";
 import {
+  registerMediaStream,
+  stopRegisteredMediaStreams,
+  unregisterMediaStream,
+} from "@/lib/client/mediaStreamRegistry";
+import {
   PronunciationAnalyzer,
   WhisperTranscriber,
 } from "@/lib/speech/SpeechAnalyzer";
@@ -51,6 +56,7 @@ type SingResultEnvelope = {
   score: number;
   finalJitter: string;
   finalSi: string;
+  facialResponseDelta?: string;
   rtLatency: string;
   finalConsonant?: string;
   finalVowel?: string;
@@ -87,7 +93,7 @@ const LYRIC_LEAD_OFFSET_SEC = 0.28;
 const AUDIO_LEVEL_ONSET_THRESHOLD = 0.02;
 const MIN_VOICED_RMS = 0.015;
 const MIN_MEASURED_PITCH_SAMPLES = 8;
-const MIN_MEASURED_FACE_SAMPLES = 8;
+const MIN_MEASURED_FACE_SAMPLES = 3;
 const MIN_SING_TRANSCRIPT_CHARS = 2;
 const MAX_SING_KEY_FRAMES = 3;
 const KEY_FRAME_CAPTURE_INTERVAL_MS = 5000;
@@ -138,6 +144,7 @@ function estimatePitchHz(samples: ArrayLike<number>, sampleRate: number) {
 function buildMeasuredComment(params: {
   jitterPct: number;
   facialSymmetry: number | null;
+  facialResponseChange: number | null;
   latencyMs: number | null;
   consonantAccuracy: number;
   vowelAccuracy: number;
@@ -146,10 +153,14 @@ function buildMeasuredComment(params: {
   const latencyText =
     params.latencyMs == null ? "반응속도는 측정되지 않았습니다" : `반응 시작 시간은 ${params.latencyMs}ms`;
   const faceText =
+    params.facialResponseChange == null
+      ? "기준 얼굴 대비 안면 반응 변화는 측정되지 않았습니다"
+      : `기준 얼굴 대비 안면 반응 변화는 ${params.facialResponseChange.toFixed(1)}점`;
+  const supportText =
     params.facialSymmetry == null
-      ? "안면 대칭 지수는 측정되지 않았습니다"
-      : `안면 대칭 지수는 ${params.facialSymmetry.toFixed(1)}점`;
-  return `가창 분석 결과 자음 정확도는 ${params.consonantAccuracy.toFixed(1)}점, 모음 정확도는 ${params.vowelAccuracy.toFixed(1)}점, 가사 일치도는 ${params.lyricAccuracy.toFixed(1)}점으로 분석되었습니다. ${faceText}이며 발성 흔들림은 ${params.jitterPct.toFixed(2)}% 수준입니다. ${latencyText}.`;
+      ? "안면 반응 보조 기준값은 확보되지 않았습니다"
+      : `안면 반응 보조 기준값은 ${params.facialSymmetry.toFixed(1)}점이었습니다`;
+  return `가창 분석 결과 자음 정확도는 ${params.consonantAccuracy.toFixed(1)}점, 모음 정확도는 ${params.vowelAccuracy.toFixed(1)}점, 가사 일치도는 ${params.lyricAccuracy.toFixed(1)}점으로 분석되었습니다. ${faceText}이며 ${supportText}. 발성 흔들림은 ${params.jitterPct.toFixed(2)}% 수준입니다. ${latencyText}.`;
 }
 
 function normalizeLyricsForAnalysis(text: string) {
@@ -279,14 +290,16 @@ function calculateCompositeSingScore(metrics: {
   consonantAccuracy: number | null;
   vowelAccuracy: number | null;
   lyricAccuracy: number | null;
-  facialSymmetry: number | null;
+  facialSymmetryAbsolute: number | null;
+  facialResponseChange: number | null;
   latencyMs: number | null;
 }) {
   const weightedParts: Array<{ value: number | null; weight: number }> = [
     { value: metrics.consonantAccuracy, weight: 0.35 },
     { value: metrics.vowelAccuracy, weight: 0.35 },
     { value: metrics.lyricAccuracy, weight: 0.15 },
-    { value: metrics.facialSymmetry, weight: 0.1 },
+    { value: metrics.facialSymmetryAbsolute, weight: 0.03 },
+    { value: metrics.facialResponseChange, weight: 0.07 },
     {
       value:
         metrics.latencyMs == null
@@ -462,6 +475,8 @@ function BrainSingPageContent() {
   const audioEndedRef = useRef(false);
   const sessionStartRef = useRef<number | null>(null);
   const calibrationStableSinceRef = useRef<number | null>(null);
+  const calibrationCompletedRef = useRef(false);
+  const calibrationBaselineSymmetryRef = useRef<number | null>(null);
   const keyFramesRef = useRef<SingKeyFrame[]>([]);
   const lastKeyFrameCapturedAtRef = useRef<number>(0);
   const measuredPitchHistoryRef = useRef<number[]>([]);
@@ -568,6 +583,7 @@ function BrainSingPageContent() {
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
+      unregisterMediaStream(streamRef.current);
       streamRef.current = null;
     }
     if (mediaRecorderRef.current) {
@@ -594,6 +610,8 @@ function BrainSingPageContent() {
     measuredPitchHistoryRef.current = [];
     measuredSymmetryHistoryRef.current = [];
     voiceOnsetLatencyMsRef.current = null;
+    calibrationCompletedRef.current = false;
+    calibrationBaselineSymmetryRef.current = null;
     sessionStartRef.current = null;
     recordedChunksRef.current = [];
     if (videoRef.current) {
@@ -602,6 +620,7 @@ function BrainSingPageContent() {
     if (sideVideoRef.current) {
       sideVideoRef.current.srcObject = null;
     }
+    stopRegisteredMediaStreams();
     if (songAudioRef.current) {
       songAudioRef.current.onended = null;
       songAudioRef.current.pause();
@@ -652,6 +671,10 @@ function BrainSingPageContent() {
     }
 
     if (performance.now() - calibrationStableSinceRef.current >= CALIBRATION_STABLE_MS) {
+      calibrationBaselineSymmetryRef.current = sidebarMetrics.faceDetected
+        ? clamp((sidebarMetrics.facialSymmetry || 0) * 100, 0, 100)
+        : null;
+      calibrationCompletedRef.current = true;
       setCalibrationReady(true);
     }
   }, [
@@ -744,6 +767,7 @@ function BrainSingPageContent() {
         },
       });
       streamRef.current = stream;
+      registerMediaStream(stream);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
@@ -901,6 +925,8 @@ function BrainSingPageContent() {
   const startCalibration = async () => {
     stopAnalysisLoopKeepingCamera();
     calibrationStableSinceRef.current = null;
+    calibrationCompletedRef.current = false;
+    calibrationBaselineSymmetryRef.current = null;
     setCalibrationReady(false);
     setMediaAccessError(null);
     setCalibrationMessage("카메라를 켜고 얼굴을 화면 중앙 가이드에 맞춰 주세요.");
@@ -933,7 +959,11 @@ function BrainSingPageContent() {
     }, 1000);
   };
 
-  const finishSinging = async (jitterData: number[], siData: number[]) => {
+  const finishSinging = async (
+    jitterData: number[],
+    siData: number[],
+    responseDeltaData: number[],
+  ) => {
     stopAnalysisLoopKeepingCamera();
     collectSingKeyFrame(true);
     const reviewAudio = await stopVoiceRecording();
@@ -950,6 +980,10 @@ function BrainSingPageContent() {
       siData.length > 0
         ? siData.reduce((sum, value) => sum + value, 0) / siData.length
         : null;
+    const avgFaceResponseDelta =
+      responseDeltaData.length > 0
+        ? responseDeltaData.reduce((sum, value) => sum + value, 0) / responseDeltaData.length
+        : null;
     const latencyMs = voiceOnsetLatencyMsRef.current;
     const pronunciation = await analyzeSongPronunciation({
       audioBlob: reviewAudio.blob,
@@ -959,22 +993,56 @@ function BrainSingPageContent() {
       pronunciation.consonantAccuracy != null &&
       pronunciation.vowelAccuracy != null &&
       pronunciation.lyricAccuracy != null;
+    const liveSymmetrySnapshot = sidebarMetrics.faceDetected
+      ? clamp((sidebarMetrics.facialSymmetry || 0) * 100, 0, 100)
+      : null;
+    const effectiveFaceSampleCount =
+      avgS == null &&
+      calibrationCompletedRef.current &&
+      liveSymmetrySnapshot != null &&
+      siData.length === 0
+        ? 1
+        : siData.length;
+    const effectiveSymmetry =
+      avgS != null
+        ? avgS
+        : calibrationCompletedRef.current && liveSymmetrySnapshot != null
+          ? liveSymmetrySnapshot
+          : 0;
+    const liveBaselineDelta =
+      calibrationBaselineSymmetryRef.current != null && liveSymmetrySnapshot != null
+        ? Math.abs(liveSymmetrySnapshot - calibrationBaselineSymmetryRef.current)
+        : null;
+    const effectiveFacialResponseDelta =
+      avgFaceResponseDelta != null
+        ? avgFaceResponseDelta
+        : calibrationCompletedRef.current && liveBaselineDelta != null
+          ? liveBaselineDelta
+          : null;
     const hasMeasuredFace =
-      avgS != null && siData.length >= MIN_MEASURED_FACE_SAMPLES;
+      effectiveFacialResponseDelta != null &&
+      calibrationCompletedRef.current &&
+      effectiveFaceSampleCount >= 1;
     const metricSource =
       hasMeasuredPronunciation || hasMeasuredFace ? "measured" : "demo";
     const effectiveJitter = avgJ ?? 0;
-    const effectiveSymmetry = avgS ?? 0;
     const score = calculateCompositeSingScore({
       consonantAccuracy: pronunciation.consonantAccuracy,
       vowelAccuracy: pronunciation.vowelAccuracy,
       lyricAccuracy: pronunciation.lyricAccuracy,
-      facialSymmetry: hasMeasuredFace ? effectiveSymmetry : null,
+      facialSymmetryAbsolute: hasMeasuredFace ? effectiveSymmetry : null,
+      facialResponseChange: hasMeasuredFace
+        ? clamp(effectiveFacialResponseDelta * 12, 0, 100)
+        : null,
       latencyMs,
     });
 
     const finalJitterText = effectiveJitter.toFixed(2);
     const finalSiText = hasMeasuredFace ? effectiveSymmetry.toFixed(1) : "--";
+    const facialResponseDeltaText =
+      hasMeasuredFace && effectiveFacialResponseDelta != null
+        ? effectiveFacialResponseDelta.toFixed(1)
+        : "--";
     const finalLatencyText = latencyMs == null ? "-- ms" : `${Math.round(latencyMs)} ms`;
     const finalConsonantText =
       pronunciation.consonantAccuracy == null
@@ -993,7 +1061,7 @@ function BrainSingPageContent() {
       : describeSingMeasurementReason({
           pronunciationErrorReason: pronunciation.errorReason,
           hasMeasuredFace,
-          faceSampleCount: siData.length,
+          faceSampleCount: effectiveFaceSampleCount,
         });
 
     const finalComment =
@@ -1001,6 +1069,7 @@ function BrainSingPageContent() {
         ? buildMeasuredComment({
             jitterPct: effectiveJitter,
             facialSymmetry: hasMeasuredFace ? effectiveSymmetry : null,
+            facialResponseChange: hasMeasuredFace ? effectiveFacialResponseDelta : null,
             latencyMs,
             consonantAccuracy: pronunciation.consonantAccuracy ?? 0,
             vowelAccuracy: pronunciation.vowelAccuracy ?? 0,
@@ -1036,6 +1105,7 @@ function BrainSingPageContent() {
           score,
         finalJitter: finalJitterText,
         finalSi: finalSiText,
+        facialResponseDelta: facialResponseDeltaText,
         rtLatency: finalLatencyText,
         finalConsonant: finalConsonantText,
         finalVowel: finalVowelText,
@@ -1068,6 +1138,12 @@ function BrainSingPageContent() {
           requirements: currentSong.governance.requirementIds,
           config_version:
             currentSong.governance.catalogVersion ?? SING_TRAINING_CATALOG_VERSION,
+          measurement_metadata: {
+            facial_response_delta:
+              hasMeasuredFace && effectiveFacialResponseDelta != null
+                ? Number(effectiveFacialResponseDelta.toFixed(1))
+                : null,
+          },
         }),
         } satisfies SingResultEnvelope),
       );
@@ -1088,6 +1164,7 @@ function BrainSingPageContent() {
     const startedAt = performance.now();
     const jitterData: number[] = [];
     const siData: number[] = [];
+    const responseDeltaData: number[] = [];
     sessionStartRef.current = startedAt;
     measuredPitchHistoryRef.current = [];
     measuredSymmetryHistoryRef.current = [];
@@ -1123,7 +1200,7 @@ function BrainSingPageContent() {
         window.clearTimeout(finishTimerRef.current);
         finishTimerRef.current = null;
       }
-      void finishSinging(jitterData, siData);
+      void finishSinging(jitterData, siData, responseDeltaData);
     };
 
     finishTimerRef.current = window.setTimeout(
@@ -1228,6 +1305,13 @@ function BrainSingPageContent() {
         const symmetryAvg = siData.reduce((sum, value) => sum + value, 0) / siData.length;
         setRtSi(symmetryAvg.toFixed(1));
         setSiHistory([...siData]);
+        if (calibrationBaselineSymmetryRef.current != null) {
+          const responseDelta = Math.abs(
+            symmetryScore - calibrationBaselineSymmetryRef.current,
+          );
+          responseDeltaData.push(responseDelta);
+          if (responseDeltaData.length > 60) responseDeltaData.shift();
+        }
       }
 
       if (voiceOnsetLatencyMsRef.current != null) {
@@ -1419,63 +1503,66 @@ function BrainSingPageContent() {
             )}
 
             {phase === "calibrating" && (
-              <div className="absolute inset-0 z-20 flex items-center justify-center bg-[rgba(15,23,42,0.14)] p-6 backdrop-blur-[1px]">
-                <div className="flex w-full max-w-[760px] flex-col items-center gap-8 rounded-[36px] border border-white/45 bg-[rgba(255,255,255,0.18)] px-8 py-10 text-center text-white shadow-[0_24px_70px_rgba(15,23,42,0.26)] backdrop-blur-sm sm:px-12">
-                  <div className="space-y-2">
-                    <p className="text-xs font-black uppercase tracking-[0.28em] text-emerald-300">
-                      Face Calibration
-                    </p>
-                    <h2 className="text-4xl font-black tracking-tight text-white drop-shadow-[0_2px_12px_rgba(15,23,42,0.32)] sm:text-5xl">
-                      얼굴을 가이드에 맞춰 주세요
-                    </h2>
-                    <p className="text-sm font-medium text-white/92 drop-shadow-[0_1px_8px_rgba(15,23,42,0.24)] sm:text-base">
-                      시작 전에 정면 얼굴을 먼저 안정적으로 인식합니다.
-                    </p>
-                  </div>
-
-                  <div className="relative flex h-[260px] w-[220px] items-center justify-center sm:h-[320px] sm:w-[260px]">
-                    <div className="absolute inset-0 rounded-[48%] border-2 border-dashed border-emerald-300/85 shadow-[0_0_30px_rgba(110,231,183,0.25)]" />
-                    <div className="absolute left-1/2 top-[16%] h-[68%] w-px -translate-x-1/2 bg-emerald-300/75" />
-                    <div className="absolute left-1/2 top-1/2 h-px w-[68%] -translate-x-1/2 bg-emerald-300/55" />
-                    <div className="absolute left-1/2 top-[36%] h-3 w-3 -translate-x-1/2 rounded-full border border-emerald-200 bg-emerald-300/90" />
-                  </div>
-
-                  <div className="w-full rounded-2xl border border-white/40 bg-[rgba(15,23,42,0.22)] px-5 py-4 text-left">
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                      <p className="text-sm font-bold text-white">{calibrationMessage}</p>
-                      <span
-                        className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${
-                          calibrationReady
-                            ? "bg-emerald-400 text-slate-950"
-                            : "bg-white/20 text-white"
-                        }`}
-                      >
-                        추적 품질 {normalizeTrackingQuality(sidebarMetrics.trackingQuality).toFixed(0)}%
-                      </span>
+              <div className="absolute inset-0 z-20 bg-[rgba(15,23,42,0.12)] backdrop-blur-[0.5px]">
+                <div className="absolute inset-0 flex items-center justify-center p-5 sm:p-8">
+                  <div className="pointer-events-auto relative flex w-full max-w-[760px] flex-col items-center rounded-[34px] border border-white/55 bg-[rgba(255,255,255,0.18)] px-6 py-7 text-center shadow-[0_20px_50px_rgba(15,23,42,0.18)] backdrop-blur-md sm:px-8 sm:py-8">
+                    <div className="space-y-2">
+                      <p className="text-[11px] font-black uppercase tracking-[0.34em] text-emerald-300">
+                        Face Calibration
+                      </p>
+                      <h2 className="text-3xl font-black tracking-[-0.04em] text-white drop-shadow-[0_2px_10px_rgba(15,23,42,0.28)] sm:text-4xl">
+                        얼굴을 가이드에 맞춰 주세요
+                      </h2>
+                      <p className="text-sm font-semibold text-white/85 sm:text-base">
+                        시작 전에 정면 얼굴을 먼저 안정적으로 인식합니다.
+                      </p>
                     </div>
-                  </div>
 
-                  <div className="flex flex-wrap items-center justify-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => void startCalibration()}
-                      className="inline-flex h-12 items-center justify-center rounded-full border border-white/45 bg-[rgba(15,23,42,0.28)] px-6 text-sm font-black text-white"
-                    >
-                      다시 인식
-                    </button>
-                    <button
-                      type="button"
-                      onClick={startCountdown}
-                      disabled={!calibrationReady}
-                      className={`inline-flex h-14 items-center justify-center gap-3 rounded-full px-8 text-lg font-black transition ${
-                        calibrationReady
-                          ? "bg-emerald-500 text-white shadow-[0_16px_34px_rgba(16,185,129,0.38)] hover:bg-emerald-400"
-                          : "cursor-not-allowed bg-white/25 text-white/70"
-                      }`}
-                    >
-                      <ChevronRight className="h-5 w-5" />
-                      노래 시작
-                    </button>
+                    <div className="relative mt-5 flex h-[250px] w-[210px] items-center justify-center sm:mt-6 sm:h-[300px] sm:w-[248px]">
+                      <div className="absolute inset-0 rounded-[48%] border-[3px] border-dashed border-emerald-400 shadow-[0_0_28px_rgba(16,185,129,0.20)]" />
+                      <div className="absolute inset-[10px] rounded-[48%] border border-emerald-300/40" />
+                      <div className="absolute left-1/2 top-[16%] h-[68%] w-[2px] -translate-x-1/2 bg-emerald-400/85" />
+                      <div className="absolute left-1/2 top-1/2 h-[2px] w-[68%] -translate-x-1/2 bg-emerald-400/75" />
+                      <div className="absolute left-1/2 top-[36%] h-3.5 w-3.5 -translate-x-1/2 rounded-full border border-emerald-100 bg-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.35)]" />
+                    </div>
+
+                    <div className="mt-5 w-full rounded-[22px] border border-white/35 bg-[rgba(15,23,42,0.22)] px-4 py-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.12)]">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-sm font-bold text-white/95">{calibrationMessage}</p>
+                        <span
+                          className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${
+                            calibrationReady
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-white/15 text-white/85"
+                          }`}
+                        >
+                          추적 품질 {normalizeTrackingQuality(sidebarMetrics.trackingQuality).toFixed(0)}%
+                        </span>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap items-center justify-center gap-3 sm:justify-end">
+                        <button
+                          type="button"
+                          onClick={() => void startCalibration()}
+                          className="inline-flex h-11 items-center justify-center rounded-full border border-white/35 bg-white px-5 text-sm font-black text-slate-700"
+                        >
+                          다시 인식
+                        </button>
+                        <button
+                          type="button"
+                          onClick={startCountdown}
+                          disabled={!calibrationReady}
+                          className={`inline-flex h-12 items-center justify-center gap-3 rounded-full px-7 text-base font-black transition ${
+                            calibrationReady
+                              ? "bg-emerald-500 text-white shadow-[0_16px_34px_rgba(16,185,129,0.38)] hover:bg-emerald-400"
+                              : "cursor-not-allowed bg-white/20 text-white/45"
+                          }`}
+                        >
+                          <ChevronRight className="h-5 w-5" />
+                          노래 시작
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1591,7 +1678,3 @@ function ResultStat({ title, value }: { title: string; value: string }) {
     </div>
   );
 }
-
-
-
-

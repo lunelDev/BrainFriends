@@ -13,6 +13,7 @@ export type PersistedSingResult = {
   score: number;
   finalJitter: string;
   finalSi: string;
+  facialResponseDelta?: string;
   rtLatency: string;
   finalConsonant?: string;
   finalVowel?: string;

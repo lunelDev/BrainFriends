@@ -5,9 +5,12 @@ import { usePathname } from "next/navigation";
 import { TrainingProvider, useTraining } from "./TrainingContext";
 import FaceTracker from "@/components/diagnosis/FaceTracker";
 import { DeveloperKpiPanel } from "@/components/training/DeveloperKpiPanel";
+import { stopRegisteredMediaStreams } from "@/lib/client/mediaStreamRegistry";
 
 function stopAllAttachedMediaStreams() {
   if (typeof document === "undefined") return;
+
+  stopRegisteredMediaStreams();
 
   const mediaElements = Array.from(
     document.querySelectorAll("video, audio"),

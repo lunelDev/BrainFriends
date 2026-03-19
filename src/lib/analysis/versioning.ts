@@ -20,6 +20,7 @@ export type VersionSnapshot = {
   config_version?: string;
   preprocessing_version?: string;
   postprocessing_version?: string;
+  measurement_metadata?: Record<string, string | number | boolean | null>;
 };
 
 type VersionSnapshotTemplate = Omit<VersionSnapshot, "generated_at" | "pipeline_stage">;

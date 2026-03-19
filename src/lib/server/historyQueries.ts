@@ -366,6 +366,10 @@ export async function listHistoryForAuthenticatedUser(
         score: Number(row.score ?? 0),
         finalJitter: row.jitter == null ? "-" : String(row.jitter),
         finalSi: row.facial_symmetry == null ? "-" : String(row.facial_symmetry),
+        facialResponseDelta:
+          row.version_snapshot?.measurement_metadata?.facial_response_delta == null
+            ? "-"
+            : String(row.version_snapshot.measurement_metadata.facial_response_delta),
         rtLatency: row.latency_ms == null ? "-" : String(row.latency_ms),
         finalConsonant:
           row.consonant_accuracy == null ? "-" : String(row.consonant_accuracy),

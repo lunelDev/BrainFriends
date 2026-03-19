@@ -248,6 +248,7 @@ export interface SingHistoryResult {
   score: number;
   finalJitter: string;
   finalSi: string;
+  facialResponseDelta?: string;
   rtLatency: string;
   finalConsonant?: string;
   finalVowel?: string;
