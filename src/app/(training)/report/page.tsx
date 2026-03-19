@@ -78,12 +78,16 @@ function isDemoSkipEntry(entry: TrainingHistoryEntry | null) {
 
 function getSingBaselineMetrics(entry: TrainingHistoryEntry | null) {
   const metadata = entry?.singResult?.versionSnapshot?.measurement_metadata;
-  const baselineFacialSymmetry =
+  const metadataBaselineFacialSymmetry =
     typeof metadata?.baseline_facial_symmetry === "number"
       ? metadata.baseline_facial_symmetry
       : typeof metadata?.baseline_facial_symmetry === "string"
         ? Number(metadata.baseline_facial_symmetry)
         : null;
+  const fallbackFinalSi =
+    entry?.singResult?.finalSi && entry.singResult.finalSi !== "-"
+      ? Number(entry.singResult.finalSi)
+      : null;
   const baselineTrackingQuality =
     typeof metadata?.baseline_tracking_quality === "number"
       ? metadata.baseline_tracking_quality
@@ -92,8 +96,10 @@ function getSingBaselineMetrics(entry: TrainingHistoryEntry | null) {
         : null;
 
   return {
-    facialSymmetry: Number.isFinite(baselineFacialSymmetry)
-      ? baselineFacialSymmetry
+    facialSymmetry: Number.isFinite(metadataBaselineFacialSymmetry)
+      ? metadataBaselineFacialSymmetry
+      : Number.isFinite(fallbackFinalSi)
+        ? fallbackFinalSi
       : null,
     trackingQuality: Number.isFinite(baselineTrackingQuality)
       ? baselineTrackingQuality

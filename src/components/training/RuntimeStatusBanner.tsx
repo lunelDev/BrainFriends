@@ -56,23 +56,25 @@ export function RuntimeStatusBanner() {
   if (!bannerState) return null;
 
   return (
-    <div
-      className={`flex w-full items-start gap-3 rounded-2xl border px-4 py-3 shadow-sm sm:items-center sm:px-5 ${bannerState.wrap}`}
-    >
-      <span
-        className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full sm:mt-0 ${bannerState.dot} ${runtimeStatus.saving ? "animate-pulse" : ""}`}
-      />
-      <div className="min-w-0 flex-1">
-        <p className="text-[12px] font-black leading-none">{bannerState.title}</p>
-        <p className="mt-1 text-[12px] font-medium leading-snug sm:text-[13px]">
-          {bannerState.message}
-        </p>
+    <div className="pointer-events-none fixed inset-x-0 top-20 z-[90] flex justify-center px-4 lg:justify-end lg:px-6">
+      <div
+        className={`pointer-events-auto flex w-full max-w-[560px] items-start gap-3 rounded-2xl border px-4 py-3 shadow-lg sm:items-center sm:px-5 lg:max-w-[360px] ${bannerState.wrap}`}
+      >
+        <span
+          className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full sm:mt-0 ${bannerState.dot} ${runtimeStatus.saving ? "animate-pulse" : ""}`}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-[12px] font-black leading-none">{bannerState.title}</p>
+          <p className="mt-1 text-[12px] font-medium leading-snug sm:text-[13px]">
+            {bannerState.message}
+          </p>
+        </div>
+        {bannerState.retry ? (
+          <span className="shrink-0 rounded-full bg-white/80 px-2 py-1 text-[11px] font-black text-red-700">
+            재시도 필요
+          </span>
+        ) : null}
       </div>
-      {bannerState.retry ? (
-        <span className="shrink-0 rounded-full bg-white/80 px-2 py-1 text-[11px] font-black text-red-700">
-          재시도 필요
-        </span>
-      ) : null}
     </div>
   );
 }

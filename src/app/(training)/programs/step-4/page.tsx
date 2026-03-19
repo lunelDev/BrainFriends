@@ -1240,15 +1240,13 @@ function Step4Content() {
         </div>
       </header>
 
-      <div className="flex flex-1 flex-col lg:flex-row min-h-0 overflow-hidden">
-        <main className="flex-1 flex flex-col min-h-[calc(100vh-4rem)] lg:min-h-0 relative p-3 sm:p-4 lg:p-8 pb-24 sm:pb-10 lg:pb-8 order-1 overflow-y-auto lg:overflow-hidden">
-          <div className="max-w-5xl w-full mx-auto mb-3 sm:mb-4 lg:mb-5">
+        <div className="flex flex-1 flex-col lg:flex-row min-h-0 overflow-hidden">
+          <main className="flex-1 flex flex-col min-h-[calc(100vh-4rem)] lg:min-h-0 relative p-3 sm:p-4 lg:p-8 pb-24 sm:pb-10 lg:pb-8 order-1 overflow-y-auto lg:overflow-hidden">
             <RuntimeStatusBanner />
-          </div>
-          <div
-            className={`max-w-5xl w-full min-h-0 mx-auto grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8 ${
-              phase === "review" ? "items-start" : "h-full items-stretch"
-            }`}
+            <div
+              className={`max-w-5xl w-full min-h-0 mx-auto grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8 ${
+                phase === "review" ? "items-start" : "h-full items-stretch"
+              }`}
           >
             {/* 이미지 영역 */}
             <div className="bg-white p-3 sm:p-4 rounded-[28px] sm:rounded-[40px] shadow-xl border border-slate-100 min-h-0">

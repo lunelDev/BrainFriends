@@ -129,12 +129,14 @@ function isDemoSkipSingResult(result: SingResult | null) {
 
 function getBaselineFaceMetrics(result: SingResult | null | undefined): BaselineFaceMetrics {
   const metadata = result?.versionSnapshot?.measurement_metadata;
-  const baselineFacialSymmetry =
+  const metadataBaselineFacialSymmetry =
     typeof metadata?.baseline_facial_symmetry === "number"
       ? metadata.baseline_facial_symmetry
       : typeof metadata?.baseline_facial_symmetry === "string"
         ? Number(metadata.baseline_facial_symmetry)
         : null;
+  const fallbackFinalSi =
+    result?.finalSi && result.finalSi !== "--" ? Number(result.finalSi) : null;
   const baselineTrackingQuality =
     typeof metadata?.baseline_tracking_quality === "number"
       ? metadata.baseline_tracking_quality
@@ -143,8 +145,10 @@ function getBaselineFaceMetrics(result: SingResult | null | undefined): Baseline
         : null;
 
   return {
-    facialSymmetry: Number.isFinite(baselineFacialSymmetry)
-      ? baselineFacialSymmetry
+    facialSymmetry: Number.isFinite(metadataBaselineFacialSymmetry)
+      ? metadataBaselineFacialSymmetry
+      : Number.isFinite(fallbackFinalSi)
+        ? fallbackFinalSi
       : null,
     trackingQuality: Number.isFinite(baselineTrackingQuality)
       ? baselineTrackingQuality
