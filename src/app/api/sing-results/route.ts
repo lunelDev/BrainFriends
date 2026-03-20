@@ -83,35 +83,6 @@ export async function POST(req: Request) {
     );
   }
 
-  if (body.result.metricSource !== "measured") {
-    await appendClinicalAuditLog(
-      buildSingTrainingAuditLog({
-        request: req,
-        patient: body.patient,
-        status: "skipped",
-        result: {
-          song: body.result.song,
-          score: body.result.score,
-          finalJitter: body.result.finalJitter,
-          finalSi: body.result.finalSi,
-          rtLatency: body.result.rtLatency,
-          reviewAudioUrl: undefined,
-          versionSnapshot: body.result.versionSnapshot,
-        },
-        failureReason: "demo_metric_source_not_persisted",
-        storageTargets: ["data/audit/clinical-events.ndjson"],
-      }),
-    );
-    return NextResponse.json(
-      {
-        ok: true,
-        skipped: true,
-        reason: "demo_metric_source_not_persisted",
-      },
-      { status: 200 },
-    );
-  }
-
   try {
     const saved = await saveSingResultToDatabase({
       patient: body.patient,

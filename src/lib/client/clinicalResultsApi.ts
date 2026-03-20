@@ -15,10 +15,6 @@ export type PersistClinicalHistoryResult = {
 };
 
 function shouldPersistClinicalHistory(historyEntry: TrainingHistoryEntry) {
-  const overall = historyEntry.measurementQuality?.overall;
-  if (historyEntry.trainingMode === "sing") {
-    return overall === "measured";
-  }
   return true;
 }
 

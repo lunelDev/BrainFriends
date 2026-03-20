@@ -187,10 +187,6 @@ function ResultRehabPage() {
 
   useEffect(() => {
     if (!latestStepRow) return;
-    if (latestStepRow.measurementQuality?.overall === "demo") {
-      setDbSaveState("local_only");
-      return;
-    }
     const existsOnServer = serverHistoryRows.some(
       (row) => row.historyId === latestStepRow.historyId,
     );

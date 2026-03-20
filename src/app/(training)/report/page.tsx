@@ -59,10 +59,6 @@ function isMeasuredSingReportEntry(entry: TrainingHistoryEntry | null) {
 }
 
 function shouldShowServerExcludedBadge(entry: TrainingHistoryEntry | null) {
-  if (!entry) return false;
-  if (entry.trainingMode === "sing") {
-    return !isMeasuredSingReportEntry(entry);
-  }
   return false;
 }
 

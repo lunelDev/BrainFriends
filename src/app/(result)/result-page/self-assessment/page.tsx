@@ -438,8 +438,14 @@ function ResultContent() {
       .then(() =>
         persistTrainingHistoryToDatabase(patientProfile, currentHistoryEntry),
       )
-      .then((response) => {
+      .then(async (response) => {
         setDbSaveState(response.skipped ? "local_only" : "saved");
+        try {
+          const { entries } = await fetchMyHistoryEntries();
+          setServerHistory(entries);
+        } catch (error) {
+          console.error("[result-self] failed to refresh server history", error);
+        }
       })
       .catch((error) => {
         console.error("[result-self] failed to persist clinical result", error);
@@ -450,10 +456,6 @@ function ResultContent() {
 
   useEffect(() => {
     if (!currentHistoryEntry) return;
-    if (currentHistoryEntry.measurementQuality?.overall === "demo") {
-      setDbSaveState("local_only");
-      return;
-    }
     const existsOnServer = (serverHistory ?? []).some(
       (row) => row.historyId === currentHistoryEntry.historyId,
     );

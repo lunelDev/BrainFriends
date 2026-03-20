@@ -443,16 +443,6 @@ async function persistToDatabase(
     }
   }
 
-  if (result.metricSource !== "measured") {
-    return {
-      ranking: null,
-      skipped: true,
-      ok: true,
-      error: null,
-      nextResult,
-    };
-  }
-
   try {
     const persistableResult = {
       ...nextResult,
@@ -645,8 +635,7 @@ export default function SingTrainingResultPage() {
       .then(({ entries }) => {
         if (cancelled) return;
         setHistoryEntries(entries);
-        const needsStoredResultSync =
-          !result || result.metricSource !== "measured" || dbSaveState === "local_only";
+        const needsStoredResultSync = !result || dbSaveState === "local_only";
         const matchedCurrentSing = entries.find((row) => matchesPersistedSingEntry(row, result));
         const latestSing = matchedCurrentSing ?? entries.find((row) => row.trainingMode === "sing");
         if (!latestSing?.singResult) {
@@ -818,7 +807,7 @@ export default function SingTrainingResultPage() {
 
   const isMeasuredResult = isMeasuredSingResult(result);
   const isDemoSkipResult = isDemoSkipSingResult(result);
-  const isServerExcluded = dbSaveState === "local_only" || !isMeasuredResult;
+  const isServerExcluded = dbSaveState === "local_only";
   const currentBaselineMetrics = getBaselineFaceMetrics(result);
   const previousBaselineMetrics = findPreviousSingBaseline(historyEntries, result);
   const baselineComparisonDelta =

@@ -559,9 +559,18 @@ function Step6Content() {
         const correctnessByWord = new Map<string, boolean>();
         const shapeSimilarityByWord = new Map<string, number>();
         const writingScoreByWord = new Map<string, number>();
+        const recordedRowByIndex = new Map<number, any>();
         if (Array.isArray(recordedRows)) {
           recordedRows.forEach((row: any) => {
             if (!row?.text) return;
+            const resolvedIndex = Number.isFinite(Number(row?.index))
+              ? Number(row.index)
+              : questions.findIndex(
+                  (question) => String(question?.answer || "") === String(row.text),
+                );
+            if (resolvedIndex >= 0) {
+              recordedRowByIndex.set(resolvedIndex, row);
+            }
             consistencyByWord.set(
               String(row.text),
               Number(row?.articulationWritingConsistency ?? 0),
@@ -607,20 +616,42 @@ function Step6Content() {
           totalTasks: questions.length,
           accuracy: step6QualityScore,
           timestamp: Date.now(),
-          items: questions.map((word, idx) => ({
-            word: word.answer,
-            expectedStrokes: getExpectedStrokeCount({
-              answer: word.answer,
-              strokes: word.strokes,
-            }),
-            userStrokes: userStrokesByWord.get(word.answer) ?? 0,
-            isCorrect: correctnessByWord.get(word.answer) ?? false,
-            shapeSimilarityPct: shapeSimilarityByWord.get(word.answer) ?? 0,
-            writingScore: writingScoreByWord.get(word.answer) ?? 0,
-            userImage: writingImages[idx] || "",
-            articulationWritingConsistency:
-              consistencyByWord.get(word.answer) ?? 0,
-          })),
+          items: questions.map((word, idx) => {
+            const recordedRow = recordedRowByIndex.get(idx);
+            return {
+              word: word.answer,
+              expectedStrokes: getExpectedStrokeCount({
+                answer: word.answer,
+                strokes: word.strokes,
+              }),
+              userStrokes:
+                Number(recordedRow?.userStrokes) ||
+                userStrokesByWord.get(word.answer) ||
+                0,
+              isCorrect:
+                typeof recordedRow?.isCorrect === "boolean"
+                  ? recordedRow.isCorrect
+                  : (correctnessByWord.get(word.answer) ?? false),
+              shapeSimilarityPct:
+                Number(recordedRow?.shapeSimilarityPct) ||
+                shapeSimilarityByWord.get(word.answer) ||
+                0,
+              writingScore:
+                Number(recordedRow?.writingScore) ||
+                writingScoreByWord.get(word.answer) ||
+                0,
+              userImage:
+                (typeof recordedRow?.userImage === "string"
+                  ? recordedRow.userImage
+                  : "") ||
+                writingImages[idx] ||
+                "",
+              articulationWritingConsistency:
+                Number(recordedRow?.articulationWritingConsistency) ||
+                consistencyByWord.get(word.answer) ||
+                0,
+            };
+          }),
           versionSnapshot: buildVersionSnapshot("step6"),
           },
           isRehabMode && rehabTargetStep === 6 ? "rehab" : "self",
