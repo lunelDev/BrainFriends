@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { createGetObjectSignedUrl } from "@/lib/server/ncpObjectStorage";
+import {
+  assertObjectExists,
+  createGetObjectSignedUrl,
+} from "@/lib/server/ncpObjectStorage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,12 +16,24 @@ export async function GET(req: Request) {
   }
 
   try {
+    await assertObjectExists(objectKey);
     const accessUrl = await createGetObjectSignedUrl({
       objectKey,
     });
 
     return NextResponse.redirect(accessUrl, { status: 307 });
   } catch (error: any) {
+    if (
+      error?.name === "NotFound" ||
+      error?.$metadata?.httpStatusCode === 404
+    ) {
+      return new NextResponse("media_not_found", {
+        status: 404,
+        headers: {
+          "content-type": "text/plain; charset=utf-8",
+        },
+      });
+    }
     return NextResponse.json(
       { ok: false, error: error?.message || "failed_to_create_media_access_url" },
       { status: 500 },
@@ -34,12 +49,22 @@ export async function POST(req: Request) {
   }
 
   try {
+    await assertObjectExists(body.objectKey);
     const accessUrl = await createGetObjectSignedUrl({
       objectKey: body.objectKey,
     });
 
     return NextResponse.json({ ok: true, accessUrl });
   } catch (error: any) {
+    if (
+      error?.name === "NotFound" ||
+      error?.$metadata?.httpStatusCode === 404
+    ) {
+      return NextResponse.json(
+        { ok: false, error: "media_not_found" },
+        { status: 404 },
+      );
+    }
     return NextResponse.json(
       { ok: false, error: error?.message || "failed_to_create_media_access_url" },
       { status: 500 },

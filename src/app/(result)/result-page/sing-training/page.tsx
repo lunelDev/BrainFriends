@@ -44,6 +44,8 @@ type RankRow = {
 
 type SingResult = {
   sourceSessionKey?: string;
+  persistedSessionId?: string | null;
+  persistedResultId?: string | null;
   song: string;
   userName: string;
   score: number;
@@ -300,6 +302,7 @@ function buildResultFromHistoryEntry(entry: HistorySingEntry): SingResult {
     song: entry.singResult?.song || "아리랑",
     userName: entry.patientName,
     score: entry.singResult?.score || 0,
+    persistedSessionId: entry.sessionId,
     finalJitter: entry.singResult?.finalJitter || "--",
     finalSi: entry.singResult?.finalSi || "--",
     facialResponseDelta:
@@ -325,6 +328,23 @@ function buildResultFromHistoryEntry(entry: HistorySingEntry): SingResult {
     governance: entry.singResult?.governance,
     versionSnapshot: entry.singResult?.versionSnapshot,
   };
+}
+
+function matchesPersistedSingEntry(
+  entry: HistorySingEntry,
+  current: SingResult | null,
+) {
+  if (!current || entry.trainingMode !== "sing") return false;
+  if (
+    current.persistedSessionId &&
+    String(entry.sessionId || "") === String(current.persistedSessionId)
+  ) {
+    return true;
+  }
+
+  const sameSong = String(entry.singResult?.song || "") === String(current.song || "");
+  const sameCompletedAt = Number(entry.completedAt || 0) === Number(current.completedAt || 0);
+  return sameSong && sameCompletedAt;
 }
 
 async function persistToDatabase(
@@ -472,6 +492,10 @@ async function persistToDatabase(
     const payload = (await response.json().catch(() => null)) as {
       ranking?: RankingPayload;
       skipped?: boolean;
+      saved?: {
+        sessionId?: string;
+        resultId?: string;
+      };
     } | null;
 
     return {
@@ -479,7 +503,11 @@ async function persistToDatabase(
       skipped: Boolean(payload?.skipped),
       ok: true,
       error: null,
-      nextResult,
+      nextResult: {
+        ...nextResult,
+        persistedSessionId: payload?.saved?.sessionId ?? nextResult.persistedSessionId ?? null,
+        persistedResultId: payload?.saved?.resultId ?? nextResult.persistedResultId ?? null,
+      },
     };
   } catch (error) {
     return {
@@ -619,7 +647,8 @@ export default function SingTrainingResultPage() {
         setHistoryEntries(entries);
         const needsStoredResultSync =
           !result || result.metricSource !== "measured" || dbSaveState === "local_only";
-        const latestSing = entries.find((row) => row.trainingMode === "sing");
+        const matchedCurrentSing = entries.find((row) => matchesPersistedSingEntry(row, result));
+        const latestSing = matchedCurrentSing ?? entries.find((row) => row.trainingMode === "sing");
         if (!latestSing?.singResult) {
           if (!result && fallbackSong) {
             const isSkipDemo = searchParams.get("demo") === "skip";
@@ -638,6 +667,12 @@ export default function SingTrainingResultPage() {
         }
 
         if (!needsStoredResultSync) {
+          if (matchedCurrentSing?.singResult) {
+            setMyRank(
+              matchedCurrentSing.singResult.rankings?.find((item) => item.me) ?? null,
+            );
+            setDbSaveState("saved");
+          }
           setHasLoadedResult(true);
           return;
         }

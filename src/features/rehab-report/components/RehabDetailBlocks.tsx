@@ -262,6 +262,13 @@ export function RehabDetailBlocks({
                       src={item.userImage}
                       className="max-h-full max-w-full object-contain p-2"
                       alt="rehab-writing-result"
+                      onError={(event) => {
+                        const target = event.currentTarget;
+                        const fallback = document.createElement("span");
+                        fallback.className = "text-xs font-bold text-slate-400";
+                        fallback.textContent = "이미지를 불러오지 못했습니다.";
+                        target.replaceWith(fallback);
+                      }}
                     />
                   </div>
                 )}

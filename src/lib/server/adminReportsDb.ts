@@ -29,6 +29,30 @@ type AdminReportPatientRow = {
   login_id?: string | null;
 };
 
+function isRenderableImageRef(value: unknown) {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return (
+    trimmed.startsWith("data:image/") ||
+    trimmed.startsWith("blob:") ||
+    trimmed.startsWith("/api/media/access?") ||
+    /^https?:\/\//i.test(trimmed)
+  );
+}
+
+function isPlayableAudioRef(value: unknown) {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return (
+    trimmed.startsWith("data:audio/") ||
+    trimmed.startsWith("blob:") ||
+    trimmed.startsWith("/api/media/access?") ||
+    /^https?:\/\//i.test(trimmed)
+  );
+}
+
 export async function listAdminPatientReportSummaries(sessionToken: string) {
   const context = await getAuthenticatedSessionContext(sessionToken);
   if (!context) {
@@ -578,7 +602,7 @@ export async function getAdminPatientReportDetail(
             ? baseStepDetails.step2.map((item: any, index: number) => ({
                 ...item,
                 audioUrl:
-                  typeof item?.audioUrl === "string" && item.audioUrl.trim().length > 0
+                  isPlayableAudioRef(item?.audioUrl)
                     ? item.audioUrl
                     : audioUrlsByStep[2]?.[index] ?? undefined,
               }))
@@ -587,7 +611,7 @@ export async function getAdminPatientReportDetail(
             ? baseStepDetails.step4.map((item: any, index: number) => ({
                 ...item,
                 audioUrl:
-                  typeof item?.audioUrl === "string" && item.audioUrl.trim().length > 0
+                  isPlayableAudioRef(item?.audioUrl)
                     ? item.audioUrl
                     : audioUrlsByStep[4]?.[index] ?? undefined,
               }))
@@ -596,7 +620,7 @@ export async function getAdminPatientReportDetail(
             ? baseStepDetails.step5.map((item: any, index: number) => ({
                 ...item,
                 audioUrl:
-                  typeof item?.audioUrl === "string" && item.audioUrl.trim().length > 0
+                  isPlayableAudioRef(item?.audioUrl)
                     ? item.audioUrl
                     : audioUrlsByStep[5]?.[index] ?? undefined,
               }))
@@ -605,7 +629,7 @@ export async function getAdminPatientReportDetail(
             ? baseStepDetails.step6.map((item: any, index: number) => ({
                 ...item,
                 userImage:
-                  typeof item?.userImage === "string" && item.userImage.trim().length > 0
+                  isRenderableImageRef(item?.userImage)
                     ? item.userImage
                     : imageUrls[index] ?? undefined,
               }))
