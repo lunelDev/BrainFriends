@@ -92,6 +92,8 @@ function ResultContent() {
   const [dbSaveState, setDbSaveState] = useState<
     "idle" | "saving" | "saved" | "failed" | "local_only"
   >("idle");
+  const [liveHistoryEntry, setLiveHistoryEntry] =
+    useState<TrainingHistoryEntry | null>(null);
   const persistedHistoryIdRef = useRef<string | null>(null);
   const finalizedResultRef = useRef<string | null>(null);
   const { patient: patientProfile } = useTrainingSession();
@@ -263,9 +265,9 @@ function ResultContent() {
     if (!patientForHistory) return [] as TrainingHistoryEntry[];
     return mergeHistoryRows(
       serverHistory ?? [],
-      SessionManager.getHistoryFor(patientForHistory),
+      liveHistoryEntry ? [liveHistoryEntry] : [],
     );
-  }, [currentTrainingMode, patientForHistory, serverHistory]);
+  }, [currentTrainingMode, liveHistoryEntry, patientForHistory, serverHistory]);
 
   const latestAndPreviousHistory = useMemo(() => {
     if (!patientForHistory) return { current: null, previous: null };
@@ -288,7 +290,7 @@ function ResultContent() {
   }, [latestAndPreviousHistory, sessionData]);
 
 
-  const currentHistoryEntry = latestAndPreviousHistory.current;
+  const currentHistoryEntry = liveHistoryEntry ?? latestAndPreviousHistory.current;
   const qualityUi = getMeasurementQualityUi(
     currentHistoryEntry?.measurementQuality?.overall,
   );
@@ -396,14 +398,6 @@ function ResultContent() {
       step5: { items: backups.step5 },
       step6: { items: backups.step6 },
     });
-    console.debug("[Result] backups loaded", {
-      step1: backups.step1.length,
-      step2: backups.step2.length,
-      step3: backups.step3.length,
-      step4: backups.step4.length,
-      step5: backups.step5.length,
-      step6: backups.step6.length,
-    });
   }, []);
 
   useEffect(() => {
@@ -413,12 +407,14 @@ function ResultContent() {
     try {
       const sm = new SessionManager(patientProfile as any, place);
       sm.finalizeSessionAndSaveHistory(currentTrainingMode);
+      const builtEntry = sm.buildHistoryEntry(currentTrainingMode);
+      setLiveHistoryEntry(builtEntry);
       finalizedResultRef.current = finalizeKey;
       setHistoryRefreshKey((v) => v + 1);
       setServerHistory((prev) =>
         mergeHistoryRows(
           prev ?? [],
-          SessionManager.getHistoryFor(patientProfile as any),
+          builtEntry ? [builtEntry] : [],
         ),
       );
     } catch (e) {

@@ -765,21 +765,13 @@ export class SessionManager {
     return { step1, step2, step3, step4, step5, step6 };
   }
 
-  private saveHistoryEntry(mode: TrainingMode = "self", rehabStep?: number) {
-    if (typeof window === "undefined") return;
-    if (!ENABLE_LOCAL_HISTORY_CACHE) return;
+  buildHistoryEntry(
+    mode: TrainingMode = "self",
+    rehabStep?: number,
+  ): TrainingHistoryEntry | null {
+    if (typeof window === "undefined") return null;
     const aq = this.session.kwabScores?.aq;
-    if (aq === undefined || aq === null) return;
-
-    const historyKey = this.getHistoryStorageKey();
-    let existing: TrainingHistoryEntry[] = [];
-    try {
-      const raw = localStoreAdapter.getItem(historyKey);
-      existing = raw ? (JSON.parse(raw) as TrainingHistoryEntry[]) : [];
-      if (!Array.isArray(existing)) existing = [];
-    } catch {
-      existing = [];
-    }
+    if (aq === undefined || aq === null) return null;
 
     const readArray = (key: string) => {
       try {
@@ -1028,7 +1020,7 @@ export class SessionManager {
       `overall=${measurementQuality.overall}`,
       ...Object.entries(measurementQuality.steps).map(([key, value]) => `${key}=${value}`),
     ];
-    const previousComparableEntry = [...existing]
+    const previousComparableEntry = SessionManager.getHistoryFor(this.session.patient as any)
       .sort((a, b) => b.completedAt - a.completedAt)
       .find((row) => {
         if (mode === "rehab") {
@@ -1074,7 +1066,7 @@ export class SessionManager {
           : null,
     };
 
-    const entry: TrainingHistoryEntry = {
+    return {
       historyId: `history_${Date.now()}`,
       sessionId: this.session.sessionId,
       patientKey: this.session.patientKey,
@@ -1169,6 +1161,24 @@ export class SessionManager {
       },
       measurementQuality,
     };
+  }
+
+  private saveHistoryEntry(mode: TrainingMode = "self", rehabStep?: number) {
+    if (typeof window === "undefined") return;
+    if (!ENABLE_LOCAL_HISTORY_CACHE) return;
+
+    const entry = this.buildHistoryEntry(mode, rehabStep);
+    if (!entry) return;
+
+    const historyKey = this.getHistoryStorageKey();
+    let existing: TrainingHistoryEntry[] = [];
+    try {
+      const raw = localStoreAdapter.getItem(historyKey);
+      existing = raw ? (JSON.parse(raw) as TrainingHistoryEntry[]) : [];
+      if (!Array.isArray(existing)) existing = [];
+    } catch {
+      existing = [];
+    }
 
     const withoutSameSession = existing.filter((e) => e.sessionId !== entry.sessionId);
     const next = [...withoutSameSession, entry]

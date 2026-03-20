@@ -74,6 +74,8 @@ function ResultRehabPage() {
   const [dbSaveState, setDbSaveState] = useState<
     "idle" | "saving" | "saved" | "failed" | "local_only"
   >("idle");
+  const [liveHistoryEntry, setLiveHistoryEntry] =
+    useState<TrainingHistoryEntry | null>(null);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const persistedHistoryIdRef = useRef<string | null>(null);
   const finalizedResultRef = useRef<string | null>(null);
@@ -112,9 +114,11 @@ function ResultRehabPage() {
     try {
       const sm = new SessionManager(patient as any, place);
       sm.finalizeSessionAndSaveHistory("rehab", safeStep);
+      const builtEntry = sm.buildHistoryEntry("rehab", safeStep);
+      setLiveHistoryEntry(builtEntry);
       finalizedResultRef.current = finalizeKey;
       setHistoryRows(
-        mergeHistoryRows([], SessionManager.getHistoryFor(patient as any)),
+        mergeHistoryRows([], builtEntry ? [builtEntry] : []),
       );
     } catch (e) {
       console.error("[result-rehab] finalize failed:", e);
@@ -124,7 +128,7 @@ function ResultRehabPage() {
         setServerHistoryRows(entries);
         const rows = mergeHistoryRows(
           entries,
-          SessionManager.getHistoryFor(patient as any),
+          liveHistoryEntry ? [liveHistoryEntry] : [],
         );
         if (!cancelled) {
           setHistoryRows(rows);
@@ -134,16 +138,14 @@ function ResultRehabPage() {
         console.error("[result-rehab] load server history failed:", e);
         setServerHistoryRows([]);
         if (!cancelled) {
-          setHistoryRows(
-            mergeHistoryRows([], SessionManager.getHistoryFor(patient as any)),
-          );
+          setHistoryRows(mergeHistoryRows([], liveHistoryEntry ? [liveHistoryEntry] : []));
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [patient, place, safeStep]);
+  }, [liveHistoryEntry, patient, place, safeStep]);
 
   const stepRows = useMemo(() => {
     return historyRows.filter((row) => {
@@ -159,7 +161,7 @@ function ResultRehabPage() {
   }, [detailKey, historyRows, safeStep]);
 
   const previousStepRow = stepRows.length > 1 ? stepRows[1] : null;
-  const latestStepRow = stepRows.length ? stepRows[0] : null;
+  const latestStepRow = liveHistoryEntry ?? (stepRows.length ? stepRows[0] : null);
   const qualityUi = getMeasurementQualityUi(
     latestStepRow?.measurementQuality?.overall,
   );
