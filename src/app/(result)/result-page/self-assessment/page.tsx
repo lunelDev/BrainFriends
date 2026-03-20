@@ -112,6 +112,26 @@ function ResultContent() {
     } as any;
   }, [patientProfile]);
 
+  const mergeHistoryRows = (
+    serverEntries: TrainingHistoryEntry[],
+    localEntries: TrainingHistoryEntry[],
+  ) => {
+    const byHistoryId = new Map<string, TrainingHistoryEntry>();
+    [...localEntries, ...serverEntries].forEach((row) => {
+      const historyId = String(row?.historyId ?? "").trim();
+      if (!historyId) return;
+      byHistoryId.set(historyId, row);
+    });
+    return Array.from(byHistoryId.values())
+      .filter((row) => !String(row.historyId || "").startsWith("mock_"))
+      .filter((row) =>
+        currentTrainingMode === "rehab"
+          ? row.trainingMode === "rehab"
+          : row.trainingMode === "self" || !row.trainingMode,
+      )
+      .sort((a, b) => b.completedAt - a.completedAt);
+  };
+
   // --- 기존 연산 로직 (보존) ---
   const queryScores = useMemo(
     () => ({
@@ -240,8 +260,12 @@ function ResultContent() {
   }, [derivedKwab, patientProfile]);
 
   const historySourceRows = useMemo(() => {
-    return serverHistory ?? ([] as TrainingHistoryEntry[]);
-  }, [serverHistory]);
+    if (!patientForHistory) return [] as TrainingHistoryEntry[];
+    return mergeHistoryRows(
+      serverHistory ?? [],
+      SessionManager.getHistoryFor(patientForHistory),
+    );
+  }, [currentTrainingMode, patientForHistory, serverHistory]);
 
   const latestAndPreviousHistory = useMemo(() => {
     if (!patientForHistory) return { current: null, previous: null };
@@ -393,6 +417,12 @@ function ResultContent() {
       sm.finalizeSessionAndSaveHistory(currentTrainingMode);
       finalizedResultRef.current = finalizeKey;
       setHistoryRefreshKey((v) => v + 1);
+      setServerHistory((prev) =>
+        mergeHistoryRows(
+          prev ?? [],
+          SessionManager.getHistoryFor(patientProfile as any),
+        ),
+      );
     } catch (e) {
       console.error("Result finalize/save history failed:", e);
     }

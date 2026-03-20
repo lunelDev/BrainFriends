@@ -983,6 +983,50 @@ function Step4Content() {
     });
   }, [currentResult, isPlayingAudio]);
 
+  const buildPersistedStep4Results = useCallback(() => {
+    const byIndex = new Map<number, Step4EvalResult>();
+
+    allResults.forEach((row, idx) => {
+      const resolvedIndex = Number.isFinite(Number(row?.index))
+        ? Number(row.index)
+        : idx;
+      if (resolvedIndex < 0 || resolvedIndex >= scenarios.length) return;
+      byIndex.set(resolvedIndex, row);
+    });
+
+    if (currentResult) {
+      const resolvedIndex = Number.isFinite(Number(currentResult?.index))
+        ? Number(currentResult.index)
+        : currentIndex;
+      if (resolvedIndex >= 0 && resolvedIndex < scenarios.length) {
+        byIndex.set(resolvedIndex, currentResult);
+      }
+    }
+
+    try {
+      const raw = localStorage.getItem(STEP4_STORAGE_KEY) || "[]";
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((row: any, fallbackIndex: number) => {
+          const resolvedIndex = Number.isFinite(Number(row?.index))
+            ? Number(row.index)
+            : fallbackIndex;
+          if (resolvedIndex < 0 || resolvedIndex >= scenarios.length) return;
+          if (!byIndex.has(resolvedIndex)) {
+            byIndex.set(resolvedIndex, row as Step4EvalResult);
+          }
+        });
+      }
+    } catch {
+      // Ignore malformed local cache and persist the in-memory results.
+    }
+
+    return Array.from(byIndex.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map((entry) => entry[1])
+      .slice(0, scenarios.length);
+  }, [allResults, currentIndex, currentResult, scenarios.length]);
+
   const handleNext = () => {
     if (audioPlayerRef.current) {
       audioPlayerRef.current.pause();
@@ -994,15 +1038,16 @@ function Step4Content() {
     if (currentIndex < scenarios.length - 1) {
       setCurrentIndex((prev) => prev + 1);
     } else {
+      const finalizedResults = buildPersistedStep4Results();
       try {
         const sm = new SessionManager(patientProfile as any, place);
         const averageKwabScore =
-          allResults.length > 0
-            ? allResults.reduce((sum, r) => sum + r.kwabScore, 0) /
-              allResults.length
+          finalizedResults.length > 0
+            ? finalizedResults.reduce((sum, r) => sum + r.kwabScore, 0) /
+              finalizedResults.length
             : 0;
         sm.saveStep4Result({
-          items: allResults.map((r) => ({
+          items: finalizedResults.map((r) => ({
             situation: r.situation,
             prompt: r.prompt,
             transcript: r.transcript,
@@ -1028,17 +1073,17 @@ function Step4Content() {
             vowelDetail: r.vowelDetail,
           })),
           averageKwabScore: Number(averageKwabScore.toFixed(1)),
-          totalScenarios: allResults.length,
+          totalScenarios: finalizedResults.length,
           score: Math.round(averageKwabScore),
-          correctCount: allResults.filter((r) => r.kwabScore >= 5).length,
-          totalCount: allResults.length,
+          correctCount: finalizedResults.filter((r) => r.kwabScore >= 5).length,
+          totalCount: finalizedResults.length,
           averageArticulationWritingConsistency:
-            allResults.length > 0
-              ? allResults.reduce(
+            finalizedResults.length > 0
+              ? finalizedResults.reduce(
                   (sum, r) =>
                     sum + Number(r.articulationWritingConsistency || 0),
                   0,
-                ) / allResults.length
+                ) / finalizedResults.length
               : 0,
           timestamp: Date.now(),
           versionSnapshot: buildVersionSnapshot("step4"),
@@ -1046,9 +1091,13 @@ function Step4Content() {
       } catch (e) {
       }
 
-      const avgScore = Math.round(
-        allResults.reduce((s, r) => s + r.kwabScore, 0) / allResults.length,
-      );
+      const avgScore =
+        finalizedResults.length > 0
+          ? Math.round(
+              finalizedResults.reduce((s, r) => s + r.kwabScore, 0) /
+                finalizedResults.length,
+            )
+          : 0;
       pushStep5OrRehabResult(avgScore);
     }
   };

@@ -86,6 +86,22 @@ function ResultRehabPage() {
     `step${safeStep}` as keyof TrainingHistoryEntry["stepDetails"];
   const currentScore = Number(searchParams.get(stepKey) || "0");
 
+  const mergeHistoryRows = (
+    serverEntries: TrainingHistoryEntry[],
+    localEntries: TrainingHistoryEntry[],
+  ) => {
+    const byHistoryId = new Map<string, TrainingHistoryEntry>();
+    [...localEntries, ...serverEntries].forEach((row) => {
+      const historyId = String(row?.historyId ?? "").trim();
+      if (!historyId) return;
+      byHistoryId.set(historyId, row);
+    });
+    return Array.from(byHistoryId.values())
+      .filter((row) => !String(row.historyId || "").startsWith("mock_"))
+      .filter((row) => row.trainingMode === "rehab")
+      .sort((a, b) => b.completedAt - a.completedAt);
+  };
+
   useEffect(() => {
     if (!patient) return;
     const finalizeKey = `${patient.sessionId}:${place}:rehab:${safeStep}`;
@@ -96,15 +112,18 @@ function ResultRehabPage() {
       const sm = new SessionManager(patient as any, place);
       sm.finalizeSessionAndSaveHistory("rehab", safeStep);
       finalizedResultRef.current = finalizeKey;
+      setHistoryRows(
+        mergeHistoryRows([], SessionManager.getHistoryFor(patient as any)),
+      );
     } catch (e) {
       console.error("[result-rehab] finalize failed:", e);
     }
     void fetchMyHistoryEntries()
       .then(({ entries }) => {
-        const rows = [...entries]
-          .filter((row) => !String(row.historyId || "").startsWith("mock_"))
-          .filter((row) => row.trainingMode === "rehab")
-          .sort((a, b) => b.completedAt - a.completedAt);
+        const rows = mergeHistoryRows(
+          entries,
+          SessionManager.getHistoryFor(patient as any),
+        );
         if (!cancelled) {
           setHistoryRows(rows);
         }
@@ -112,7 +131,9 @@ function ResultRehabPage() {
       .catch((e) => {
         console.error("[result-rehab] load server history failed:", e);
         if (!cancelled) {
-          setHistoryRows([]);
+          setHistoryRows(
+            mergeHistoryRows([], SessionManager.getHistoryFor(patient as any)),
+          );
         }
       });
 
