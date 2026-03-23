@@ -139,15 +139,21 @@ export function buildStepDetails(sessionData: any, queryScores: Record<number, n
   const s3Percent = s3.length ? clamp(calcComposite(s3)) : clamp(queryScores[3]);
 
   const s4Score = s4.length
-    ? Math.min(10, Math.max(0, avg(s4.map((i: any) => {
-      const finalScore = Number(i?.finalScore);
-      if (Number.isFinite(finalScore)) return finalScore / 10;
-      const fluencyRaw = Number(i?.fluencyComponentScore ?? i?.fluencyScore ?? i?.kwabScore);
-      if (!Number.isFinite(fluencyRaw)) return 0;
-      return fluencyRaw > 10 ? fluencyRaw / 10 : fluencyRaw;
-    }))))
-    : Math.min(10, Math.max(0, Number(queryScores[4] || 0)));
-  const s4Percent = clamp(s4Score * 10);
+    ? clamp(
+        avg(
+          s4.map((i: any) => {
+            const finalScore = Number(i?.finalScore);
+            if (Number.isFinite(finalScore)) return finalScore;
+            const fluencyRaw = Number(
+              i?.fluencyComponentScore ?? i?.fluencyScore ?? i?.kwabScore,
+            );
+            if (!Number.isFinite(fluencyRaw)) return 0;
+            return fluencyRaw > 10 ? fluencyRaw : fluencyRaw * 10;
+          }),
+        ),
+      )
+    : clamp(Number(queryScores[4] || 0));
+  const s4Percent = clamp(s4Score);
 
   const s5Percent = s5.length
     ? clamp(
@@ -194,9 +200,9 @@ export function buildStepDetails(sessionData: any, queryScores: Record<number, n
     {
       id: 4,
       title: "유창성",
-      display: `${fmt1(s4Score)}/10`,
+      display: `${Math.round(s4Score)}점`,
       percent: s4Percent,
-      metric: `${fmt1(s4Score)}/10`,
+      metric: `${Math.round(s4Score)}점`,
     },
     {
       id: 5,

@@ -238,7 +238,7 @@ Not intended use:
 - 음성 녹음 및 STT
 - 안면 랜드마크 추적
 - 발화/조음 관련 feature extraction
-- reading/fluency/repetition/writing consistency scoring
+- reading/spontaneous speech flow/repetition/writing consistency scoring
 - 세션 저장 및 결과 표시
 
 ## Current Models and Technical Stack

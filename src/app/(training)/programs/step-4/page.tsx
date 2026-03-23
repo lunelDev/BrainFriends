@@ -1388,7 +1388,7 @@ function Step4Content() {
                             유창성 점수
                           </span>
                           <p className="text-2xl sm:text-3xl font-black text-orange-500 leading-none mt-1">
-                            {currentResult?.kwabScore}/10
+                            {Math.round(Number(currentResult?.finalScore ?? 0))}점
                           </p>
                           <button
                             onClick={playRecordedAudio}
@@ -1549,7 +1549,9 @@ function Step4Content() {
             onToggleTracking={() => setShowTracking(!showTracking)}
             scoreLabel="유창성"
             scoreValue={
-              currentResult ? `${currentResult.kwabScore}/10` : undefined
+              currentResult
+                ? `${Math.round(Number(currentResult.finalScore ?? 0))}점`
+                : undefined
             }
             hidePreview={!isDesktopViewport}
             hideMetrics={!isDesktopViewport}

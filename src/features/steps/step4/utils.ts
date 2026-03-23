@@ -118,8 +118,8 @@ export function scoreStep4Response(input: Step4ScoringInput): Step4ScoringBreakd
 
   const finalScore = Number(
     (
-      contentScore * 0.4 +
-      fluencyScore * 0.35 +
+      contentScore * 0.55 +
+      fluencyScore * 0.2 +
       clarityScore * 0.15 +
       responseStartScore * 0.1
     ).toFixed(1),

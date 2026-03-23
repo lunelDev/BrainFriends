@@ -70,7 +70,7 @@ export function getRehabRowScore(row: TrainingHistoryEntry): number {
 
 export function formatSelfMetricDisplay(key: StepKey, score: number): string {
   const safe = Number(score || 0);
-  if (key === "step1" || key === "step3" || key === "step4") {
+  if (key === "step1" || key === "step3") {
     return `${(safe / 10).toFixed(1)}/10`;
   }
   return `${safe.toFixed(1)}점`;
