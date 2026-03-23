@@ -540,10 +540,8 @@ function Step2Content() {
 
   const runPromptSequence = useCallback(
     async ({
-      autoStartRecording,
       countReplay,
     }: {
-      autoStartRecording: boolean;
       countReplay: boolean;
     }) => {
       if (!currentItem || isRecording || isAnalyzing || resultScore !== null)
@@ -551,39 +549,29 @@ function Step2Content() {
       const token = ++flowTokenRef.current;
       setCanRecord(false);
       setIsPromptPlaying(true);
-      setGuideText("듣고 따라 말해 주세요");
+      setGuideText("들려드리는 문장을 들어보세요");
       setStatusText("");
       setCountdown(null);
 
-      const first = await runCountdown(3, token);
-      if (!first) return;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (token !== flowTokenRef.current) return;
 
       await speakText(formattedCurrentText || currentItem.text);
       if (token !== flowTokenRef.current) return;
 
-      setGuideText("녹음이 시작됩니다");
-      const second = await runCountdown(3, token);
-      if (!second) return;
-      await playStartBeep();
-      if (token !== flowTokenRef.current) return;
-
-      setGuideText("");
+      setGuideText("녹음 버튼을 눌러 시작해 주세요");
       setCountdown(null);
       setIsPromptPlaying(false);
 
       if (countReplay) setReplayCount((prev) => prev + 1);
-      if (autoStartRecording) await startRecording();
-      else setCanRecord(true);
+      setCanRecord(true);
     },
     [
       currentItem,
       isAnalyzing,
       isRecording,
       resultScore,
-      runCountdown,
       speakText,
-      playStartBeep,
-      startRecording,
     ],
   );
 
@@ -604,23 +592,23 @@ function Step2Content() {
     setIsPromptPlaying(true);
     setCountdown(null);
 
-    await speakText(formattedCurrentText || currentItem.text);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     if (token !== flowTokenRef.current) return;
-    await playStartBeep();
+
+    await speakText(formattedCurrentText || currentItem.text);
     if (token !== flowTokenRef.current) return;
 
     setIsPromptPlaying(false);
     setStatusText("");
+    setGuideText("녹음 버튼을 눌러 시작해 주세요");
+    setCanRecord(true);
     setReplayCount((prev) => prev + 1);
-    await startRecording();
   }, [
     currentItem,
     isPromptPlaying,
     isRecording,
     isSaving,
-    playStartBeep,
     speakText,
-    startRecording,
   ]);
 
   useEffect(() => {
@@ -735,7 +723,7 @@ function Step2Content() {
   useEffect(() => {
     if (!isMounted || !currentItem) return;
     setReplayCount(0);
-    runPromptSequence({ autoStartRecording: true, countReplay: false });
+    runPromptSequence({ countReplay: false });
     // 초기 자동 플로우는 문항 전환 시에만 실행
     // (다시 듣기/녹음 상태 변화로 재실행되지 않도록 콜백 의존성 제외)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1431,7 +1419,7 @@ function Step2Content() {
                       ? "목소리를 분석하고 있습니다..."
                       : isRecording
                         ? "지금 바로 말씀해 주세요!"
-                        : formattedCurrentText}
+                        : guideText || "녹음 버튼을 눌러 시작해 주세요"}
               </h1>
             </div>
 
