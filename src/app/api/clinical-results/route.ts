@@ -36,7 +36,7 @@ function isValidHistoryEntry(
 }
 
 function shouldPersistHistoryEntry(entry: TrainingHistoryEntry) {
-  return true;
+  return entry.measurementQuality?.overall === "measured";
 }
 
 export async function POST(req: Request) {
