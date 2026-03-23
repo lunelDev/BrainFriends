@@ -54,6 +54,27 @@ const STEP2_AUDIO_STORAGE_KEY = "step2_recorded_audios";
 const STEP2_MAX_STORED_AUDIO_ITEMS = 10;
 const STEP2_MAX_AUDIO_URL_CHARS = 1_500_000;
 
+const shouldDisplayStep2Transcript = ({
+  transcript,
+  finalScore,
+  consonantAccuracy,
+  vowelAccuracy,
+}: {
+  transcript: string;
+  finalScore?: number | null;
+  consonantAccuracy?: number | null;
+  vowelAccuracy?: number | null;
+}) => {
+  const normalizedTranscript = String(transcript || "").trim();
+  if (!normalizedTranscript || normalizedTranscript === "...") return false;
+  const spokenChars = (normalizedTranscript.match(/[가-힣a-zA-Z0-9]/g) || []).length;
+  if (spokenChars < 2) return false;
+  const score = Number(finalScore ?? 0);
+  const consonant = Number(consonantAccuracy ?? 0);
+  const vowel = Number(vowelAccuracy ?? 0);
+  return score >= 40 || consonant >= 40 || vowel >= 40;
+};
+
 function Step2Content() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1043,10 +1064,19 @@ function Step2Content() {
           consonantAccuracy: consonantAccuracy / 100,
           vowelAccuracy: vowelAccuracy / 100,
         });
+        const displayTranscript = shouldDisplayStep2Transcript({
+          transcript: result.transcript || "",
+          finalScore,
+          consonantAccuracy,
+          vowelAccuracy,
+        })
+          ? result.transcript || ""
+          : "...";
+
         const currentResultEntry = {
           index: currentIndex,
           text: currentItem.text,
-          transcript: result.transcript || "",
+          transcript: displayTranscript,
           isCorrect: finalScore >= 60,
           finalScore: Number(finalScore.toFixed(1)),
           speechScore,
@@ -1241,7 +1271,7 @@ function Step2Content() {
           needsRetry: false,
           message: "분석 완료",
         });
-        setTranscript(result.transcript || "");
+        setTranscript(displayTranscript);
         setResultScore(Number(finalScore.toFixed(1)));
         setResultConsonantAccuracy(Number(consonantAccuracy.toFixed(1)));
         setResultVowelAccuracy(Number(vowelAccuracy.toFixed(1)));

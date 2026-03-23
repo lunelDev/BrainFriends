@@ -92,6 +92,27 @@ type Step4EvalResult = {
     patternMatchPct: number;
   };
 };
+
+const shouldDisplayStep4Transcript = (
+  result:
+    | Pick<
+        Step4EvalResult,
+        "transcript" | "matchedKeywords" | "kwabScore" | "contentComponentScore"
+      >
+    | null
+    | undefined,
+) => {
+  if (!result) return false;
+  const transcript = String(result.transcript || "").trim();
+  if (!transcript || transcript === "...") return false;
+  const matchedKeywordCount = Array.isArray(result.matchedKeywords)
+    ? result.matchedKeywords.length
+    : 0;
+  const kwabScore = Number(result.kwabScore ?? 0);
+  const contentScore = Number(result.contentComponentScore ?? 0);
+  return matchedKeywordCount > 0 || kwabScore >= 5 || contentScore >= 40;
+};
+
 const STEP4_STORAGE_KEY = "step4_recorded_audios";
 
 function Step4Content() {
@@ -842,11 +863,20 @@ function Step4Content() {
           const existing = JSON.parse(
             localStorage.getItem(STEP4_STORAGE_KEY) || "[]",
           );
+          const displayTranscript = shouldDisplayStep4Transcript({
+            transcript,
+            matchedKeywords: matched,
+            kwabScore: scored.kwabScore,
+            contentComponentScore: scored.contentScore,
+          })
+            ? transcript
+            : "...";
+
           const nextEntry = {
             index: currentIndex,
             text: currentScenario.situation,
             prompt: currentScenario.prompt,
-            transcript: transcript || "...",
+            transcript: displayTranscript,
             consonantAccuracy: Number(consonantAccuracy.toFixed(1)),
             vowelAccuracy: Number(vowelAccuracy.toFixed(1)),
             articulationWritingConsistency: Number(
@@ -1345,9 +1375,7 @@ function Step4Content() {
                             인식된 문장
                           </span>
                           <p className="mt-1 font-bold text-slate-700 italic break-words leading-relaxed max-h-24 overflow-y-auto pr-1">
-                            {currentResult?.consonantAccuracy != null &&
-                            currentResult?.vowelAccuracy != null &&
-                            (currentResult?.transcript || "").trim()
+                            {shouldDisplayStep4Transcript(currentResult)
                               ? `"${currentResult?.transcript}"`
                               : "..."}
                           </p>
