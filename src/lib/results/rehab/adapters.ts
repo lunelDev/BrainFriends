@@ -57,6 +57,44 @@ export const toNumberOrNull = (value: unknown): number | null => {
   return Number.isFinite(num) ? num : null;
 };
 
+const hasMeasuredSpeechTranscript = (step: number, item: any) => {
+  const transcript = String(
+    item?.transcript || item?.recognizedText || item?.sttText || "",
+  ).trim();
+  if (!transcript || transcript === "시연용 더미 응답입니다.") return false;
+
+  if (step === 2) {
+    return (
+      toNumberOrNull(item?.finalScore ?? item?.speechScore) !== null ||
+      (toNumberOrNull(item?.consonantAccuracy) !== null &&
+        toNumberOrNull(item?.vowelAccuracy) !== null)
+    );
+  }
+
+  if (step === 4) {
+    return (
+      toNumberOrNull(
+        item?.finalScore ??
+          item?.fluencyComponentScore ??
+          item?.fluencyScore ??
+          item?.kwabScore,
+      ) !== null ||
+      (toNumberOrNull(item?.consonantAccuracy) !== null &&
+        toNumberOrNull(item?.vowelAccuracy) !== null)
+    );
+  }
+
+  if (step === 5) {
+    return (
+      toNumberOrNull(item?.readingScore ?? item?.finalScore) !== null ||
+      (toNumberOrNull(item?.consonantAccuracy) !== null &&
+        toNumberOrNull(item?.vowelAccuracy) !== null)
+    );
+  }
+
+  return false;
+};
+
 export const average = (values: Array<number | null>): number | null => {
   const nums = values.filter((v): v is number => v !== null);
   if (!nums.length) return null;
@@ -650,7 +688,9 @@ export function buildStepResultCards(
     );
     const baseText =
       safeStep === 2 || safeStep === 4 || safeStep === 5
-        ? recordedText || `${targetText} (인식 텍스트 없음)`
+        ? hasMeasuredSpeechTranscript(safeStep, it)
+          ? recordedText
+          : "..."
         : targetText;
     const fallbackCorrect =
       safeStep === 4

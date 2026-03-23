@@ -346,14 +346,27 @@ export function shouldShowPlayButton(stepId: number, item: any) {
   );
 }
 
+function hasMeasuredSpeechTranscript(item: any) {
+  const transcript = String(item?.transcript || "").trim();
+  if (!transcript || transcript === "시연용 더미 응답입니다.") return false;
+  return (
+    Number.isFinite(Number(item?.finalScore ?? item?.speechScore ?? item?.readingScore)) ||
+    (Number.isFinite(Number(item?.consonantAccuracy)) &&
+      Number.isFinite(Number(item?.vowelAccuracy))) ||
+    Number.isFinite(
+      Number(item?.fluencyComponentScore ?? item?.fluencyScore ?? item?.kwabScore),
+    )
+  );
+}
+
 export function getPlayableText(item: any) {
   return String(
-    item?.text ||
-      item?.transcript ||
+    (hasMeasuredSpeechTranscript(item) ? item?.transcript : null) ||
+      item?.text ||
       item?.targetText ||
       item?.targetWord ||
       item?.prompt ||
-      "음성 데이터가 없습니다.",
+      "...",
   );
 }
 

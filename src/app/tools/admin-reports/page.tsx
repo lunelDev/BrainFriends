@@ -188,15 +188,21 @@ export default function AdminReportsPage() {
   };
 
   const getEntryMediaLinks = (entry: HistoryEntry) => {
-    const links: Array<{ label: string; href: string }> = [];
+    const tone =
+      entry.trainingMode === "sing"
+        ? "sing"
+        : entry.trainingMode === "rehab"
+          ? "rehab"
+          : "self";
+    const links: Array<{ label: string; href: string; tone: "self" | "rehab" | "sing" }> = [];
 
     if (entry.trainingMode === "sing" && entry.singResult) {
       if (entry.singResult.reviewAudioUrl) {
-        links.push({ label: "오디오 듣기", href: entry.singResult.reviewAudioUrl });
+        links.push({ label: "오디오 듣기", href: entry.singResult.reviewAudioUrl, tone });
       }
       for (const [index, frame] of (entry.singResult.reviewKeyFrames ?? []).entries()) {
         if (frame?.dataUrl) {
-          links.push({ label: `이미지 보기 ${index + 1}`, href: frame.dataUrl });
+          links.push({ label: `이미지 보기 ${index + 1}`, href: frame.dataUrl, tone });
         }
       }
       return links;
@@ -212,6 +218,7 @@ export default function AdminReportsPage() {
           links.push({
             label: `오디오 듣기 step${stepNo}-${index + 1}`,
             href: row.audioUrl,
+            tone,
           });
         }
       });
@@ -223,11 +230,24 @@ export default function AdminReportsPage() {
         links.push({
           label: `이미지 보기 step6-${index + 1}`,
           href: row.userImage,
+          tone,
         });
       }
     });
 
     return links;
+  };
+
+  const getMediaLinkClassName = (tone: "self" | "rehab" | "sing") => {
+    switch (tone) {
+      case "self":
+        return "rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-[11px] font-black text-orange-700 hover:bg-orange-100";
+      case "rehab":
+        return "rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-[11px] font-black text-sky-700 hover:bg-sky-100";
+      case "sing":
+      default:
+        return "rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-black text-emerald-700 hover:bg-emerald-100";
+    }
   };
 
   return (
@@ -374,7 +394,7 @@ export default function AdminReportsPage() {
                                 href={media.href}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-black text-emerald-700 hover:bg-emerald-100"
+                                className={getMediaLinkClassName(media.tone)}
                               >
                                 {media.label}
                               </a>

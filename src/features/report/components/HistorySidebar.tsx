@@ -231,7 +231,7 @@ export function HistorySidebar({
           onClick={() => onSetModeFilter("self")}
           className={`h-9 rounded-lg border text-sm font-black transition-colors ${
             modeFilter === "self"
-              ? "bg-orange-50 border-orange-300 text-orange-700"
+              ? "bg-orange-50 border-orange-300 text-orange-700 shadow-sm ring-1 ring-orange-100"
               : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
           }`}
         >
@@ -242,7 +242,7 @@ export function HistorySidebar({
           onClick={() => onSetModeFilter("rehab")}
           className={`h-9 rounded-lg border text-sm font-black transition-colors ${
             modeFilter === "rehab"
-              ? "bg-sky-50 border-sky-300 text-sky-700"
+              ? "bg-sky-50 border-sky-300 text-sky-700 shadow-sm ring-1 ring-sky-100"
               : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
           }`}
         >
@@ -253,7 +253,7 @@ export function HistorySidebar({
           onClick={() => onSetModeFilter("sing")}
           className={`h-9 rounded-lg border text-sm font-black transition-colors ${
             modeFilter === "sing"
-              ? "bg-emerald-50 border-emerald-300 text-emerald-700"
+              ? "bg-emerald-50 border-emerald-300 text-emerald-700 shadow-sm ring-1 ring-emerald-100"
               : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
           }`}
         >

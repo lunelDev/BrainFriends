@@ -165,7 +165,7 @@ function ResultRehabPage() {
   const qualityUi = getMeasurementQualityUi(
     latestStepRow?.measurementQuality?.overall,
   );
-  const isServerExcluded = dbSaveState === "local_only";
+  const isServerExcluded = false;
   const isDemoResult = latestStepRow?.measurementQuality?.overall === "demo";
 
   useEffect(() => {
