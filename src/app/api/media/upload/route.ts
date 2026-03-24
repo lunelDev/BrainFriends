@@ -7,6 +7,12 @@ import {
   putObject,
 } from "@/lib/server/ncpObjectStorage";
 import {
+  buildLocalMediaObjectKey,
+  getLocalMediaBucketName,
+  isLocalMediaMode,
+  putLocalMediaObject,
+} from "@/lib/server/localMediaStorage";
+import {
   buildPatientPseudonymId,
   ensurePatientIdentity,
 } from "@/lib/server/patientIdentityDb";
@@ -60,7 +66,7 @@ export async function POST(req: Request) {
     await ensurePatientIdentity(patient);
 
     const patientPseudonymId = buildPatientPseudonymId(patient);
-    const { mediaId, objectKey } = buildMediaObjectKey({
+    const { mediaId, objectKey: remoteObjectKey } = buildMediaObjectKey({
       patientPseudonymId,
       sourceSessionKey,
       trainingType,
@@ -73,6 +79,10 @@ export async function POST(req: Request) {
           : null,
       extension: fileExtension,
     });
+    const localMode = isLocalMediaMode();
+    const objectKey = localMode
+      ? buildLocalMediaObjectKey(remoteObjectKey)
+      : remoteObjectKey;
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
@@ -86,11 +96,18 @@ export async function POST(req: Request) {
         ? Number(durationMsRaw)
         : null;
 
-    await putObject({
-      objectKey,
-      body: buffer,
-      contentType: mimeType,
-    });
+    if (localMode) {
+      await putLocalMediaObject({
+        objectKey,
+        body: buffer,
+      });
+    } else {
+      await putObject({
+        objectKey,
+        body: buffer,
+        contentType: mimeType,
+      });
+    }
 
     const saved = await saveClinicalMediaRecord({
       mediaId,
@@ -100,7 +117,9 @@ export async function POST(req: Request) {
       stepNo: typeof stepNoRaw === "string" && stepNoRaw.length > 0 ? Number(stepNoRaw) : null,
       mediaType: mediaType as "audio" | "image" | "video",
       captureRole,
-      bucketName: getObjectStorageBucketName(),
+      bucketName: localMode
+        ? getLocalMediaBucketName()
+        : getObjectStorageBucketName(),
       objectKey,
       mimeType,
       fileSizeBytes: buffer.byteLength,

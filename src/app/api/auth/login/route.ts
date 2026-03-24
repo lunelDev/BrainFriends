@@ -8,6 +8,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
+  const isSecureRequest = new URL(req.url).protocol === "https:";
   const body = await req.json().catch(() => null);
   if (!body) {
     return NextResponse.json(
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
       value: authenticated.sessionToken,
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: isSecureRequest,
       expires: authenticated.expiresAt,
       path: "/",
     });

@@ -3,6 +3,11 @@ import {
   assertObjectExists,
   createGetObjectSignedUrl,
 } from "@/lib/server/ncpObjectStorage";
+import {
+  assertLocalMediaObjectExists,
+  isLocalMediaMode,
+  readLocalMediaObject,
+} from "@/lib/server/localMediaStorage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +21,18 @@ export async function GET(req: Request) {
   }
 
   try {
+    if (isLocalMediaMode() && objectKey.startsWith("local-dev-media/")) {
+      await assertLocalMediaObjectExists(objectKey);
+      const fileBuffer = await readLocalMediaObject(objectKey);
+      return new NextResponse(fileBuffer, {
+        status: 200,
+        headers: {
+          "content-type": "application/octet-stream",
+          "cache-control": "no-store",
+        },
+      });
+    }
+
     await assertObjectExists(objectKey);
     const accessUrl = await createGetObjectSignedUrl({
       objectKey,
@@ -49,6 +66,14 @@ export async function POST(req: Request) {
   }
 
   try {
+    if (isLocalMediaMode() && body.objectKey.startsWith("local-dev-media/")) {
+      await assertLocalMediaObjectExists(body.objectKey);
+      return NextResponse.json({
+        ok: true,
+        accessUrl: `/api/media/access?objectKey=${encodeURIComponent(body.objectKey)}`,
+      });
+    }
+
     await assertObjectExists(body.objectKey);
     const accessUrl = await createGetObjectSignedUrl({
       objectKey: body.objectKey,
