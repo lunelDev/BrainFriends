@@ -7,6 +7,8 @@ import {
   SessionManager,
   TrainingHistoryEntry,
 } from "@/lib/kwab/SessionManager";
+import { ExportFile } from "@/features/result/types";
+import { createZipBlob } from "@/features/result/utils/zipExport";
 import { REHAB_STEP_LABELS } from "@/lib/results/rehab/constants";
 import {
   buildDetailComparisons,
@@ -22,7 +24,7 @@ import {
   syncTrainingMediaForHistory,
 } from "@/lib/client/clinicalResultsApi";
 import { fetchMyHistoryEntries } from "@/lib/client/historyApi";
-import { Database, ScanFace, TrendingUp } from "lucide-react";
+import { Database, Printer, ScanFace, TrendingUp } from "lucide-react";
 import {
   cancelSpeechPlayback,
   speakKoreanText,
@@ -337,12 +339,172 @@ function ResultRehabPage() {
     audio.play().catch(() => setPlayingIndex(null));
   };
 
+  const assetUrlToExportFile = async (
+    name: string,
+    assetUrl: string,
+  ): Promise<ExportFile | null> => {
+    const normalizedUrl = String(assetUrl || "").trim();
+    if (!normalizedUrl) return null;
+    try {
+      const requestUrl =
+        normalizedUrl.startsWith("data:") ||
+        normalizedUrl.startsWith("blob:") ||
+        normalizedUrl.startsWith("http://") ||
+        normalizedUrl.startsWith("https://")
+          ? normalizedUrl
+          : new URL(normalizedUrl, window.location.origin).toString();
+      const response = await fetch(requestUrl);
+      if (!response.ok) return null;
+      const arrayBuffer = await response.arrayBuffer();
+      return {
+        name,
+        data: new Uint8Array(arrayBuffer),
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const handleExportData = async () => {
+    if (!patient || !latestStepRow) return;
+
+    const pad2 = (n: number) => String(n).padStart(2, "0");
+    const formatExamDateTime = (ts: number) => {
+      const d = new Date(ts);
+      return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+    };
+    const normalizeBirthDate = (raw: any) => {
+      const text = String(raw || "").trim();
+      const digits = text.replace(/[^\d]/g, "");
+      if (digits.length >= 8) return digits.slice(0, 8);
+      return "생년월일미입력";
+    };
+    const sanitizeName = (raw: any) => {
+      const text = String(raw || "").trim() || "이름미입력";
+      return text.replace(/[<>:\"/\\\\|?*\\x00-\\x1F]/g, "_");
+    };
+
+    const currentItems = Array.isArray(latestStepRow.stepDetails?.[detailKey])
+      ? latestStepRow.stepDetails[detailKey]
+      : [];
+    const historyForStep = stepRows.sort((a, b) => b.completedAt - a.completedAt);
+    const exportPayload = {
+      exportedAt: new Date().toISOString(),
+      patient,
+      place,
+      trainingMode: "rehab",
+      targetStep: safeStep,
+      currentScore,
+      latestHistoryEntry: latestStepRow,
+      history: historyForStep,
+      detailComparisons,
+      trendRows,
+      facialReport,
+    };
+
+    const files: ExportFile[] = [
+      {
+        name: "result.json",
+        data: new TextEncoder().encode(JSON.stringify(exportPayload, null, 2)),
+      },
+      {
+        name: "history.json",
+        data: new TextEncoder().encode(JSON.stringify(historyForStep, null, 2)),
+      },
+    ];
+
+    const mediaFiles = await Promise.all(
+      currentItems.flatMap((item: any, index: number) => {
+        const assets: Promise<ExportFile | null>[] = [];
+        if (item?.audioUrl) {
+          assets.push(
+            assetUrlToExportFile(
+              `media/step${safeStep}/audio-${index + 1}.webm`,
+              String(item.audioUrl),
+            ),
+          );
+        }
+        if (item?.userImage) {
+          assets.push(
+            assetUrlToExportFile(
+              `media/step${safeStep}/image-${index + 1}.png`,
+              String(item.userImage),
+            ),
+          );
+        }
+        if (item?.cameraFrameImage) {
+          assets.push(
+            assetUrlToExportFile(
+              `media/step${safeStep}/camera-frame-${index + 1}.png`,
+              String(item.cameraFrameImage),
+            ),
+          );
+        }
+        return assets;
+      }),
+    );
+    files.push(...mediaFiles.filter((file): file is ExportFile => Boolean(file)));
+
+    const zipBlob = createZipBlob(files);
+    const url = URL.createObjectURL(zipBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${normalizeBirthDate((patient as any)?.birthDate)}-${sanitizeName((patient as any)?.name)}-${formatExamDateTime(latestStepRow.completedAt)}-step${safeStep}.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   useEffect(() => {
     return () => stopPlayback();
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 overflow-x-hidden">
+    <>
+      <style jsx global>{`
+        @page {
+          margin: 10mm;
+        }
+        @media print {
+          html,
+          body {
+            height: auto !important;
+            overflow: visible !important;
+          }
+          body {
+            background: #fff !important;
+          }
+          .no-print {
+            display: none !important;
+          }
+          .print-container {
+            width: auto !important;
+            max-width: none !important;
+            padding: 0 !important;
+            margin: 0 auto !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+          .print-compact-main {
+            width: auto !important;
+            max-width: none !important;
+            padding: 12px 0 0 !important;
+            margin: 0 auto !important;
+            gap: 12px !important;
+          }
+          .print-compact-card {
+            padding: 12px !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          .print-only {
+            display: block !important;
+          }
+        }
+        .print-only {
+          display: none;
+        }
+      `}</style>
+      <div className="print-container min-h-screen bg-slate-100 text-slate-900 overflow-x-hidden">
       <header className="no-print h-16 px-4 sm:px-6 border-b border-sky-100 flex items-center justify-between bg-white sticky top-0 z-40">
         <div className="max-w-[1076px] mx-auto w-full flex items-center justify-between min-w-0">
           <div className="flex items-center gap-3">
@@ -376,6 +538,20 @@ function ResultRehabPage() {
             <div className={`px-3 py-2 rounded-xl border text-[11px] sm:text-xs font-bold inline-flex items-center ${qualityUi.className}`}>
               측정 품질 · {qualityUi.label}
             </div>
+            <button
+              onClick={handleExportData}
+              className="px-3 sm:px-4 py-2 bg-white text-slate-900 border border-sky-200 rounded-xl text-[11px] sm:text-xs font-bold shadow-sm hover:bg-sky-50 active:scale-95 transition-all inline-flex items-center gap-1.5"
+            >
+              <Database className="w-3.5 h-3.5 text-sky-500" />
+              데이터 백업
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="px-3 sm:px-4 py-2 bg-sky-500 text-white rounded-xl text-[11px] sm:text-xs font-bold shadow-sm hover:bg-sky-600 active:scale-95 transition-all inline-flex items-center gap-1.5"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              진단서 출력
+            </button>
             <button
               type="button"
               onClick={() => router.push("/select-page/speech-rehab")}
@@ -411,8 +587,8 @@ function ResultRehabPage() {
         </div>
       </header>
 
-      <main className="w-full max-w-[1076px] mx-auto px-4 sm:px-6 lg:px-0 py-5 sm:py-8 pb-24 sm:pb-15 space-y-4 sm:space-y-5">
-        <section className="rounded-2xl bg-gradient-to-r from-sky-600 to-sky-500 text-white p-5 sm:p-6 shadow-sm">
+      <main className="print-compact-main w-full max-w-[1076px] mx-auto px-4 sm:px-6 lg:px-0 py-5 sm:py-8 pb-24 sm:pb-15 space-y-4 sm:space-y-5">
+        <section className="print-compact-card rounded-2xl bg-gradient-to-r from-sky-600 to-sky-500 text-white p-5 sm:p-6 shadow-sm">
           <p className="text-xs sm:text-sm font-black opacity-90">
             Step {safeStep} · {REHAB_STEP_LABELS[safeStep]}
           </p>
@@ -478,8 +654,8 @@ function ResultRehabPage() {
           }}
         />
 
-        {[2, 4, 5].includes(safeStep) && facialReport && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-3 sm:p-4">
+          {[2, 4, 5].includes(safeStep) && facialReport && (
+          <section className="print-compact-card rounded-2xl border border-slate-200 bg-white p-3 sm:p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
                 <span className="w-8 h-8 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center">
@@ -538,7 +714,7 @@ function ResultRehabPage() {
           </section>
         )}
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
+        <section className="no-print rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
               <span className="w-8 h-8 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center">
@@ -627,8 +803,55 @@ function ResultRehabPage() {
             </div>
           )}
         </section>
+
+        <section className="print-only print-compact-card rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+              <span className="w-8 h-8 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center">
+                <TrendingUp className="w-4 h-4 text-sky-600" />
+              </span>
+              <span className="text-sky-600">{REHAB_STEP_LABELS[safeStep]}</span> 변화 추이
+            </h3>
+            <span className="text-sm font-bold text-slate-500">최근 {trendRows.length}회</span>
+          </div>
+          {trendRows.length === 0 ? (
+            <p className="text-sm text-slate-500 font-semibold py-2">이전 데이터가 없습니다.</p>
+          ) : (
+            <div className="overflow-hidden rounded-xl border border-slate-200">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-600">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-black">날짜</th>
+                    <th className="px-3 py-2 text-left font-black">점수</th>
+                    <th className="px-3 py-2 text-left font-black">직전 대비</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trendRows.map((row, index) => {
+                    const prev = index < trendRows.length - 1 ? trendRows[index + 1] : null;
+                    const diff = prev == null ? null : Number((row.score - prev.score).toFixed(1));
+                    const label = new Date(row.completedAt).toLocaleDateString("ko-KR", {
+                      month: "2-digit",
+                      day: "2-digit",
+                    });
+                    return (
+                      <tr key={`${row.historyId}-${row.score}-${index}`} className="border-t border-slate-100">
+                        <td className="px-3 py-2 text-slate-700">{label}</td>
+                        <td className="px-3 py-2 font-bold text-slate-900">{row.score.toFixed(1)}점</td>
+                        <td className="px-3 py-2 font-semibold text-slate-700">
+                          {diff === null ? "-" : `${diff > 0 ? "+" : ""}${diff.toFixed(1)}점`}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       </main>
     </div>
+    </>
   );
 }
 

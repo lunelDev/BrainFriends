@@ -461,7 +461,33 @@ function ResultContent() {
     }
   }, [currentHistoryEntry, serverHistory]);
 
-  const handleExportData = () => {
+  const assetUrlToExportFile = async (
+    name: string,
+    assetUrl: string,
+  ): Promise<ExportFile | null> => {
+    const normalizedUrl = String(assetUrl || "").trim();
+    if (!normalizedUrl) return null;
+    try {
+      const requestUrl =
+        normalizedUrl.startsWith("data:") ||
+        normalizedUrl.startsWith("blob:") ||
+        normalizedUrl.startsWith("http://") ||
+        normalizedUrl.startsWith("https://")
+          ? normalizedUrl
+          : new URL(normalizedUrl, window.location.origin).toString();
+      const response = await fetch(requestUrl);
+      if (!response.ok) return null;
+      const arrayBuffer = await response.arrayBuffer();
+      return {
+        name,
+        data: new Uint8Array(arrayBuffer),
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const handleExportData = async () => {
     if (!sessionData) return;
     const patient = patientProfile;
     const historyForPatient = [...historySourceRows].sort(
@@ -530,8 +556,34 @@ function ResultContent() {
         ),
       },
     ];
+      const mediaFiles = await Promise.all([
+        ...(sessionData?.step2?.items ?? []).map((item: any, index: number) =>
+          assetUrlToExportFile(
+            `media/step2/audio-${index + 1}.webm`,
+            String(item?.audioUrl ?? ""),
+          ),
+        ),
+        ...(sessionData?.step4?.items ?? []).map((item: any, index: number) =>
+          assetUrlToExportFile(
+            `media/step4/audio-${index + 1}.webm`,
+            String(item?.audioUrl ?? ""),
+          ),
+        ),
+        ...(sessionData?.step5?.items ?? []).map((item: any, index: number) =>
+          assetUrlToExportFile(
+            `media/step5/audio-${index + 1}.webm`,
+            String(item?.audioUrl ?? ""),
+          ),
+        ),
+        ...(sessionData?.step6?.items ?? []).map((item: any, index: number) =>
+          assetUrlToExportFile(
+            `media/step6/image-${index + 1}.png`,
+            String(item?.userImage ?? ""),
+          ),
+      ),
+    ]);
+    files.push(...mediaFiles.filter((file): file is ExportFile => Boolean(file)));
 
-    // 오디오/이미지 백업 로직 포함
     const zipBlob = createZipBlob(files);
     const url = URL.createObjectURL(zipBlob);
     const a = document.createElement("a");
@@ -719,6 +771,21 @@ function ResultContent() {
         </header>
 
         <main className="w-full max-w-[1076px] mx-auto px-4 sm:px-6 lg:px-0 py-5 sm:py-8 pb-10 sm:pb-8 space-y-4 sm:space-y-5 print-container">
+          {!isRehabResult && (
+            <section className="print-only rounded-2xl border border-orange-200 bg-white p-4 shadow-sm">
+              <p className="text-[11px] font-black uppercase tracking-[0.25em] text-orange-500">
+                Self Assessment Report
+              </p>
+              <h2 className="mt-2 text-2xl font-black text-slate-900">
+                자가진단 종합 점수 {derivedKwab?.aq || "0.0"}점
+              </h2>
+              <p className="mt-2 text-sm font-semibold text-slate-700 leading-relaxed">
+                {clinicalImpression?.summary ||
+                  "자가진단 평가 결과를 기준으로 강점 영역과 집중 중재 영역을 확인합니다."}
+              </p>
+            </section>
+          )}
+
           {/* [HEADER] 환자 프로필 */}
           {!isRehabResult && (
             <>

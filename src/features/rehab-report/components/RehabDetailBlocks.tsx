@@ -215,7 +215,7 @@ export function RehabDetailBlocks({
         </section>
       )}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4">
+      <section className="no-print rounded-2xl border border-slate-200 bg-white p-4">
         <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-3">
           <h3 className="text-base sm:text-lg md:text-xl font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
             <span className="w-8 h-8 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center">
