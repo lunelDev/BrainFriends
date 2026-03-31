@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import LingoGameShell from "@/components/lingo/LingoGameShell";
 import {
   SENTENCE_EXAMPLE_QUESTIONS,
   SENTENCE_MAGIC_MODES,
@@ -56,25 +57,6 @@ function getAccuracyScore(heard, answer) {
   return Math.max(0, Math.round((1 - distance / maxLength) * 100));
 }
 
-function HomeIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      width="18"
-      height="18"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M3 10.5 12 3l9 7.5" />
-      <path d="M5 9.5V20a1 1 0 0 0 1 1h4.5v-6h3v6H18a1 1 0 0 0 1-1V9.5" />
-    </svg>
-  );
-}
-
 function getRoundGuide(isExampleMode, threshold) {
   return isExampleMode
     ? `단어를 보고 문장을 만든 뒤 녹음을 정지해 보세요.`
@@ -85,7 +67,7 @@ function isBattleFinished(playerHp, enemyHp) {
   return playerHp <= 0 || enemyHp <= 0;
 }
 
-export default function SentenceMagicGame({ onBack }) {
+export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
   const [index, setIndex] = useState(0);
   const [message, setMessage] = useState(
     "문장을 확인한 뒤 녹음을 시작해 보세요.",
@@ -429,38 +411,79 @@ export default function SentenceMagicGame({ onBack }) {
     const heightBoost = Math.max(0, volume - distanceFromCenter * 8);
     return 10 + Math.round(heightBoost * 0.4);
   });
+  const progressRatio = Math.round(((index + 1) / questions.length) * 100);
+  const battleStateLabel = battleEnded
+    ? enemyHp <= 0
+      ? "승리"
+      : "패배"
+    : isAnalyzing
+      ? "분석 중"
+      : isRecording
+        ? "녹음 중"
+        : "대기";
 
   return (
-    <main className="app-shell vt-shell">
-      <section className="game-card vt-card">
-        <div className="game-header vt-header">
-          <div>
-            <p className="eyebrow">LingoFriends</p>
-            <h1>문장 마법</h1>
-            <p className="vt-header-copy">
-              따라 읽을 문장을 보고 녹음한 뒤, 정확도에 따라 내가 공격하거나
-              상대가 반격하는 말하기 훈련입니다.
-            </p>
+    <LingoGameShell
+      badge="Game Training • Sentence"
+      title="문장 마법"
+      onRestart={restart}
+      onBack={onBack}
+      statusLabel={battleStateLabel}
+      progressLabel={`${index + 1} / ${questions.length}`}
+    >
+      <div className="lingo-game-layout">
+        <aside className="vt-left lingo-side-stack">
+          <div className="vt-glass lingo-panel-card">
+            <div className="vt-panel-title">
+              <span className="vt-panel-icon">🎙️</span>
+              <strong>음성 입력 상태</strong>
+            </div>
+            <div className="lingo-status-strip">
+              <span className="lingo-status-pill">{mode.label}</span>
+              <span className="lingo-status-pill">정확도 기준 {selectedThreshold}%</span>
+            </div>
+            <div className="lingo-audio-bars" aria-hidden="true">
+              {waveHeights.map((height, waveIndex) => (
+                <span
+                  key={waveIndex}
+                  style={isRecording ? { height: `${height}px` } : undefined}
+                />
+              ))}
+            </div>
+            <div className="lingo-detail-list">
+              <div className="lingo-detail-row">
+                <span>상태</span>
+                <strong>{battleStateLabel}</strong>
+              </div>
+              <div className="lingo-detail-row">
+                <span>현재 라운드</span>
+                <strong>
+                  {index + 1} / {questions.length}
+                </strong>
+              </div>
+              <div className="lingo-detail-row">
+                <span>브라우저 지원</span>
+                <strong>{supported ? "녹음 가능" : "미지원"}</strong>
+              </div>
+            </div>
           </div>
-          <div className="header-actions">
-            <button type="button" className="ui-button" onClick={restart}>
-              단계 선택
-            </button>
-            {onBack ? (
-              <button
-                type="button"
-                className="ui-button secondary-button"
-                onClick={onBack}
-                aria-label="홈으로"
-                title="홈으로"
-              >
-                <HomeIcon />
-              </button>
-            ) : null}
-          </div>
-        </div>
 
-        <div className="sentence-magic-layout sentence-magic-layout-single">
+          {(micError || serverError) ? (
+            <div className="vt-glass lingo-panel-card">
+              <div className="vt-panel-title">
+                <span className="vt-panel-icon">⚠️</span>
+                <strong>입력 상태</strong>
+              </div>
+              <div className="lingo-transcript-card">
+                <span>오류</span>
+                <p>{serverError || micError}</p>
+              </div>
+            </div>
+          ) : null}
+        </aside>
+
+        <section className="vt-center">
+          <div className="sentence-magic-layout sentence-magic-layout-single">
           <section className="sentence-magic-board">
             <div className="sentence-magic-hero sentence-magic-hero-stage">
               <div className="sentence-magic-badge-row">
@@ -608,13 +631,6 @@ export default function SentenceMagicGame({ onBack }) {
                   실패 예시
                 </button>
               </div>
-
-              {micError ? (
-                <p className="voice-error text-red-400 text-sm">{micError}</p>
-              ) : null}
-              {serverError ? (
-                <p className="voice-error text-red-400 text-sm">{serverError}</p>
-              ) : null}
             </div>
 
             {showSetupModal ? (
@@ -998,8 +1014,75 @@ export default function SentenceMagicGame({ onBack }) {
               </div>
             ) : null}
           </section>
-        </div>
-      </section>
-    </main>
+          </div>
+        </section>
+
+        <aside className="vt-right lingo-side-stack">
+          <div className="vt-glass vt-report-card">
+            <div className="vt-panel-title">
+              <span className="vt-panel-icon">⚔️</span>
+              <strong>전투 요약</strong>
+            </div>
+
+            <div className="vt-score-hero">
+              <div>
+                <span>최근 정확도</span>
+                <strong>
+                  {accuracyScore}
+                  <em>%</em>
+                </strong>
+              </div>
+            </div>
+
+            <div className="lingo-kpi-grid">
+              <div className="lingo-kpi-card">
+                <span>내 HP</span>
+                <strong>{playerHp}/3</strong>
+              </div>
+              <div className="lingo-kpi-card">
+                <span>상대 HP</span>
+                <strong>{enemyHp}/3</strong>
+              </div>
+              <div className="lingo-kpi-card">
+                <span>기준 정확도</span>
+                <strong>{selectedThreshold}%</strong>
+              </div>
+              <div className="lingo-kpi-card">
+                <span>문장 수</span>
+                <strong>{questions.length}개</strong>
+              </div>
+            </div>
+
+            <div className="vt-glass-sub">
+              <div className="vt-sub-row">
+                <span>목표 문장</span>
+                <strong>{targetSentence}</strong>
+              </div>
+              <div className="vt-sub-row">
+                <span>모드</span>
+                <strong>{mode.label}</strong>
+              </div>
+            </div>
+
+            <div className="lingo-transcript-card">
+              <span>인식된 문장</span>
+              <p>
+                {recognitionText ||
+                  "녹음 결과가 아직 없습니다. 녹음 시작 후 문장을 읽고 정지해 보세요."}
+              </p>
+            </div>
+
+            <div className="lingo-progress-strip">
+              <div className="vt-chips-label">
+                라운드 흐름
+              </div>
+              <div className="vt-timer-track">
+                <div className="vt-timer-fill" style={{ width: `${progressRatio}%` }} />
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </LingoGameShell>
   );
 }

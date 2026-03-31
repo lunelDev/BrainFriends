@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { WORDS_BY_LEVEL } from "@/data/tetrisWords";
 import { useAudioAnalyzer } from "@/lib/audio/useAudioAnalyzer";
 import { createPreferredCameraStream } from "@/lib/media/cameraPreferences";
+import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 
 // ─── 블록 상수 ─────────────────────────────────────────────────────────────────
 const BLOCK_COLORS = [
@@ -749,7 +751,11 @@ function isRecordingSupported() {
 }
 
 // ─── 컴포넌트 ──────────────────────────────────────────────────────────────────
-export default function TetrisGame({ onBack }) {
+export default function TetrisGame({ onBack }: { onBack?: () => void }) {
+  const router = useRouter();
+  const isLocalDebug =
+    process.env.NODE_ENV !== "production" ||
+    process.env.NEXT_PUBLIC_DEV_MODE === "true";
   const {
     volume,
     start: startAudioMonitor,
@@ -821,6 +827,7 @@ export default function TetrisGame({ onBack }) {
   const [pendingCostumeTier, setPendingCostumeTier] = useState<number | null>(
     null,
   );
+  const handleHome = onBack ?? (() => router.push("/select-page/game-mode"));
 
   const setActiveWord = useCallback((word) => {
     currentWordRef.current = word;
@@ -1648,176 +1655,103 @@ export default function TetrisGame({ onBack }) {
 
   // ─── 렌더 ─────────────────────────────────────────────────────────────────
   return (
-    <main className="app-shell vt-shell">
-      <section className="game-card vt-card">
-        <div className="game-header vt-header">
-            <div>
-              <p className="eyebrow">LingoFriends</p>
-              <h1>한글 테트리스</h1>
-              <p className="vt-header-copy">
-                정확한 발음에 반응하는 실시간 음성 조종 퍼즐입니다.
-                제시된 단어를 말하면 한글 블록이 알맞은 자리에 배치됩니다.
-              </p>
-            </div>
-          <div className="header-actions">
-            <button
-              type="button"
-              className="ui-button"
-              onClick={() => {
-                runningRef.current = false;
-                setGameStarted(false);
-                stopSessionDevices();
-                setShowLevelModal(true);
-              }}
-            >
-              단계 선택
-            </button>
-            {onBack ? (
-              <button
-                type="button"
-                className="ui-button secondary-button"
-                onClick={onBack}
-                aria-label="홈으로"
-                title="홈으로"
-              >
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 24 24"
-                  width="18"
-                  height="18"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M3 10.5 12 3l9 7.5" />
-                  <path d="M5 9.5V20a1 1 0 0 0 1 1h4.5v-6h3v6H18a1 1 0 0 0 1-1V9.5" />
-                </svg>
-              </button>
-            ) : null}
+    <main className="min-h-screen bg-white flex flex-col overflow-hidden">
+      <header className="min-h-16 px-3 sm:px-6 py-2 sm:py-0 border-b border-violet-100 flex flex-wrap sm:flex-nowrap justify-between items-center gap-2 bg-white/90 backdrop-blur-md shrink-0 sticky top-0 z-50">
+        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+          <img
+            src="/images/logo/logo.png"
+            alt="GOLDEN logo"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover shrink-0"
+          />
+          <div className="min-w-0">
+            <span className="font-black text-[10px] uppercase tracking-widest leading-none block text-violet-500">
+              Game Training • Tetris
+            </span>
+            <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight truncate">
+              한글 테트리스
+            </h2>
           </div>
         </div>
-
-        <div className="vt-layout vt-layout-playing">
-          <aside className="vt-left">
-            <div className="vt-glass vt-monitor-card">
-              <div className="vt-panel-title">
-                <span className="vt-panel-icon">📹</span>
-                <strong>멀티모달 모니터링</strong>
-              </div>
-
-              <div
-                className={`vt-camera-frame${isChampion && gameStarted ? " is-champion" : ""}`}
+        <div className="flex items-center gap-2 sm:gap-3 ml-auto flex-wrap justify-end">
+          <button
+            type="button"
+            className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${trainingButtonStyles.slateSoft}`}
+            onClick={() => {
+              runningRef.current = false;
+              setGameStarted(false);
+              stopSessionDevices();
+              setShowLevelModal(true);
+            }}
+          >
+            단계 선택
+          </button>
+          {isLocalDebug ? (
+            <>
+              <button
+                type="button"
+                className="px-3 py-1.5 rounded-full font-black text-[11px] border bg-violet-600 text-white border-violet-500"
+                onClick={simulateMatch}
+                disabled={!gameStarted}
               >
-                {cameraReady ? (
-                  <>
-                    <video
-                      ref={videoRef}
-                      className="vt-camera-video"
-                      autoPlay
-                      muted
-                      playsInline
-                      style={{
-                        filter: getCameraFilter(currentCameraTierId, failStreak),
-                      }}
-                    />
-                    <canvas
-                      ref={costumeCanvasRef}
-                      className="vt-camera-canvas"
-                    />
-                  </>
-                ) : (
-                  <div className="vt-camera-placeholder">
-                    <span>카메라 대기 중</span>
-                    <p>
-                      {cameraError || "잠시 후 카메라가 자동으로 연결됩니다."}
-                    </p>
-                  </div>
-                )}
+                정답 처리
+              </button>
+              <button
+                type="button"
+                className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${trainingButtonStyles.slateSoft}`}
+                onClick={simulateStack}
+                disabled={!gameStarted}
+              >
+                실패 처리
+              </button>
+            </>
+          ) : null}
+          <div className="px-3 py-1.5 rounded-full font-black text-[11px] transition-all border bg-violet-50 border-violet-200 text-violet-700">
+            {gameStarted
+              ? totalAccuracy >= passThreshold
+                ? "MATCH"
+                : "LISTENING..."
+              : "READY"}
+          </div>
+          <div className="px-4 py-1.5 rounded-full font-black text-xs border bg-violet-50 text-violet-700 border-violet-200">
+            {gameStarted ? wordsCleared : 0} / 10
+          </div>
+          <button
+            type="button"
+            onClick={handleHome}
+            aria-label="홈으로 이동"
+            title="홈"
+            className={`w-9 h-9 ${trainingButtonStyles.homeIcon}`}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M3 10.5 12 3l9 7.5"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M5.5 9.5V21h13V9.5"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M10 21v-5h4v5"
+              />
+            </svg>
+          </button>
+        </div>
+      </header>
 
-                {/* 코스튬 언락 토스트 (CSS 오버레이 유지) */}
-                {costumeUnlockToast && (
-                  <div
-                    key={costumeUnlockToast.id}
-                    className="vt-costume-unlock-toast"
-                  >
-                    <span>{costumeUnlockToast.icon}</span>
-                    <strong>{costumeUnlockToast.label} 획득!</strong>
-                  </div>
-                )}
-
-                <div className="vt-camera-status">
-                  <div className="vt-camera-row">
-                    <span>카메라 상태</span>
-                    <strong>
-                      {cameraReady
-                        ? faceTracked
-                          ? "얼굴 인식 중"
-                          : "카메라 연결됨"
-                        : "대기 중"}
-                    </strong>
-                  </div>
-                  {cameraError ? (
-                    <div className="vt-camera-row">
-                      <span>AI 합성</span>
-                      <strong>{cameraError}</strong>
-                    </div>
-                  ) : null}
-                  <div className="vt-face-track">
-                    <div
-                      className="vt-face-fill"
-                      style={{
-                        width: `${cameraReady ? (faceTracked ? 100 : 54) : 28}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="vt-audio-card">
-                <span className="vt-audio-label">음성 활성도</span>
-                <div className="vt-audio-bars">
-                  {audioBars.map((bar, index) => (
-                    <span
-                      key={index}
-                      className="vt-audio-bar"
-                      style={{ height: `${bar}%` }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="vt-glass vt-level-card">
-              <div className="vt-panel-title">
-                <span className="vt-panel-icon">🧩</span>
-                <strong>훈련 컨트롤</strong>
-              </div>
-              <div className="vt-guide-list">
-                <p>현재 단계: {gameStarted ? level : selectedLevel}단계</p>
-                <p>단계는 팝업에서 고른 뒤 훈련 시작 버튼을 누릅니다.</p>
-              </div>
-              <div className="vt-debug-actions">
-                <button
-                  type="button"
-                  className="ui-button vt-debug-btn"
-                  onClick={simulateMatch}
-                  disabled={!gameStarted}
-                >
-                  정답 처리 보기
-                </button>
-                <button
-                  type="button"
-                  className="ui-button secondary-button vt-debug-btn"
-                  onClick={simulateStack}
-                  disabled={!gameStarted}
-                >
-                  실패 처리 보기
-                </button>
-              </div>
-            </div>
-          </aside>
+      <section className="flex-1 overflow-y-auto bg-[#f8fafc]">
+        <div className="max-w-[1920px] mx-auto px-4 sm:px-6 py-4 sm:py-5">
+        <div className="vt-layout vt-layout-playing tetris-layout-no-left">
 
           <section className="vt-center">
             <div className="tetris-content-layout">
@@ -1877,143 +1811,120 @@ export default function TetrisGame({ onBack }) {
 
                     {showStatusPanel ? (
                       <aside className="tetris-status-panel">
-                        <div className="vt-glass vt-report-card">
+                        <div className="vt-glass vt-report-card tetris-report-card-compact">
                           <div className="vt-panel-title">
                             <span className="vt-panel-icon">🩺</span>
                             <strong>실시간 상태판</strong>
                           </div>
 
-                          <div className="vt-score-hero">
-                            <div>
-                              <span>현재 발화 점수</span>
-                              <strong>
-                                {gameStarted ? totalAccuracy : 0}
-                                <em>점</em>
-                              </strong>
-                            </div>
-                            <b
-                              className={`vt-score-badge ${gameStarted && totalAccuracy >= passThreshold ? "is-success" : "is-wait"}`}
-                            >
-                              {gameStarted
-                                ? totalAccuracy >= passThreshold
-                                  ? "MATCH"
-                                  : "LISTEN"
-                                : "READY"}
-                            </b>
-                          </div>
+                          <div className="tetris-status-columns">
+                            <div className="vt-monitor-card tetris-monitor-inline">
+                              <div
+                                className={`vt-camera-frame${isChampion && gameStarted ? " is-champion" : ""}`}
+                              >
+                                {cameraReady ? (
+                                  <>
+                                    <video
+                                      ref={videoRef}
+                                      className="vt-camera-video"
+                                      autoPlay
+                                      muted
+                                      playsInline
+                                      style={{
+                                        filter: getCameraFilter(currentCameraTierId, failStreak),
+                                      }}
+                                    />
+                                    <canvas
+                                      ref={costumeCanvasRef}
+                                      className="vt-camera-canvas"
+                                    />
+                                  </>
+                                ) : (
+                                  <div className="vt-camera-placeholder">
+                                    <span>카메라 대기 중</span>
+                                    <p>
+                                      {cameraError || "잠시 후 카메라가 자동으로 연결됩니다."}
+                                    </p>
+                                  </div>
+                                )}
 
-                          <div className="vt-mini-grid">
-                            <div className="vt-mini-stat">
-                              <span>통과 기준</span>
-                              <strong>{passThreshold}점</strong>
-                            </div>
-                            <div className="vt-mini-stat">
-                              <span>실패 횟수</span>
-                              <strong>{gameStarted ? failCount : 0}회</strong>
-                            </div>
-                            <div className="vt-mini-stat">
-                              <span>진행도</span>
-                              <strong>
-                                {gameStarted ? wordsCleared : 0}/10
-                              </strong>
-                            </div>
-                          </div>
+                                {costumeUnlockToast && (
+                                  <div
+                                    key={costumeUnlockToast.id}
+                                    className="vt-costume-unlock-toast"
+                                  >
+                                    <span>{costumeUnlockToast.icon}</span>
+                                    <strong>{costumeUnlockToast.label} 획득!</strong>
+                                  </div>
+                                )}
 
-                          <div className="vt-glass-sub">
-                            <div className="vt-sub-row">
-                              <span>현재 목표</span>
-                              <strong>
-                                {gameStarted ? currentWord || "-" : "훈련 대기"}
-                              </strong>
-                            </div>
-                            <div className="vt-sub-row">
-                              <span>인식된 발화</span>
-                              <strong>
-                                {gameStarted ? heardText || "-" : "-"}
-                              </strong>
-                            </div>
-                            <div className="vt-sub-row">
-                              <span>음성 상태</span>
-                              <strong>
-                                {speechError
-                                  ? "서버 STT 오류"
-                                  : gameStarted
-                                    ? "서버 STT 연결"
-                                    : "-"}
-                              </strong>
-                            </div>
-                            <div className="vt-sub-row">
-                              <span>입력 방식</span>
-                              <strong>음성 + 카메라</strong>
-                            </div>
-                            <div className="vt-sub-row">
-                              <span>카메라 연결</span>
-                              <strong>
-                                {cameraReady ? "성공" : "대기 중"}
-                              </strong>
-                            </div>
-                          </div>
-
-                          <div className="vt-progress-block">
-                            <div className="vt-chips-label">
-                              훈련 진행도{" "}
-                              <span>{gameStarted ? wordsCleared : 0}/10</span>
-                            </div>
-                            <div className="vt-chips-row">
-                              {wordChips.map((cleared, i) => (
-                                <div
-                                  key={i}
-                                  className={`vt-chip ${cleared === "success" ? "vt-chip-done" : ""} ${cleared === "fail" ? "vt-chip-fail" : ""}`}
-                                >
-                                  {cleared === "success"
-                                    ? "✓"
-                                    : cleared === "fail"
-                                      ? "X"
-                                      : i + 1}
+                                <div className="vt-camera-status">
+                                  <div className="vt-camera-row">
+                                    <span>카메라 상태</span>
+                                    <strong>
+                                      {cameraReady
+                                        ? faceTracked
+                                          ? "얼굴 인식 중"
+                                          : "카메라 연결됨"
+                                        : "대기 중"}
+                                    </strong>
+                                  </div>
+                                  {cameraError ? (
+                                    <div className="vt-camera-row">
+                                      <span>AI 합성</span>
+                                      <strong>{cameraError}</strong>
+                                    </div>
+                                  ) : null}
+                                  <div className="vt-face-track">
+                                    <div
+                                      className="vt-face-fill"
+                                      style={{
+                                        width: `${cameraReady ? (faceTracked ? 100 : 54) : 28}%`,
+                                      }}
+                                    />
+                                  </div>
                                 </div>
-                              ))}
-                            </div>
-                          </div>
+                              </div>
 
-                          <div className="vt-score-guide">
-                            {speechError ? (
-                              <p className="vt-score-row">
-                                <span
-                                  className="vt-score-dot"
-                                  style={{ background: "#f87171" }}
-                                />
-                                <strong>음성 오류</strong> {speechError}
-                              </p>
-                            ) : null}
-                            {gameStarted ? (
-                              <>
-                                <p className="vt-score-row">
-                                  <span
-                                    className="vt-score-dot"
-                                    style={{ background: "#4ade80" }}
-                                  />
-                                  <strong>기준 이상</strong> 자동으로 맞는
-                                  위치에 끼워집니다.
-                                </p>
-                                <p className="vt-score-row">
-                                  <span
-                                    className="vt-score-dot"
-                                    style={{ background: "#f87171" }}
-                                  />
-                                  <strong>실패</strong> 진행도에 X가 표시되고
-                                  다음 단어로 넘어갑니다.
-                                </p>
-                              </>
-                            ) : (
-                              <p className="vt-score-row">
-                                <span
-                                  className="vt-score-dot"
-                                  style={{ background: "#38bdf8" }}
-                                />
-                                <strong>안내</strong> 단계를 고르고 시작하면 이
-                                상태판이 실시간으로 갱신됩니다.
-                              </p>
-                            )}
+                              <div className="vt-audio-card">
+                                <span className="vt-audio-label">음성 활성도</span>
+                                <div className="vt-audio-bars">
+                                  {audioBars.map((bar, index) => (
+                                    <span
+                                      key={index}
+                                      className="vt-audio-bar"
+                                      style={{ height: `${bar}%` }}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div className="tetris-status-card tetris-accuracy-card">
+                                <span className="tetris-accuracy-label">음성 정확도</span>
+                                <strong className="tetris-accuracy-value">
+                                  {gameStarted ? totalAccuracy : 0}
+                                  <em>점</em>
+                                </strong>
+                              </div>
+
+                              <div className="vt-progress-block tetris-status-card">
+                                <div className="vt-chips-label">문제 흐름</div>
+                                <div className="vt-chips-row">
+                                  {wordChips.map((cleared, i) => (
+                                    <div
+                                      key={i}
+                                      className={`vt-chip ${cleared === "success" ? "vt-chip-done" : ""} ${cleared === "fail" ? "vt-chip-fail" : ""}`}
+                                    >
+                                      {cleared === "success"
+                                        ? "✓"
+                                        : cleared === "fail"
+                                          ? "X"
+                                          : i + 1}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </aside>
@@ -2118,6 +2029,7 @@ export default function TetrisGame({ onBack }) {
               </div>
             </div>
           </section>
+        </div>
         </div>
       </section>
     </main>

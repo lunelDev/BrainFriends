@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import LingoGameShell from "@/components/lingo/LingoGameShell";
 import {
   MEMORY_CARD_WORDS,
   MEMORY_CATEGORIES,
@@ -454,50 +455,16 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   })();
 
   return (
-    <main className="app-shell vt-shell">
-      <section className="game-card vt-card">
-        <div className="game-header vt-header">
-          <div>
-            <p className="eyebrow">LingoFriends</p>
-            <h1>말로 열기</h1>
-            <p className="vt-header-copy">
-              그림을 보고 과일, 동물, 탈것 중 맞는 답을 말하면 아래 물음표
-              카드에 단어가 공개되는 음성 훈련입니다.
-            </p>
-          </div>
-          <div className="header-actions">
-            <button type="button" className="ui-button" onClick={restart}>
-              단계 선택
-            </button>
-            {onBack ? (
-              <button
-                type="button"
-                className="ui-button secondary-button"
-                onClick={onBack}
-                aria-label="홈으로"
-                title="홈으로"
-              >
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 24 24"
-                  width="18"
-                  height="18"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M3 10.5 12 3l9 7.5" />
-                  <path d="M5 9.5V20a1 1 0 0 0 1 1h4.5v-6h3v6H18a1 1 0 0 0 1-1V9.5" />
-                </svg>
-              </button>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="vt-layout vt-layout-playing">
-          <aside className="vt-left">
+    <LingoGameShell
+      badge="Game Training • Memory"
+      title="말로 열기"
+      onRestart={restart}
+      onBack={onBack}
+      statusLabel={micEnabled ? "LISTENING..." : "READY"}
+      progressLabel={`${solvedCount} / ${cards.length}`}
+    >
+      <div className="lingo-game-layout">
+        <aside className="vt-left lingo-side-stack">
             <div className="vt-glass vt-monitor-card">
               <div className="vt-panel-title">
                 <span className="vt-panel-icon">📹</span>
@@ -575,9 +542,9 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
                 </div>
               </div>
             </div>
-          </aside>
+        </aside>
 
-          <section className="vt-center">
+        <section className="vt-center">
             <div className="vt-board-shell memory-board-shell">
               <div className="vt-canvas-wrap memory-dashboard-stage">
                 {currentCard ? (
@@ -722,74 +689,9 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
                     <h3>말로 열기 완료</h3>
                     <p>
                       모든 카드를 분류했습니다. 다시 시작하면 새 카드 묶음으로
-                      이어집니다.
-                    </p>
-                  </div>
-                ) : null}
-                {showReport ? (
-                  <div className="vt-report-modal">
-                    <div className="vt-report-modal-card vt-glass vt-report-card">
-                      <div className="vt-panel-title">
-                        <span className="vt-panel-icon">🩺</span>
-                        <strong>분석 결과 리포트</strong>
-                      </div>
-
-                      <div className="vt-score-hero">
-                        <div>
-                          <span>현재 점수</span>
-                          <strong>
-                            {score}
-                            <em>점</em>
-                          </strong>
-                        </div>
-                        <b
-                          className={`vt-score-badge ${micEnabled ? "is-success" : "is-wait"}`}
-                        >
-                          {micEnabled ? "LISTEN" : "READY"}
-                        </b>
-                      </div>
-
-                      <div className="vt-mini-grid">
-                        <div className="vt-mini-stat">
-                          <span>정확도</span>
-                          <strong>{accuracy}%</strong>
-                        </div>
-                        <div className="vt-mini-stat">
-                          <span>총 시도 수</span>
-                          <strong>{attemptCount}회</strong>
-                        </div>
-                        <div className="vt-mini-stat">
-                          <span>오답 수</span>
-                          <strong>{wrongCount}회</strong>
-                        </div>
-                      </div>
-
-                      <div className="vt-glass-sub">
-                        <div className="vt-sub-row">
-                          <span>완료 시간</span>
-                          <strong>{elapsedTime}</strong>
-                        </div>
-                        <div className="vt-sub-row">
-                          <span>가장 헷갈린 분류</span>
-                          <strong>{mostConfusedLabel}</strong>
-                        </div>
-                        <div className="vt-sub-row">
-                          <span>입력 방식</span>
-                          <strong>음성 + 카메라</strong>
-                        </div>
-                        <div className="vt-sub-row">
-                          <span>카메라 연결</span>
-                          <strong>{cameraReady ? "성공" : "미연결"}</strong>
-                        </div>
-                      </div>
-
-                      <p className="vt-report-summary">
-                        {wrongCount === 0
-                          ? "모든 문제를 한 번에 정확히 열었습니다."
-                          : `${wrongCount}번 다시 시도해서 모든 카드를 열었습니다.`}
-                      </p>
-                    </div>
-                  </div>
+                    이어집니다.
+                  </p>
+                </div>
                 ) : null}
                 {showDifficultyModal ? (
                   <div className="vt-level-modal">
@@ -829,9 +731,77 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
                 ) : null}
               </div>
             </div>
-          </section>
-        </div>
-      </section>
-    </main>
+        </section>
+
+        <aside className="vt-right lingo-side-stack">
+          <div className="vt-glass vt-report-card">
+            <div className="vt-panel-title">
+              <span className="vt-panel-icon">🩺</span>
+              <strong>세션 요약</strong>
+            </div>
+
+            <div className="vt-score-hero">
+              <div>
+                <span>현재 점수</span>
+                <strong>
+                  {score}
+                  <em>점</em>
+                </strong>
+              </div>
+            </div>
+
+            <div className="lingo-kpi-grid">
+              <div className="lingo-kpi-card">
+                <span>정확도</span>
+                <strong>{accuracy}%</strong>
+              </div>
+              <div className="lingo-kpi-card">
+                <span>남은 카드</span>
+                <strong>{Math.max(cards.length - solvedCount, 0)}장</strong>
+              </div>
+              <div className="lingo-kpi-card">
+                <span>총 시도</span>
+                <strong>{attemptCount}회</strong>
+              </div>
+              <div className="lingo-kpi-card">
+                <span>오답</span>
+                <strong>{wrongCount}회</strong>
+              </div>
+            </div>
+
+            <div className="vt-glass-sub">
+              <div className="vt-sub-row">
+                <span>현재 단계</span>
+                <strong>
+                  {MEMORY_DIFFICULTIES.find((item) => item.id === difficulty)?.label}
+                </strong>
+              </div>
+              <div className="vt-sub-row">
+                <span>가장 헷갈린 분류</span>
+                <strong>{mostConfusedLabel}</strong>
+              </div>
+              <div className="vt-sub-row">
+                <span>카메라 연결</span>
+                <strong>{cameraReady ? "성공" : "미연결"}</strong>
+              </div>
+              <div className="vt-sub-row">
+                <span>얼굴 가이드</span>
+                <strong>{cameraReady ? `${faceGuideScore}%` : "-"}</strong>
+              </div>
+              <div className="vt-sub-row">
+                <span>완료 시간</span>
+                <strong>{elapsedTime}</strong>
+              </div>
+            </div>
+
+            <div className="lingo-transcript-card">
+              <span>최근 인식</span>
+              <p>{heardText || "아직 인식된 답변이 없습니다."}</p>
+            </div>
+
+          </div>
+        </aside>
+      </div>
+    </LingoGameShell>
   );
 }

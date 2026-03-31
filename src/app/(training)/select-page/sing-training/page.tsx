@@ -2,7 +2,9 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Music, ChevronRight } from "lucide-react";
+import { Music } from "lucide-react";
+import SelectionHeroBanner from "@/components/training/SelectionHeroBanner";
+import SelectionImageCard from "@/components/training/SelectionImageCard";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { SONG_KEYS, SONGS } from "@/features/sing-training/data/songs";
 
@@ -88,80 +90,45 @@ export default function SelectSingPage() {
       </header>
 
       <main className="flex-1 max-w-[1440px] mx-auto w-full px-4 sm:px-6 pt-6 sm:pt-8 lg:pt-10 pb-10 sm:pb-12 lg:pb-14 flex flex-col justify-center">
-        <section className="flex flex-col md:flex-row md:items-end justify-between gap-4 sm:gap-5 mb-5 sm:mb-6 lg:mb-8">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2 tracking-tight">
-              브레인 노래방 곡 선택
-            </h1>
-            <p className="text-sm sm:text-base text-slate-500 font-medium">
-              난이도에 맞는 곡을 선택한 뒤 30초 음성/안면 기반 가창 훈련을
-              시작합니다.
-            </p>
-          </div>
-          <div className="self-start md:self-end inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-[11px] sm:text-xs font-black text-emerald-700">
-            <Music className="w-3.5 h-3.5" />총 6곡 · 3단계 난이도
-          </div>
-        </section>
+        <SelectionHeroBanner
+          badge="Brain Karaoke"
+          title="좋아하는 곡으로 리듬과 발화 반응 훈련을 시작해 보세요."
+          description="곡별 난이도에 맞춰 30초 가창 훈련을 진행합니다. 음성과 얼굴 반응을 함께 분석해 보다 몰입감 있게 노래 훈련을 이어갈 수 있습니다."
+          accentClassName="border-emerald-100 from-emerald-600 via-teal-500 to-slate-900"
+          icon={<Music className="w-3.5 h-3.5" />}
+        />
 
         <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
           {SONG_KEYS.map((songKey) => {
             const song = SONGS[songKey];
 
             return (
-              <button
+              <SelectionImageCard
                 key={songKey}
-                type="button"
                 onClick={() =>
                   router.push(
                     `/programs/sing-training?song=${encodeURIComponent(songKey)}`,
                   )
                 }
-                className="group relative w-full min-h-[220px] sm:min-h-0 aspect-[16/10] sm:aspect-[16/10] lg:aspect-[16/10] xl:aspect-[16/9] rounded-[24px] sm:rounded-[28px] overflow-hidden shadow-lg transition-all duration-500 hover:-translate-y-1 hover:shadow-slate-300/40"
-              >
-                <div
-                  className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110"
-                  style={{
-                    backgroundImage: `url(${song.selection.imagePath})`,
-                    backgroundPosition: song.selection.imagePosition,
-                    filter: "brightness(1.1) saturate(1)",
-                  }}
-                />
-                <div
-                  className="absolute inset-0 opacity-55 group-hover:opacity-65 transition-opacity duration-500"
-                  style={{ background: song.selection.overlayStyle }}
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/5 to-transparent" />
-                <div className="relative z-10 h-full p-4 sm:p-5 flex flex-col justify-end items-start text-left">
-                  <div className="flex h-full flex-col">
-                    <div>
-                      <span
-                        className="inline-flex items-center gap-1.5 rounded-full border border-white/18 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-slate-950 shadow-[0_10px_24px_rgba(0,0,0,0.18)] backdrop-blur-md"
-                        style={{ background: song.selection.badgeStyle }}
-                      >
-                        <Music className="h-3 w-3" />
-                        {song.level}
-                        <span className="text-slate-900/75">SONG</span>
-                      </span>
-                    </div>
-
-                    <div className="mt-auto">
-                      <h3 className="text-4xl font-black text-white mb-2 leading-none [text-shadow:0_10px_28px_rgba(0,0,0,0.95)]">
-                        {songKey}
-                      </h3>
-                      <p className="text-white font-bold text-xs sm:text-sm leading-relaxed mb-4 max-w-[88%] [text-shadow:0_8px_20px_rgba(0,0,0,0.9)]">
-                        {song.selection.description}
-                      </p>
-
-                      <div className="w-full flex items-center justify-end">
-                        <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center shrink-0 mt-0.5 group-hover:translate-x-0.5 transition-transform">
-                          <ChevronRight className="w-4 h-4 text-white" />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="absolute inset-0 border-[3px] border-white/0 group-hover:border-white/35 rounded-[28px] transition-all duration-500 pointer-events-none" />
-              </button>
+                title={songKey}
+                description={song.selection.description}
+                badge={`${song.level} Song`}
+                ctaLabel="곡 시작하기"
+                imagePath={song.selection.imagePath}
+                imagePosition={song.selection.imagePosition}
+                imageFilter="brightness(1.1) saturate(1)"
+                overlayStyle={{ background: song.selection.overlayStyle }}
+                topLeft={
+                  <span
+                    className="inline-flex items-center gap-1.5 rounded-full border border-white/18 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-slate-950 shadow-[0_10px_24px_rgba(0,0,0,0.18)] backdrop-blur-md"
+                    style={{ background: song.selection.badgeStyle }}
+                  >
+                    <Music className="h-3 w-3" />
+                    {song.level}
+                    <span className="text-slate-900/75">SONG</span>
+                  </span>
+                }
+              />
             );
           })}
         </section>

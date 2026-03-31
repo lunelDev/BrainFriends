@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import LingoGameShell from "@/components/lingo/LingoGameShell";
 import { BALLOON_GROWTH_DIFFICULTIES } from "@/data/balloonGrowthData";
 import { useAudioAnalyzer } from "@/lib/audio/useAudioAnalyzer";
 
@@ -17,25 +18,6 @@ type BalloonDifficulty = (typeof BALLOON_GROWTH_DIFFICULTIES)[number];
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
-}
-
-function HomeIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      width="18"
-      height="18"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M3 10.5 12 3l9 7.5" />
-      <path d="M5 9.5V20a1 1 0 0 0 1 1h4.5v-6h3v6H18a1 1 0 0 0 1-1V9.5" />
-    </svg>
-  );
 }
 
 function BalloonSvg({
@@ -409,36 +391,60 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
   }
 
   return (
-    <main className="app-shell vt-shell">
-      <section className="game-card vt-card">
-        <div className="game-header vt-header">
-          <div>
-            <p className="eyebrow">LingoFriends</p>
-            <h1>풍선 키우기</h1>
-            <p className="vt-header-copy">
-              적정 음량으로 풍선을 키우고, 너무 크게 말하면 터지지 않게 조절해 보세요.
-            </p>
+    <LingoGameShell
+      badge="Game Training • Voice Control"
+      title="풍선 키우기"
+      onRestart={handleRestart}
+      onBack={onBack}
+      statusLabel={phase === "playing" ? balloonTone.toUpperCase() : "READY"}
+      progressLabel={`${Math.round(targetProgress)}%`}
+    >
+      <div className="lingo-game-layout">
+        <aside className="vt-left lingo-side-stack">
+          <div className="vt-glass lingo-panel-card">
+            <div className="vt-panel-title">
+              <span className="vt-panel-icon">🎈</span>
+              <strong>훈련 기준</strong>
+            </div>
+            <div className="lingo-status-strip">
+              <span className="lingo-status-pill">{difficulty.label}</span>
+              <span className="lingo-status-pill">안전 {stage.safeMin}~{stage.safeMax}</span>
+            </div>
+            <div className="lingo-kpi-grid">
+              <div className="lingo-kpi-card">
+                <span>남은 시간</span>
+                <strong>{Math.ceil(timeLeft)}초</strong>
+              </div>
+              <div className="lingo-kpi-card">
+                <span>목표 크기</span>
+                <strong>{stage.targetSize}</strong>
+              </div>
+              <div className="lingo-kpi-card">
+                <span>위험 기준</span>
+                <strong>{stage.dangerMin}+</strong>
+              </div>
+              <div className="lingo-kpi-card">
+                <span>음성 상태</span>
+                <strong>{phase === "playing" ? "입력 중" : "대기"}</strong>
+              </div>
+            </div>
           </div>
-          <div className="header-actions">
-            <button type="button" className="ui-button" onClick={handleRestart}>
-              단계 선택
-            </button>
-            {onBack ? (
-              <button
-                type="button"
-                className="ui-button secondary-button"
-                onClick={onBack}
-                aria-label="홈으로"
-                title="홈으로"
-              >
-                <HomeIcon />
-              </button>
-            ) : null}
-          </div>
-        </div>
 
-        <div className="vt-layout balloon-game-layout">
-          <section className="vt-center balloon-game-center">
+          {error ? (
+            <div className="vt-glass lingo-panel-card">
+              <div className="vt-panel-title">
+                <span className="vt-panel-icon">⚠️</span>
+                <strong>마이크 상태</strong>
+              </div>
+              <div className="lingo-transcript-card">
+                <span>오류</span>
+                <p>{error}</p>
+              </div>
+            </div>
+          ) : null}
+        </aside>
+
+        <section className="vt-center balloon-game-center">
             <div className="vt-board-shell balloon-game-board-shell">
               <div className="vt-canvas-wrap balloon-game-stage">
                 <div className="balloon-game-topbar">
@@ -594,9 +600,72 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
                 ) : null}
               </div>
             </div>
-          </section>
-        </div>
-      </section>
-    </main>
+        </section>
+
+        <aside className="vt-right lingo-side-stack">
+          <div className="vt-glass vt-report-card">
+            <div className="vt-panel-title">
+              <span className="vt-panel-icon">📊</span>
+              <strong>실시간 상태</strong>
+            </div>
+
+            <div className="vt-score-hero">
+              <div>
+                <span>현재 음량</span>
+                <strong>
+                  {effectiveVolume}
+                  <em>dB</em>
+                </strong>
+              </div>
+            </div>
+
+            <div className="lingo-kpi-grid">
+              <div className="lingo-kpi-card">
+                <span>위험 누적</span>
+                <strong>{Math.round(dangerRatio)}%</strong>
+              </div>
+              <div className="lingo-kpi-card">
+                <span>안전 상태</span>
+                <strong>{isSafe ? "유지 중" : "이탈"}</strong>
+              </div>
+              <div className="lingo-kpi-card">
+                <span>테스트 부스트</span>
+                <strong>{testVoiceBoost ? "ON" : "OFF"}</strong>
+              </div>
+              <div className="lingo-kpi-card">
+                <span>마이크 상태</span>
+                <strong>{isMicReady ? "준비" : "대기"}</strong>
+              </div>
+            </div>
+
+            <div className="vt-glass-sub">
+              <div className="vt-sub-row">
+                <span>현재 단계</span>
+                <strong>{difficulty.label}</strong>
+              </div>
+              <div className="vt-sub-row">
+                <span>안전 구간</span>
+                <strong>
+                  {stage.safeMin} ~ {stage.safeMax}
+                </strong>
+              </div>
+              <div className="vt-sub-row">
+                <span>위험 기준</span>
+                <strong>{stage.dangerMin} 이상</strong>
+              </div>
+            </div>
+
+            {result ? (
+              <div className="lingo-transcript-card">
+                <span>최근 결과</span>
+                <p>
+                  {result.title} · 평균 음량 {result.averageVolume} · 안정성 {result.stability}%
+                </p>
+              </div>
+            ) : null}
+          </div>
+        </aside>
+      </div>
+    </LingoGameShell>
   );
 }

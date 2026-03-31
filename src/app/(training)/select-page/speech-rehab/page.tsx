@@ -2,6 +2,8 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import SelectionHeroBanner from "@/components/training/SelectionHeroBanner";
+import SelectionImageCard from "@/components/training/SelectionImageCard";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import {
@@ -201,101 +203,75 @@ export default function RehabPage() {
       </div>
 
       <main className="flex-1 max-w-[1440px] mx-auto w-full px-4 sm:px-6 pt-6 sm:pt-8 lg:pt-10 pb-10 sm:pb-12 lg:pb-14 flex flex-col justify-center">
-        <section className="flex flex-col md:flex-row md:items-end justify-between gap-4 sm:gap-5 mb-5 sm:mb-6 lg:mb-8">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2 tracking-tight">
-              언어 재활 반복훈련
-            </h1>
-            <p className="text-sm sm:text-base text-slate-500 font-medium">
-              부족한 영역을 집중 훈련하세요.
-            </p>
-          </div>
-          <div ref={placeDropdownRef} className="relative self-start md:self-end">
-            <button
-              type="button"
-              onClick={() => setIsPlaceOpen((prev) => !prev)}
-              className="h-10 px-3.5 rounded-full bg-slate-100/70 text-slate-700 hover:bg-slate-200/70 transition-colors inline-flex items-center gap-2 text-sm font-bold"
-              aria-expanded={isPlaceOpen}
-              aria-haspopup="listbox"
-            >
-              <MapPin className="w-4 h-4 text-slate-500" />
-              <span>{selectedPlace.label}</span>
-              <ChevronDown
-                className={`w-4 h-4 text-slate-500 transition-transform ${isPlaceOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-            {isPlaceOpen && (
-              <div className="absolute right-0 top-11 w-40 rounded-xl bg-white shadow-lg p-1.5 z-20">
-                {PLACE_OPTIONS.map((opt) => {
-                  const active = opt.key === place;
-                  return (
-                    <button
-                      key={opt.key}
-                      type="button"
-                      onClick={() => {
-                        setPlace(opt.key);
-                        setIsPlaceOpen(false);
-                      }}
-                      className={`w-full h-9 px-2.5 rounded-lg text-left text-sm font-bold inline-flex items-center justify-between transition-colors ${
-                        active
-                          ? "bg-sky-50 text-sky-700"
-                          : "text-slate-700 hover:bg-slate-50"
-                      }`}
-                      role="option"
-                      aria-selected={active}
-                    >
-                      <span>{opt.label}</span>
-                      {active && <Check className="w-3.5 h-3.5" />}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </section>
+        <SelectionHeroBanner
+          badge="Speech Rehab Program"
+          title="부족한 언어 영역을 단계별로 집중 훈련하세요."
+          description="청각 이해, 따라말하기, 명명, 유창성, 읽기, 쓰기를 현재 장소에 맞춰 반복 훈련할 수 있습니다. 원하는 Step을 선택하면 바로 해당 훈련으로 이동합니다."
+          accentClassName="border-sky-100 from-sky-600 via-cyan-600 to-slate-900"
+          icon={<BookOpen className="w-3.5 h-3.5" />}
+          footerAction={
+            <div ref={placeDropdownRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setIsPlaceOpen((prev) => !prev)}
+                className="h-10 px-3.5 rounded-full bg-white/12 text-white hover:bg-white/18 border border-white/20 backdrop-blur-md transition-colors inline-flex items-center gap-2 text-sm font-bold"
+                aria-expanded={isPlaceOpen}
+                aria-haspopup="listbox"
+              >
+                <MapPin className="w-4 h-4 text-white/80" />
+                <span>{selectedPlace.label}</span>
+                <ChevronDown
+                  className={`w-4 h-4 text-white/80 transition-transform ${isPlaceOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+              {isPlaceOpen && (
+                <div className="absolute right-0 top-11 w-40 rounded-xl bg-white shadow-lg p-1.5 z-20">
+                  {PLACE_OPTIONS.map((opt) => {
+                    const active = opt.key === place;
+                    return (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => {
+                          setPlace(opt.key);
+                          setIsPlaceOpen(false);
+                        }}
+                        className={`w-full h-9 px-2.5 rounded-lg text-left text-sm font-bold inline-flex items-center justify-between transition-colors ${
+                          active
+                            ? "bg-sky-50 text-sky-700"
+                            : "text-slate-700 hover:bg-slate-50"
+                        }`}
+                        role="option"
+                        aria-selected={active}
+                      >
+                        <span>{opt.label}</span>
+                        {active && <Check className="w-3.5 h-3.5" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          }
+        />
 
         <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
           {STEP_CARDS.map((step) => (
-            <button
+            <SelectionImageCard
               key={step.id}
               onClick={() => moveStep(step.route)}
-              className="group relative w-full min-h-[220px] sm:min-h-0 aspect-[16/10] sm:aspect-[16/10] lg:aspect-[16/10] xl:aspect-[16/9] rounded-[24px] sm:rounded-[28px] overflow-hidden shadow-lg transition-all duration-500 hover:-translate-y-1 hover:shadow-slate-300/40"
-            >
-              <div
-                className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110"
-                style={{ backgroundImage: `url(${step.imagePath})` }}
-              />
-              <div
-                className={`absolute inset-0 bg-gradient-to-br ${step.accentColor} opacity-50 group-hover:opacity-60 transition-opacity duration-500`}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/5 to-transparent" />
-
-              <div className="relative h-full p-4 sm:p-5 flex flex-col justify-end items-start text-left">
-                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-white/15 border border-white/25 backdrop-blur-md text-white flex items-center justify-center mb-2 sm:mb-3">
+              title={step.subtitle}
+              description={step.desc}
+              badge={step.title}
+              ctaLabel={`${selectedPlace.label}에서 시작`}
+              imagePath={step.imagePath}
+              overlayClassName={`bg-gradient-to-br ${step.accentColor}`}
+              topLeft={
+                <div className="inline-flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-[18px] border border-white/25 bg-white/15 text-white shadow-md backdrop-blur-md">
                   {step.icon}
                 </div>
-                <span className="px-2.5 py-1 bg-white/15 backdrop-blur-md rounded-full text-[8px] sm:text-[9px] font-black text-white uppercase tracking-widest mb-2 border border-white/20">
-                  {step.title}
-                </span>
-                <h2 className="text-lg sm:text-2xl font-black text-white mb-1.5 sm:mb-2 drop-shadow-md">
-                  {step.subtitle}
-                </h2>
-                <p className="text-white/90 font-medium text-[11px] sm:text-sm leading-relaxed mb-3 sm:mb-4 drop-shadow-sm">
-                  {step.desc}
-                </p>
-
-                <div className="w-full flex items-center justify-between gap-2 bg-white/95 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl shadow-md group-hover:bg-slate-50 transition-colors">
-                  <span className="text-[11px] sm:text-xs font-black text-slate-900 truncate">
-                    {selectedPlace.label}에서 시작
-                  </span>
-                  <div className="w-5 h-5 rounded-full bg-slate-900 flex items-center justify-center shrink-0">
-                    <ChevronRight className="w-3.5 h-3.5 text-white" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="absolute inset-0 border-[3px] border-white/0 group-hover:border-white/35 rounded-[28px] transition-all duration-500 pointer-events-none" />
-            </button>
+              }
+            />
           ))}
         </section>
       </main>

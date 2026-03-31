@@ -1,16 +1,16 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Blocks,
   Gamepad2,
   MessageSquareText,
   Sparkles,
-  TimerReset,
   Wind,
 } from "lucide-react";
+import SelectionHeroBanner from "@/components/training/SelectionHeroBanner";
+import SelectionImageCard from "@/components/training/SelectionImageCard";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 
 const GAME_CARDS = [
@@ -21,10 +21,9 @@ const GAME_CARDS = [
     desc: "정확한 발음에 반응하는 실시간 음성 조종 퍼즐",
     href: "/programs/lingo/tetris",
     icon: Blocks,
-    badgeClass:
-      "bg-gradient-to-r from-sky-100 to-cyan-100 text-sky-700 border-sky-200",
-    accentClass:
-      "bg-gradient-to-br from-sky-50 via-white to-cyan-50 border-sky-100",
+    imageSrc: "/images/game/game-training.jpg",
+    actionLabel: "게임 시작하기",
+    accentClass: "from-sky-600/45 to-cyan-900/65",
   },
   {
     key: "balloon",
@@ -33,10 +32,9 @@ const GAME_CARDS = [
     desc: "적정 음량을 유지해 풍선을 키우고, 너무 크게 말해 터뜨리지 않게 조절해요.",
     href: "/programs/lingo/balloon",
     icon: Wind,
-    badgeClass:
-      "bg-gradient-to-r from-emerald-100 to-teal-100 text-emerald-700 border-emerald-200",
-    accentClass:
-      "bg-gradient-to-br from-emerald-50 via-white to-teal-50 border-emerald-100",
+    imageSrc: "/images/game/game-training.jpg",
+    actionLabel: "게임 시작하기",
+    accentClass: "from-emerald-600/45 to-teal-900/65",
   },
   {
     key: "memory",
@@ -45,10 +43,9 @@ const GAME_CARDS = [
     desc: "그림을 보고 과일, 동물, 탈것 중 맞는 답을 말해 물음표 카드를 열어요.",
     href: "/programs/lingo/memory",
     icon: Sparkles,
-    badgeClass:
-      "bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-700 border-amber-200",
-    accentClass:
-      "bg-gradient-to-br from-amber-50 via-white to-yellow-50 border-amber-100",
+    imageSrc: "/images/game/game-training.jpg",
+    actionLabel: "게임 시작하기",
+    accentClass: "from-amber-500/45 to-yellow-900/65",
   },
   {
     key: "sentence",
@@ -57,10 +54,9 @@ const GAME_CARDS = [
     desc: "문장을 만들고 읽으며 정확도에 따라 내가 공격하거나 상대가 반격해요.",
     href: "/programs/lingo/sentence",
     icon: MessageSquareText,
-    badgeClass:
-      "bg-gradient-to-r from-rose-100 to-orange-100 text-rose-700 border-rose-200",
-    accentClass:
-      "bg-gradient-to-br from-rose-50 via-white to-orange-50 border-rose-100",
+    imageSrc: "/images/game/game-training.jpg",
+    actionLabel: "게임 시작하기",
+    accentClass: "from-rose-500/45 to-orange-900/65",
   },
 ] as const;
 
@@ -139,80 +135,35 @@ export default function SelectGameModePage() {
       </header>
 
       <main className="flex-1 max-w-[1440px] mx-auto w-full px-4 sm:px-6 pt-6 sm:pt-8 lg:pt-10 pb-10 sm:pb-12 lg:pb-14">
-        <section className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 sm:gap-5 mb-6 sm:mb-8">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2 tracking-tight">
-              게임 모드
-            </h1>
-            <p className="text-sm sm:text-base text-slate-500 font-medium">
-              말하기, 발음, 분류, 조절 훈련을 게임처럼 이어서 진행할 수 있습니다.
-            </p>
-          </div>
-          <div className="self-start lg:self-end inline-flex items-center gap-2 rounded-full border border-violet-100 bg-violet-50 px-3 py-1.5 text-[11px] sm:text-xs font-black text-violet-700">
-            <Gamepad2 className="w-3.5 h-3.5" />
-            LingoFriends 연동
-          </div>
-        </section>
-
-        <section className="rounded-[28px] border border-violet-100 bg-gradient-to-br from-violet-600 via-indigo-600 to-slate-900 p-6 sm:p-8 lg:p-10 text-white shadow-xl mb-6 sm:mb-8">
-          <p className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em]">
-            <Gamepad2 className="w-3.5 h-3.5" />
-            LingoFriends Games
-          </p>
-          <h2 className="mt-4 text-3xl sm:text-4xl font-black tracking-tight leading-none">
-            말하기 훈련을 게임처럼 시작해 보세요.
-          </h2>
-          <p className="mt-4 max-w-3xl text-sm sm:text-base text-white/85 leading-relaxed">
-            각 게임은 발성, 단어 인식, 문장 읽기, 음량 조절 훈련을 자연스럽게 반복할 수
-            있도록 설계되어 있습니다. 지금 바로 원하는 게임을 선택해 시작할 수 있습니다.
-          </p>
-        </section>
+        <SelectionHeroBanner
+          badge="LingoFriends Games"
+          title="말하기 훈련을 게임처럼 시작해 보세요."
+          description="각 게임은 발성, 단어 인식, 문장 읽기, 음량 조절 훈련을 자연스럽게 반복할 수 있도록 설계되어 있습니다. 지금 바로 원하는 게임을 선택해 시작할 수 있습니다."
+          accentClassName="border-violet-100 from-violet-600 via-indigo-600 to-slate-900"
+          icon={<Gamepad2 className="w-3.5 h-3.5" />}
+        />
 
         <section className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-5 lg:gap-6">
           {GAME_CARDS.map((card) => {
             const Icon = card.icon;
 
             return (
-              <Link
+              <SelectionImageCard
                 key={card.key}
                 href={card.href}
-                className={`group rounded-[28px] border p-6 sm:p-7 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-xl ${card.accentClass}`}
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <span
-                      className={`inline-flex rounded-full border px-3 py-1 text-[10px] font-black tracking-[0.18em] uppercase ${card.badgeClass}`}
-                    >
-                      지금 시작
-                    </span>
-                    <p className="mt-4 text-xs sm:text-sm font-black text-slate-500 tracking-wide">
-                      {card.subtitle}
-                    </p>
-                    <h3 className="mt-1 text-3xl sm:text-[34px] font-black tracking-tight text-slate-900">
-                      {card.title}
-                    </h3>
-                    <p className="mt-3 text-sm sm:text-base leading-relaxed text-slate-600 max-w-xl">
-                      {card.desc}
-                    </p>
+                title={card.title}
+                description={card.desc}
+                badge={card.subtitle}
+                ctaLabel={card.actionLabel}
+                imagePath={card.imageSrc}
+                overlayClassName={`bg-gradient-to-br ${card.accentClass}`}
+                footerMeta="실시간 훈련"
+                topLeft={
+                  <div className="inline-flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-[18px] border border-white/35 bg-white/85 text-slate-700 shadow-md backdrop-blur-md">
+                    <Icon className="h-5 w-5" />
                   </div>
-
-                  <div className="shrink-0 inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-white/70 bg-white text-slate-700 shadow-sm transition-transform duration-200 group-hover:scale-105">
-                    <Icon className="h-6 w-6" />
-                  </div>
-                </div>
-
-                <div className="mt-8 flex items-center justify-between gap-4 border-t border-slate-200/80 pt-4">
-                  <span className="inline-flex items-center gap-2 rounded-full bg-white/85 px-4 py-2 text-xs sm:text-sm font-black text-slate-700 shadow-sm">
-                    게임 시작하기
-                    <span className="transition-transform duration-200 group-hover:translate-x-1">
-                      →
-                    </span>
-                  </span>
-                  <span className="text-[11px] sm:text-xs font-bold text-slate-500">
-                    실시간 훈련
-                  </span>
-                </div>
-              </Link>
+                }
+              />
             );
           })}
         </section>

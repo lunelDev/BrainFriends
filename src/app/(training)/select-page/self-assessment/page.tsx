@@ -2,9 +2,11 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import SelectionHeroBanner from "@/components/training/SelectionHeroBanner";
+import SelectionImageCard from "@/components/training/SelectionImageCard";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { SessionManager } from "@/lib/kwab/SessionManager";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, MapPin } from "lucide-react";
 import {
   clearTrainingExitProgress,
   getTrainingExitProgress,
@@ -196,53 +198,26 @@ export default function SelectPage() {
       </div>
 
       <main className="flex-1 max-w-[1440px] mx-auto w-full px-4 sm:px-6 pt-6 sm:pt-8 lg:pt-10 pb-10 sm:pb-12 lg:pb-14 flex flex-col justify-center">
-        <section className="flex flex-col md:flex-row md:items-end justify-between gap-4 sm:gap-5 mb-5 sm:mb-6 lg:mb-8">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2 tracking-tight">
-              정기 자가진단 선택
-            </h1>
-            <p className="text-sm sm:text-base text-slate-500 font-medium">
-              정확한 상태 분석을 위해 6개월 주기 검진을 권고합니다.
-            </p>
-          </div>
-        </section>
+        <SelectionHeroBanner
+          badge="Self Assessment"
+          title="생활 공간을 기준으로 정기 자가진단을 시작해 보세요."
+          description="집, 병원, 카페, 은행, 공원, 마트처럼 익숙한 환경을 기준으로 언어 이해와 표현 능력을 점검할 수 있습니다. 이전 진행 기록이 있으면 이어서 진단도 가능합니다."
+          accentClassName="border-orange-100 from-orange-500 via-amber-500 to-slate-900"
+          icon={<MapPin className="w-3.5 h-3.5" />}
+        />
 
         <section className="mt-1 sm:mt-2 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
           {PLACES.map((p) => (
-            <button
+            <SelectionImageCard
               key={p.key}
               onClick={() => go(p.key)}
-              className="group relative w-full min-h-[220px] sm:min-h-0 aspect-[16/10] sm:aspect-[16/10] lg:aspect-[16/10] xl:aspect-[16/9] rounded-[24px] sm:rounded-[28px] overflow-hidden shadow-lg transition-all duration-500 hover:-translate-y-1 hover:shadow-slate-300/40"
-            >
-              {p.imagePath && (
-                <div
-                  className="absolute inset-0 bg-center bg-cover transition-transform duration-700 group-hover:scale-110"
-                  style={{ backgroundImage: `url(${p.imagePath})` }}
-                />
-              )}
-              <div className="absolute inset-0 bg-gradient-to-br from-slate-500/55 to-slate-800/70 opacity-55 group-hover:opacity-65 transition-opacity duration-500" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/5 to-transparent" />
-              <div className="relative h-full p-4 sm:p-5 flex flex-col justify-end items-start text-left z-10">
-                <span className="px-2.5 py-1 bg-white/15 backdrop-blur-md rounded-full text-[9px] font-black text-white uppercase tracking-widest mb-2 border border-white/20">
-                  Place
-                </span>
-                <h3 className="text-2xl sm:text-3xl md:text-4xl font-black text-white mb-2 drop-shadow-md leading-none">
-                  {p.label}
-                </h3>
-                <p className="text-white/90 font-medium text-xs sm:text-sm leading-relaxed mb-4 drop-shadow-sm">
-                  {p.desc}
-                </p>
-                <div className="w-full flex items-center justify-between gap-2 bg-white/95 px-4 py-2.5 rounded-xl shadow-md group-hover:bg-slate-50 transition-colors">
-                  <span className="text-xs font-black text-slate-900 truncate">
-                    이 장소로 시작
-                  </span>
-                  <div className="w-5 h-5 rounded-full bg-slate-900 flex items-center justify-center shrink-0">
-                    <ChevronRight className="w-3.5 h-3.5 text-white" />
-                  </div>
-                </div>
-              </div>
-              <div className="absolute inset-0 border-[3px] border-white/0 group-hover:border-white/35 rounded-[28px] transition-all duration-500 pointer-events-none" />
-            </button>
+              title={p.label}
+              description={p.desc}
+              badge="Place"
+              ctaLabel="이 장소로 시작"
+              imagePath={p.imagePath}
+              overlayClassName="bg-gradient-to-br from-slate-500/55 to-slate-800/70"
+            />
           ))}
         </section>
       </main>
