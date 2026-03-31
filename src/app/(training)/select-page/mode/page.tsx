@@ -6,6 +6,7 @@ import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { ChevronRight } from "lucide-react";
 
 const BRAIN_SING_ACCENT = "from-emerald-600/40 to-emerald-900/60";
+const GAME_MODE_ACCENT = "from-violet-600/40 to-indigo-900/60";
 
 const MODE_CARDS = [
   {
@@ -37,6 +38,16 @@ const MODE_CARDS = [
     imagePath: "/images/mode/sing-training.png",
     accentColor: BRAIN_SING_ACCENT,
     onSelect: "/select-page/sing-training",
+  },
+  {
+    key: "game-mode",
+    title: "게임 모드",
+    modeLabel: "Brain Games",
+    desc: "게임처럼 즐기면서\n집중력과 반응 훈련을 시작합니다.",
+    actionLabel: "게임 모드 열기",
+    imagePath: "/images/mode/game-training.png",
+    accentColor: GAME_MODE_ACCENT,
+    onSelect: "/select-page/game-mode",
   },
 ] as const;
 
@@ -90,15 +101,15 @@ export default function ModeSelectPage() {
               </span>
             </div>
           </div>
-        <div className="flex items-center justify-end gap-2 sm:gap-3 flex-wrap">
-          {isAdmin ? (
-            <button
-              onClick={() => router.push("/tools/admin-reports")}
-              className="h-8 sm:h-9 min-w-[132px] px-3 sm:px-4 rounded-full text-[11px] sm:text-xs font-black shadow-sm border bg-white text-slate-700 border-slate-200 hover:bg-slate-100 transition-all"
-            >
-              전체 사용자 리포트
-            </button>
-          ) : null}
+          <div className="flex items-center justify-end gap-2 sm:gap-3 flex-wrap">
+            {isAdmin ? (
+              <button
+                onClick={() => router.push("/tools/admin-reports")}
+                className="h-8 sm:h-9 min-w-[132px] px-3 sm:px-4 rounded-full text-[11px] sm:text-xs font-black shadow-sm border bg-white text-slate-700 border-slate-200 hover:bg-slate-100 transition-all"
+              >
+                전체 사용자 리포트
+              </button>
+            ) : null}
             <button
               onClick={logout}
               className="h-8 sm:h-9 min-w-[90px] sm:min-w-[98px] px-3 sm:px-4 rounded-full text-[11px] sm:text-xs font-black shadow-sm border bg-white text-slate-700 border-slate-200 hover:bg-slate-100 transition-all"
@@ -120,7 +131,7 @@ export default function ModeSelectPage() {
           </p>
         </div>
 
-        <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
+        <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5 lg:gap-6">
           {MODE_CARDS.map((card) => (
             <button
               key={card.key}

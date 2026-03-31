@@ -12,6 +12,7 @@ type LoginForm = {
 
 export default function LoginPage() {
   const router = useRouter();
+  const isDevelopment = process.env.NODE_ENV === "development";
   const [form, setForm] = useState<LoginForm>({
     loginId: "",
     password: "",
@@ -178,6 +179,26 @@ export default function LoginPage() {
     }
   };
 
+  const quickLoginAsAdmin = async () => {
+    setError("");
+    setNotice("");
+    setIsSubmitting(true);
+    try {
+      const response = await fetch("/api/auth/dev-login", {
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.patient) {
+        setError("개발용 admin 세션 생성에 실패했습니다.");
+        return;
+      }
+
+      routeAfterAuth(payload.patient);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (isCheckingSession) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#f4efe7] px-6">
@@ -272,6 +293,17 @@ export default function LoginPage() {
             >
               {isSubmitting ? "로그인 중..." : "로그인"}
             </button>
+
+            {isDevelopment ? (
+              <button
+                type="button"
+                onClick={quickLoginAsAdmin}
+                disabled={isSubmitting}
+                className="mt-3 inline-flex h-12 w-full items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-6 text-sm font-black text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-200"
+              >
+                {isSubmitting ? "세션 준비 중..." : "Admin 빠른 로그인"}
+              </button>
+            ) : null}
 
             <div className="mt-5 flex items-center justify-between gap-3 text-sm font-semibold text-slate-500">
               <Link href="/find-id" className="hover:text-slate-700">

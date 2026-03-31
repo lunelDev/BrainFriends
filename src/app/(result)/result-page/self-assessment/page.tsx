@@ -687,8 +687,8 @@ function ResultContent() {
 
       <div className="h-full min-h-screen overflow-y-auto bg-[#FFF7ED] text-[#0f172a] pb-12">
         {/* 상단바 */}
-        <header className="no-print h-16 px-4 sm:px-6 lg:px-[200px] border-b border-orange-100 flex items-center justify-between bg-white sticky top-0 z-40">
-          <div className="w-full flex items-center justify-between min-w-0">
+        <header className="no-print h-14 sm:h-16 px-4 sm:px-6 border-b border-orange-100 flex items-center justify-between bg-white sticky top-0 z-40">
+          <div className="w-full max-w-[1076px] mx-auto flex items-center justify-between min-w-0">
             <div className="flex items-center gap-3">
               <img
                 src="/images/logo/logo.png"

@@ -807,7 +807,7 @@ function ReportContent() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="h-16 px-6 border-b border-orange-100 flex items-center justify-between bg-white sticky top-0 z-40">
+      <header className="h-14 sm:h-16 px-4 sm:px-6 border-b border-orange-100 flex items-center justify-between bg-white sticky top-0 z-40">
         <div className="flex items-center gap-3">
           <img
             src="/images/logo/logo.png"

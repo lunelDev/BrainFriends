@@ -29,6 +29,7 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isReportRoute = pathname === "/report";
   const isProgramRoute = pathname.startsWith("/programs/");
+  const isLingoRoute = pathname.startsWith("/programs/lingo/");
   const cameraEnabledProgramRoutes = new Set([
     "/programs/step-2",
     "/programs/step-4",
@@ -38,6 +39,7 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
   const showLiveTrainingChrome =
     isProgramRoute &&
     !isReportRoute &&
+    !isLingoRoute &&
     cameraEnabledProgramRoutes.has(pathname);
   const {
     clinicalMetrics,
@@ -96,7 +98,7 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
   }, [updateRuntimeStatus]);
 
   useEffect(() => {
-    if (showLiveTrainingChrome) return;
+    if (showLiveTrainingChrome || isLingoRoute) return;
 
     stopAllAttachedMediaStreams();
 
@@ -136,6 +138,7 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
       message: "",
     });
   }, [
+    isLingoRoute,
     showLiveTrainingChrome,
     updateClinical,
     updateSidebar,
@@ -203,9 +206,9 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="training-print-root h-screen w-full bg-[#F3F4F6] overflow-hidden">
-      <div className="training-print-shell w-full h-screen bg-white flex flex-col overflow-hidden relative">
-        <div className="training-print-content flex-1 flex flex-col overflow-hidden bg-[#ffffff]">
+    <div className="training-print-root min-h-screen lg:h-screen w-full bg-[#F3F4F6] overflow-y-auto lg:overflow-hidden">
+      <div className="training-print-shell w-full min-h-screen lg:h-screen bg-white flex flex-col overflow-y-auto lg:overflow-hidden relative">
+        <div className="training-print-content flex-1 flex flex-col overflow-y-auto lg:overflow-hidden bg-[#ffffff]">
           {children}
         </div>
         <DeveloperKpiPanel />

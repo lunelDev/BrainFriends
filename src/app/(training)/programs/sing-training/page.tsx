@@ -1505,7 +1505,7 @@ function BrainSingPageContent() {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#f7faf8] text-slate-900">
+    <div className="flex min-h-screen lg:h-full lg:min-h-0 flex-col overflow-y-auto lg:overflow-hidden bg-[#f7faf8] text-slate-900">
       <header className="shrink-0 border-b border-emerald-100 bg-white/95 px-4 sm:px-6 py-3 backdrop-blur-md">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
@@ -1564,15 +1564,15 @@ function BrainSingPageContent() {
         </div>
       </header>
 
-      <main className="flex-1 min-h-0 overflow-hidden px-4 sm:px-6 py-4">
-        <div className="flex h-full min-h-0 items-center justify-center">
-          <section className="relative h-full w-full overflow-hidden rounded-[28px] border border-emerald-100 bg-white shadow-[0_10px_30px_rgba(16,185,129,0.05)]">
+      <main className="flex-1 overflow-y-auto lg:min-h-0 lg:overflow-hidden px-4 sm:px-6 py-4">
+        <div className="flex min-h-[calc(100svh-120px)] lg:h-full lg:min-h-0 items-center justify-center">
+          <section className="relative h-full w-full min-h-[calc(100svh-140px)] lg:min-h-0 overflow-hidden rounded-[28px] border border-emerald-100 bg-white shadow-[0_10px_30px_rgba(16,185,129,0.05)]">
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              className="absolute inset-0 h-full w-full object-contain scale-x-[-1] bg-black"
+              className="hidden lg:block absolute inset-0 h-full w-full object-contain scale-x-[-1] bg-black"
             />
 
             <div
@@ -1631,20 +1631,20 @@ function BrainSingPageContent() {
 
             {phase === "ready" && (
               <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-900/60 p-6 backdrop-blur-md">
-                <div className="flex w-full max-w-[760px] flex-col items-center gap-10 rounded-[36px] border border-white/25 bg-white/88 px-10 pt-18 pb-16 text-center shadow-[0_30px_80px_rgba(15,23,42,0.35)] backdrop-blur-md sm:gap-12 sm:px-16 sm:pt-22 sm:pb-18">
+                <div className="flex w-full max-w-[760px] flex-col items-center gap-6 sm:gap-10 lg:gap-12 rounded-[28px] sm:rounded-[36px] border border-white/25 bg-white/88 px-6 py-8 sm:px-10 sm:pt-18 sm:pb-16 lg:px-16 lg:pt-22 lg:pb-18 text-center shadow-[0_30px_80px_rgba(15,23,42,0.35)] backdrop-blur-md">
                   <div className="flex justify-center">
                     <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-black uppercase tracking-[0.24em] text-white shadow-[0_14px_28px_rgba(16,185,129,0.35)] sm:px-6 sm:py-3 sm:text-base">
                       <Music className="h-5 w-5" />
                       <span>Level 1</span>
                     </div>
                   </div>
-                  <div className="flex items-center justify-center gap-5">
-                    <Mic className="h-11 w-11 text-emerald-500 sm:h-12 sm:w-12" />
-                    <h2 className="text-5xl font-black tracking-tight text-slate-900 sm:text-6xl">
+                  <div className="flex items-center justify-center gap-3 sm:gap-5">
+                    <Mic className="h-8 w-8 sm:h-11 sm:w-11 lg:h-12 lg:w-12 text-emerald-500" />
+                    <h2 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-black tracking-tight text-slate-900">
                       {song}
                     </h2>
                   </div>
-                  <p className="max-w-[620px] text-2xl font-medium leading-relaxed text-slate-500 sm:text-[28px]">
+                  <p className="max-w-[620px] text-base sm:text-xl lg:text-2xl xl:text-[28px] font-medium leading-relaxed text-slate-500">
                     시작하기를 누르면 카운트다운 후
                     <br />
                     카메라와 가창 분석이 시작됩니다.
@@ -1652,7 +1652,7 @@ function BrainSingPageContent() {
                   <button
                     type="button"
                     onClick={() => void startCalibration()}
-                    className="inline-flex h-[72px] items-center justify-center gap-3 rounded-full bg-emerald-500 px-12 text-2xl font-black text-white shadow-[0_18px_38px_rgba(16,185,129,0.38)] transition-transform duration-200 hover:scale-105 hover:bg-emerald-400 sm:h-[84px] sm:px-14 sm:text-3xl"
+                    className="inline-flex h-12 sm:h-[72px] lg:h-[84px] items-center justify-center gap-3 rounded-full bg-emerald-500 px-8 sm:px-12 lg:px-14 text-base sm:text-2xl lg:text-3xl font-black text-white shadow-[0_18px_38px_rgba(16,185,129,0.38)] transition-transform duration-200 hover:scale-105 hover:bg-emerald-400"
                   >
                     <Camera className="h-7 w-7" />
                     얼굴 맞추기
