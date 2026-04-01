@@ -44,6 +44,7 @@ type LingoGameShellProps = {
   restartLabel?: string;
   statusLabel?: string;
   progressLabel?: string;
+  headerActions?: ReactNode;
 };
 
 export default function LingoGameShell({
@@ -55,6 +56,7 @@ export default function LingoGameShell({
   restartLabel = "단계 선택",
   statusLabel,
   progressLabel,
+  headerActions,
 }: LingoGameShellProps) {
   const router = useRouter();
   const handleHome = onBack ?? (() => router.push("/select-page/game-mode"));
@@ -85,6 +87,7 @@ export default function LingoGameShell({
           >
             {restartLabel}
           </button>
+          {headerActions}
           {statusLabel ? (
             <div className="px-3 py-1.5 rounded-full font-black text-[11px] transition-all border bg-violet-50 border-violet-200 text-violet-700">
               {statusLabel}
@@ -108,7 +111,7 @@ export default function LingoGameShell({
       </header>
 
       <section className="flex-1 overflow-y-auto bg-[#f8fafc]">
-        <div className="w-full max-w-[1680px] mx-auto px-4 sm:px-6 py-4 sm:py-5">
+        <div className="w-full max-w-[1920px] mx-auto px-4 sm:px-6 py-4 sm:py-5">
           {children}
         </div>
       </section>

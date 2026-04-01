@@ -1361,6 +1361,8 @@ function Step5Content() {
             videoRef={videoRef}
             canvasRef={canvasRef}
             isFaceReady={sidebarMetrics.faceDetected}
+            tone={isRehabMode ? "rehab" : "assessment"}
+            hideOnMobile
             metrics={{
               symmetryScore: (sidebarMetrics.facialSymmetry || 0) * 100,
               openingRatio: (sidebarMetrics.mouthOpening || 0) * 100,

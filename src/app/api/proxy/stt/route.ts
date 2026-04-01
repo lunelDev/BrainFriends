@@ -30,7 +30,7 @@ export async function POST(req: Request) {
       });
     }
 
-    const formData = await req.formData();
+    const incoming = await req.formData();
     const apiKey = process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
@@ -40,6 +40,27 @@ export async function POST(req: Request) {
       });
     }
 
+    const file = incoming.get("audio") ?? incoming.get("file");
+    if (!(file instanceof File)) {
+      return NextResponse.json(makeFallback("missing_audio_file"), {
+        status: 400,
+      });
+    }
+
+    const outgoing = new FormData();
+    outgoing.append("file", file, file.name || "recording.webm");
+    outgoing.append("model", "whisper-1");
+
+    const language = String(incoming.get("language") || "ko").trim();
+    if (language) {
+      outgoing.append("language", language);
+    }
+
+    const prompt = String(incoming.get("targetText") || "").trim();
+    if (prompt) {
+      outgoing.append("prompt", prompt);
+    }
+
     const response = await fetch(
       "https://api.openai.com/v1/audio/transcriptions",
       {
@@ -47,7 +68,7 @@ export async function POST(req: Request) {
         headers: {
           Authorization: `Bearer ${apiKey}`,
         },
-        body: formData,
+        body: outgoing,
       },
     );
 

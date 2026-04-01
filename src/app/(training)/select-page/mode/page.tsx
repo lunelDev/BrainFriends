@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Lock } from "lucide-react";
 
 const BRAIN_SING_ACCENT = "from-emerald-600/40 to-emerald-900/60";
 const GAME_MODE_ACCENT = "from-violet-600/40 to-indigo-900/60";
@@ -53,7 +53,7 @@ const MODE_CARDS = [
 
 export default function ModeSelectPage() {
   const router = useRouter();
-  const { patient, ageGroup } = useTrainingSession();
+  const { patient, ageGroup, isLoading } = useTrainingSession();
   const [isMounted, setIsMounted] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const isAdmin = patient?.userRole === "admin";
@@ -132,47 +132,93 @@ export default function ModeSelectPage() {
         </div>
 
         <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5 lg:gap-6">
-          {MODE_CARDS.map((card) => (
-            <button
-              key={card.key}
-              onClick={() => router.push(card.onSelect)}
-              className="group relative w-full min-h-[220px] sm:min-h-[260px] aspect-[16/10] sm:aspect-[4/3] xl:aspect-square rounded-[24px] sm:rounded-[28px] overflow-hidden shadow-lg transition-all duration-500 hover:-translate-y-1 hover:shadow-slate-300/40"
-            >
-              <div
-                className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110"
-                style={{ backgroundImage: `url(${card.imagePath})` }}
-              />
-              <div
-                className={`absolute inset-0 bg-gradient-to-br ${card.accentColor} opacity-50 group-hover:opacity-60 transition-opacity duration-500`}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/5 to-transparent" />
+          {MODE_CARDS.map((card) => {
+            const isGameModeCard = card.key === "game-mode";
+            const isBlocked = isGameModeCard && !isLoading && !isAdmin;
 
-              <div className="relative h-full p-4 sm:p-5 flex flex-col justify-end items-start text-left z-10">
-                <span className="px-2.5 py-1 bg-white/15 backdrop-blur-md rounded-full text-[9px] font-black text-white uppercase tracking-widest mb-2 border border-white/20">
-                  {card.modeLabel}
-                </span>
+            return (
+              <button
+                key={card.key}
+                type="button"
+                onClick={() => {
+                  if (isBlocked) return;
+                  router.push(card.onSelect);
+                }}
+                disabled={isBlocked}
+                aria-disabled={isBlocked}
+                className={`group relative w-full min-h-[220px] sm:min-h-[260px] aspect-[16/10] sm:aspect-[4/3] xl:aspect-square rounded-[24px] sm:rounded-[28px] overflow-hidden shadow-lg transition-all duration-500 ${
+                  isBlocked
+                    ? "cursor-not-allowed opacity-95"
+                    : "hover:-translate-y-1 hover:shadow-slate-300/40"
+                }`}
+              >
+                <div
+                  className={`absolute inset-0 bg-cover bg-center transition-transform duration-700 ${
+                    isBlocked ? "scale-100 grayscale-[0.2]" : "group-hover:scale-110"
+                  }`}
+                  style={{ backgroundImage: `url(${card.imagePath})` }}
+                />
+                <div
+                  className={`absolute inset-0 bg-gradient-to-br ${card.accentColor} transition-opacity duration-500 ${
+                    isBlocked ? "opacity-35" : "opacity-50 group-hover:opacity-60"
+                  }`}
+                />
+                <div
+                  className={`absolute inset-0 ${
+                    isBlocked
+                      ? "bg-gradient-to-t from-slate-950/80 via-slate-900/30 to-slate-900/20"
+                      : "bg-gradient-to-t from-black/70 via-black/5 to-transparent"
+                  }`}
+                />
 
-                <h3 className="text-2xl sm:text-3xl md:text-4xl font-black text-white mb-2 drop-shadow-md leading-none">
-                  {card.title}
-                </h3>
+                {isBlocked ? (
+                  <div className="absolute right-4 top-4 z-20 inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-slate-950/70 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-white backdrop-blur-md">
+                    <Lock className="h-3.5 w-3.5" />
+                    관리자 전용
+                  </div>
+                ) : null}
 
-                <p className="text-white/90 font-medium text-xs sm:text-sm leading-relaxed mb-4 drop-shadow-sm whitespace-pre-line">
-                  {card.desc}
-                </p>
-
-                <div className="w-full flex items-center justify-between gap-2 bg-white/95 px-4 py-2.5 rounded-xl shadow-md group-hover:bg-slate-50 transition-colors">
-                  <span className="text-xs font-black text-slate-900 truncate">
-                    {card.actionLabel}
+                <div className="relative h-full p-4 sm:p-5 flex flex-col justify-end items-start text-left z-10">
+                  <span className="px-2.5 py-1 bg-white/15 backdrop-blur-md rounded-full text-[9px] font-black text-white uppercase tracking-widest mb-2 border border-white/20">
+                    {card.modeLabel}
                   </span>
-                  <div className="w-5 h-5 rounded-full bg-slate-900 flex items-center justify-center shrink-0">
-                    <ChevronRight className="w-3.5 h-3.5 text-white" />
+
+                  <h3 className="text-2xl sm:text-3xl md:text-4xl font-black text-white mb-2 drop-shadow-md leading-none">
+                    {card.title}
+                  </h3>
+
+                  <p className="text-white/90 font-medium text-xs sm:text-sm leading-relaxed mb-4 drop-shadow-sm whitespace-pre-line">
+                    {card.desc}
+                  </p>
+
+                  <div
+                    className={`w-full flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl shadow-md transition-colors ${
+                      isBlocked
+                        ? "bg-slate-200/95 text-slate-500"
+                        : "bg-white/95 group-hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className={`text-xs font-black truncate ${isBlocked ? "text-slate-500" : "text-slate-900"}`}>
+                      {isBlocked ? "관리자 계정에서만 이용 가능" : card.actionLabel}
+                    </span>
+                    <div
+                      className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
+                        isBlocked ? "bg-slate-400" : "bg-slate-900"
+                      }`}
+                    >
+                      {isBlocked ? (
+                        <Lock className="w-3 h-3 text-white" />
+                      ) : (
+                        <ChevronRight className="w-3.5 h-3.5 text-white" />
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="absolute inset-0 border-[3px] border-white/0 group-hover:border-white/35 rounded-[28px] transition-all duration-500 pointer-events-none" />
-            </button>
-          ))}
+                <div className="absolute inset-0 border-[3px] border-white/0 group-hover:border-white/35 rounded-[28px] transition-all duration-500 pointer-events-none" />
+              </button>
+            );
+          })}
         </section>
       </main>
     </div>

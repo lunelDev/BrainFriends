@@ -1,6 +1,7 @@
 ﻿"use client";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTraining } from "../../app/(training)/TrainingContext";
+import MonitoringPanelShell from "./MonitoringPanelShell";
 
 type GuideSeverity = "idle" | "normal" | "caution" | "warning";
 
@@ -114,6 +115,8 @@ export const AnalysisSidebar = ({
   videoRef,
   canvasRef,
   isFaceReady,
+  tone = "rehab",
+  hideOnMobile = false,
   metrics,
   showTracking,
   onToggleTracking,
@@ -719,7 +722,15 @@ export const AnalysisSidebar = ({
   ]);
 
   return (
-    <div className="w-full flex flex-col gap-3 lg:h-full overflow-visible lg:overflow-hidden">
+    <div
+      className={`${hideOnMobile ? "hidden lg:flex" : "flex"} w-full flex-col gap-3 lg:h-full overflow-visible lg:overflow-hidden`}
+    >
+      <MonitoringPanelShell
+        title="실시간 상태판"
+        tone={tone}
+        className="flex-1 min-h-0"
+        bodyClassName="min-h-0 overflow-y-auto"
+      >
       {/* 카메라 프리뷰 섹션 */}
       {!hidePreview ? (
         <div
@@ -976,6 +987,7 @@ export const AnalysisSidebar = ({
         </div>
         </div>
       ) : null}
+      </MonitoringPanelShell>
     </div>
   );
 };

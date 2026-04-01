@@ -1,6 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
+import { useRouter } from "next/navigation";
+import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import LingoGameShell from "@/components/lingo/LingoGameShell";
 import {
   MEMORY_CARD_WORDS,
@@ -9,9 +18,9 @@ import {
   type MemoryDifficultyId,
 } from "@/data/memoryGameData";
 import { useAudioAnalyzer } from "@/lib/audio/useAudioAnalyzer";
-import {
-  createPreferredCameraStream,
-} from "@/lib/media/cameraPreferences";
+import { createPreferredCameraStream } from "@/lib/media/cameraPreferences";
+import MonitoringPanelShell from "@/components/training/MonitoringPanelShell";
+import LingoResultModalShell from "@/components/lingo/LingoResultModalShell";
 
 function shuffle<T>(items: T[]) {
   return [...items].sort(() => Math.random() - 0.5);
@@ -59,9 +68,176 @@ function formatDuration(ms: number) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+function getRoundTimeLimit(difficulty: MemoryDifficultyId) {
+  switch (difficulty) {
+    case "easy":
+    case "normal":
+    case "hard":
+    default:
+      return 30;
+  }
+}
+
+function SelectionModal({
+  difficulty,
+  onSelect,
+  onStart,
+}: {
+  difficulty: MemoryDifficultyId;
+  onSelect: (id: MemoryDifficultyId) => void;
+  onStart: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 p-6 backdrop-blur-md">
+      <div className="relative w-full max-w-[540px] overflow-hidden rounded-[56px] border-[6px] border-white bg-white shadow-[0_32px_80px_rgba(0,0,0,0.4)] ring-1 ring-slate-200">
+        <div className="border-b-2 border-slate-100 bg-slate-50/80 px-8 pb-8 pt-12 text-center">
+          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-[32px] bg-violet-600 text-white shadow-xl ring-4 ring-violet-50">
+            <span className="text-4xl">🧠</span>
+          </div>
+          <span className="mb-2 block text-[12px] font-black uppercase tracking-[0.4em] text-violet-500">
+            Cognitive Logic Protocol
+          </span>
+          <h3 className="text-4xl font-black tracking-tighter text-slate-900">
+            말로 분류하기
+          </h3>
+          <p className="mt-3 break-keep text-sm font-bold text-slate-400">
+            제시된 그림을 보고 알맞은 분류(과일, 동물, 탈것)를 말해 보세요.
+          </p>
+        </div>
+
+        <div className="bg-white p-8">
+          <div className="mb-10 grid grid-cols-3 gap-4">
+            {MEMORY_DIFFICULTIES.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => onSelect(item.id)}
+                className={`group relative flex h-28 flex-col items-center justify-center gap-1 rounded-[32px] border-2 transition-all ${
+                  difficulty === item.id
+                    ? "scale-105 border-violet-600 bg-violet-600 text-white shadow-lg"
+                    : "border-slate-300 bg-slate-50 text-slate-500 hover:border-violet-300 hover:bg-white"
+                }`}
+              >
+                <span className="text-[10px] font-black uppercase tracking-widest opacity-60">
+                  Level
+                </span>
+                <strong className="text-2xl font-black">{item.label}</strong>
+                <span className="text-[11px] font-bold opacity-70">
+                  {item.cardsPerCategory * 3}장
+                </span>
+                <span className="text-[10px] font-black opacity-70">
+                  {getRoundTimeLimit(item.id)}초
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={onStart}
+            className="flex h-20 w-full items-center justify-center gap-3 rounded-[28px] bg-slate-900 text-xl font-black text-white shadow-2xl shadow-slate-200 transition-transform active:scale-95"
+          >
+            훈련 시작하기
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+              aria-hidden="true"
+            >
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResultModal({
+  elapsedTime,
+  accuracy,
+  solvedCount,
+  totalCount,
+  onRestart,
+  onHome,
+}: {
+  elapsedTime: string;
+  accuracy: number;
+  solvedCount: number;
+  totalCount: number;
+  onRestart: () => void;
+  onHome?: () => void;
+}) {
+  const router = useRouter();
+  const successRate =
+    totalCount > 0 ? Math.round((solvedCount / totalCount) * 100) : 0;
+  const handleHome = onHome ?? (() => router.push("/select-page/game-mode"));
+
+  return (
+    <LingoResultModalShell
+      icon="🏆"
+      badgeText="훈련 완료"
+      title="훈련 완료 리포트"
+      subtitle="분류 훈련을 성공적으로 마쳤습니다."
+      headerToneClass="bg-violet-50"
+      iconToneClass="bg-gradient-to-br from-violet-500 to-indigo-600"
+      badgeToneClass="text-violet-600"
+      primaryLabel="단계 다시 선택하기"
+      onPrimary={onRestart}
+      secondaryLabel="메인 화면으로 돌아가기"
+      onSecondary={handleHome}
+    >
+      <div className="mb-6 grid grid-cols-2 gap-3">
+        <div className="rounded-[28px] border border-slate-100 bg-slate-50 p-5 text-center">
+          <span className="mb-2 block text-[11px] font-black text-slate-400">
+            성공률
+          </span>
+          <strong className="text-4xl font-black text-violet-600">
+            {successRate}%
+          </strong>
+        </div>
+        <div className="rounded-[28px] border border-slate-100 bg-slate-50 p-5 text-center">
+          <span className="mb-2 block text-[11px] font-black text-slate-400">
+            정확도
+          </span>
+          <strong className="text-4xl font-black text-slate-900">
+            {accuracy}%
+          </strong>
+        </div>
+      </div>
+
+      <div className="mb-6 rounded-[28px] border border-slate-100 bg-slate-50 p-5 text-center">
+        <span className="mb-2 block text-[11px] font-black text-slate-400">
+          걸린 시간
+        </span>
+        <strong className="text-3xl font-black text-slate-900">
+          {elapsedTime}
+        </strong>
+      </div>
+
+      <div className="mb-6 flex h-12 w-full overflow-hidden rounded-2xl border-4 border-slate-50">
+        <div
+          className="flex items-center justify-center bg-violet-500 text-xs font-black text-white"
+          style={{ width: `${successRate}%` }}
+        >
+          성공 {solvedCount}
+        </div>
+        <div
+          className="flex items-center justify-center bg-slate-200 text-xs font-black text-slate-500"
+          style={{ width: `${100 - successRate}%` }}
+        >
+          남음 {Math.max(totalCount - solvedCount, 0)}
+        </div>
+      </div>
+    </LingoResultModalShell>
+  );
+}
+
 export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   const {
     volume,
+    isMicReady,
     error: micError,
     start: startAudioMonitor,
     stop: stopAudioMonitor,
@@ -100,6 +276,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   const [feedbackState, setFeedbackState] = useState<
     "idle" | "success" | "fail"
   >("idle");
+  const [timeLeft, setTimeLeft] = useState(getRoundTimeLimit("normal"));
 
   const recognitionRef = useRef<any>(null);
   const keepListeningRef = useRef(false);
@@ -143,6 +320,11 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   useEffect(() => {
     handledTargetRef.current = currentCard?.word ?? null;
   }, [currentCard?.word]);
+
+  useEffect(() => {
+    if (showDifficultyModal || !currentCard) return;
+    setTimeLeft(getRoundTimeLimit(difficulty));
+  }, [currentCard, difficulty, showDifficultyModal]);
 
   const stopCamera = useCallback(() => {
     if (cameraStreamRef.current) {
@@ -242,6 +424,29 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     }, 520);
   }
 
+  const handleRoundTimeout = useCallback(() => {
+    if (!currentCard) return;
+    if (handledTargetRef.current === `done-${currentCard.word}`) return;
+
+    handledTargetRef.current = `done-${currentCard.word}`;
+    setAttemptCount((value) => value + 1);
+    setWrongCount((value) => value + 1);
+    setScore((value) => Math.max(0, value - 2));
+    setWrongByCategory((value) => ({
+      ...value,
+      [currentCard.category]: (value[currentCard.category] ?? 0) + 1,
+    }));
+    setHeardText("");
+    setMessage("시간 초과예요. 다음 그림으로 넘어갑니다.");
+    triggerFeedback("fail");
+
+    setCards((current) => {
+      const next = [...current];
+      chooseNextTarget(next, currentCard.word);
+      return next;
+    });
+  }, [currentCard]);
+
   function handleSpeechResult(transcript: string) {
     if (!currentCard || handledTargetRef.current === `done-${currentCard.word}`)
       return;
@@ -291,6 +496,24 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     handleSpeechResult(transcript);
   }
 
+  useEffect(() => {
+    if (showDifficultyModal || !currentCard) return;
+
+    const timer = window.setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          window.setTimeout(() => {
+            handleRoundTimeout();
+          }, 0);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [currentCard, handleRoundTimeout, showDifficultyModal]);
+
   const beginContinuousListening = useCallback(() => {
     if (!supported || recognitionRef.current || !currentCard) return;
 
@@ -302,7 +525,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
 
     const recognition = new Recognition();
     recognition.lang = "ko-KR";
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.maxAlternatives = 3;
     recognition.continuous = true;
 
@@ -313,19 +536,33 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     };
 
     recognition.onresult = (event: any) => {
-      const result = event.results?.[event.resultIndex];
-      if (!result?.isFinal) return;
-      const transcript = result[0]?.transcript?.trim() ?? "";
-      if (!transcript) return;
-      handleSpeechResult(transcript);
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const result = event.results?.[i];
+        const transcript = result?.[0]?.transcript?.trim() ?? "";
+        if (!transcript) continue;
+
+        setHeardText(transcript);
+
+        if (parseCategory(transcript)) {
+          handleSpeechResult(transcript);
+          return;
+        }
+
+        if (result?.isFinal) {
+          handleSpeechResult(transcript);
+          return;
+        }
+      }
     };
 
     recognition.onend = () => {
-      setIsListening(false);
       recognitionRef.current = null;
       if (keepListeningRef.current && currentCard) {
         window.setTimeout(() => beginContinuousListening(), 150);
+        return;
       }
+      setIsListening(false);
+      setMicEnabled(false);
     };
 
     recognition.onerror = () => {
@@ -339,7 +576,12 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   async function startListening() {
     if (micEnabled || !currentCard) return;
     keepListeningRef.current = true;
-    await startAudioMonitor();
+    const micStarted = await startAudioMonitor();
+    if (!micStarted) {
+      keepListeningRef.current = false;
+      setMessage("마이크를 사용할 수 없어요. 권한을 확인해 주세요.");
+      return;
+    }
     await startCamera();
     beginContinuousListening();
   }
@@ -377,6 +619,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     setSessionFinishedAt(null);
     setWrongByCategory({ fruit: 0, animal: 0, vehicle: 0 });
     setFeedbackState("idle");
+    setTimeLeft(getRoundTimeLimit(nextDifficulty));
   }
 
   async function startGameForDifficulty() {
@@ -395,9 +638,15 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     setSessionFinishedAt(null);
     setWrongByCategory({ fruit: 0, animal: 0, vehicle: 0 });
     setFeedbackState("idle");
+    setTimeLeft(getRoundTimeLimit(difficulty));
     setShowDifficultyModal(false);
     keepListeningRef.current = true;
-    await startAudioMonitor();
+    const micStarted = await startAudioMonitor();
+    if (!micStarted) {
+      keepListeningRef.current = false;
+      setMessage("마이크를 사용할 수 없어요. 권한을 확인해 주세요.");
+      return;
+    }
     await startCamera();
     beginContinuousListening();
   }
@@ -410,12 +659,12 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
         prev.map((_, index) => {
           const wave = 0.55 + Math.sin(Date.now() / 180 + index * 0.6) * 0.22;
           const variance = 0.75 + (index % 5) * 0.08;
-          const next = micEnabled ? volume * wave * variance : 8 + index * 1.8;
+          const next = isMicReady && micEnabled ? volume * wave * variance : 8 + index * 1.8;
           return Math.max(8, Math.min(100, Math.round(next)));
         }),
       );
 
-      if (!micEnabled) {
+      if (!isMicReady || !micEnabled) {
         setFaceGuideScore(0);
         return;
       }
@@ -429,9 +678,14 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     }, 90);
 
     return () => window.clearInterval(tick);
-  }, [cameraReady, micEnabled, volume]);
+  }, [cameraReady, isMicReady, micEnabled, volume]);
 
   const solvedRatio = Math.round((solvedCount / cards.length) * 100);
+  const roundTimeLimit = getRoundTimeLimit(difficulty);
+  const timeRatio = Math.max(
+    0,
+    Math.min(100, Math.round((timeLeft / roundTimeLimit) * 100)),
+  );
   const accuracy =
     attemptCount > 0 ? Math.round((solvedCount / attemptCount) * 100) : 0;
   const showReport = !showDifficultyModal && !currentCard;
@@ -453,6 +707,11 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     if (cards.length === 12) return { rows: 3, columns: 4 };
     return { rows: 2, columns: Math.ceil(cards.length / 2) };
   })();
+  const isLocalDebug =
+    (typeof window !== "undefined" &&
+      (window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1")) ||
+    process.env.NEXT_PUBLIC_DEV_MODE === "true";
 
   return (
     <LingoGameShell
@@ -460,347 +719,392 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
       title="말로 열기"
       onRestart={restart}
       onBack={onBack}
-      statusLabel={micEnabled ? "LISTENING..." : "READY"}
+      statusLabel={isMicReady && micEnabled ? "LISTENING..." : "READY"}
       progressLabel={`${solvedCount} / ${cards.length}`}
+      headerActions={
+        isLocalDebug ? (
+          <>
+            {[
+              { label: "과일", transcript: "과일" },
+              { label: "동물", transcript: "동물" },
+              { label: "탈것", transcript: "탈것" },
+            ].map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${trainingButtonStyles.slateSoft}`}
+                disabled={!currentCard || showDifficultyModal}
+                onClick={() => runSpeechTestInput(item.transcript)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </>
+        ) : null
+      }
     >
-      <div className="lingo-game-layout">
-        <aside className="vt-left lingo-side-stack">
-            <div className="vt-glass vt-monitor-card">
-              <div className="vt-panel-title">
-                <span className="vt-panel-icon">📹</span>
-                <strong>멀티모달 모니터링</strong>
-              </div>
-
-              <div className="vt-camera-frame">
-                <video
-                  ref={videoRef}
-                  className="vt-camera-video"
-                  autoPlay
-                  muted
-                  playsInline
-                  style={{ display: cameraReady ? "block" : "none" }}
-                />
-                {!cameraReady ? (
-                  <div className="vt-camera-placeholder">
-                    <span>카메라 대기 중</span>
-                    <p>
-                      {cameraError ||
-                        "마이크를 켜면 카메라 프리뷰를 연결합니다."}
-                    </p>
-                  </div>
-                ) : null}
-                <div className="vt-face-guide" />
-                <div className="vt-camera-status">
-                  <div className="vt-camera-row">
-                    <span>카메라 상태</span>
-                    <strong>{cameraReady ? "연결됨" : "대기 중"}</strong>
-                  </div>
-                  <div className="vt-face-track">
-                    <div
-                      className="vt-face-fill"
-                      style={{ width: `${cameraReady ? 100 : 28}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="vt-audio-card">
-                <span className="vt-audio-label">음성 활성도</span>
-                <div className="vt-audio-bars">
-                  {audioBars.map((bar, index) => (
-                    <span
-                      key={index}
-                      className="vt-audio-bar"
-                      style={{ height: `${bar}%` }}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div className="vt-glass vt-test-card">
-                <div className="vt-panel-title">
-                  <span className="vt-panel-icon">🧪</span>
-                  <strong>STT 테스트</strong>
-                </div>
-                <div className="vt-test-grid">
-                  {[
-                    { label: "과일", transcript: "과일" },
-                    { label: "동물", transcript: "동물" },
-                    { label: "탈것", transcript: "탈것" },
-                    { label: "오인식", transcript: "모르겠어요" },
-                  ].map((item) => (
-                    <button
-                      key={item.label}
-                      type="button"
-                      className="vt-test-btn"
-                      disabled={!currentCard || showDifficultyModal}
-                      onClick={() => runSpeechTestInput(item.transcript)}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-        </aside>
-
+      <div className="vt-layout vt-layout-playing tetris-layout-no-left">
         <section className="vt-center">
-            <div className="vt-board-shell memory-board-shell">
-              <div className="vt-canvas-wrap memory-dashboard-stage">
-                {currentCard ? (
-                  <div className="memory-category-panel">
-                    <div className="memory-category-stage memory-category-stage-inside">
-                      {[
-                        {
-                          id: "fruit",
-                          label: "과일",
-                          emoji: "🍎",
-                          color: "#f59e0b",
-                        },
-                        {
-                          id: "animal",
-                          label: "동물",
-                          emoji: "🐶",
-                          color: "#34d399",
-                        },
-                        {
-                          id: "vehicle",
-                          label: "탈것",
-                          emoji: "🚗",
-                          color: "#60a5fa",
-                        },
-                      ].map((category) => (
+          <div className="tetris-content-layout">
+            <div className="vt-board-shell tetris-board-shell">
+              <div className="vt-canvas-wrap">
+                <div className="tetris-board-card-layout has-status">
+                  <div className="tetris-game-panel memory-game-panel">
+                    <div className="tetris-canvas-stage memory-canvas-stage">
+                      {currentCard ? (
                         <div
-                          key={category.id}
-                          className="memory-category-tile"
-                          style={
-                            {
-                              "--memory-color": category.color,
-                            } as React.CSSProperties
-                          }
+                          className={`memory-main-card relative w-full max-w-none overflow-hidden rounded-[44px] border-[6px] bg-white p-6 shadow-2xl transition-all duration-500 sm:rounded-[52px] sm:p-8 ${
+                            feedbackState === "success"
+                              ? "scale-[1.03] border-emerald-400 shadow-emerald-100"
+                              : feedbackState === "fail"
+                                ? "border-rose-400 shadow-rose-100"
+                                : "border-white"
+                          }`}
                         >
-                          <span
-                            className="memory-category-emoji"
-                            aria-hidden="true"
-                          >
-                            {category.emoji}
-                          </span>
-                          <div className="memory-category-text">
-                            <span className="memory-category-label">
-                              {category.label}
-                            </span>
+                          <div className="mb-6 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <span className="rounded-full bg-violet-600 px-4 py-1.5 text-[11px] font-black uppercase tracking-widest text-white shadow-lg shadow-violet-100">
+                                Visual Cognitive
+                              </span>
+                              <span className="text-sm font-black text-slate-400">
+                                Level {difficulty.toUpperCase()}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div className="rounded-full bg-slate-50 px-4 py-1.5 ring-1 ring-slate-100">
+                                <span className="text-[10px] font-black uppercase tracking-tighter text-slate-500">
+                                  제한 시간
+                                </span>
+                                <strong className="ml-2 text-sm font-black text-violet-600">
+                                  {timeLeft}s
+                                </strong>
+                              </div>
+                              <div className="flex items-center gap-2 rounded-full bg-slate-50 px-4 py-1.5 ring-1 ring-slate-100">
+                                <div
+                                  className={`h-2 w-2 rounded-full ${
+                                  isMicReady && micEnabled
+                                    ? "animate-pulse bg-emerald-500 shadow-[0_0_8px_#10b981]"
+                                    : "bg-slate-300"
+                                }`}
+                              />
+                              <span className="text-[10px] font-black uppercase tracking-tighter text-slate-500">
+                                {isMicReady && micEnabled ? "Mic Active" : "Mic Standby"}
+                              </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mb-6 rounded-full bg-slate-100 p-1 shadow-inner">
+                            <div className="mb-2 flex items-center justify-between px-2 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                              <span>Round Timer</span>
+                              <span className={timeLeft <= 2 ? "text-rose-500" : "text-violet-600"}>
+                                {timeLeft}s
+                              </span>
+                            </div>
+                            <div className="h-2.5 w-full overflow-hidden rounded-full bg-white">
+                              <div
+                                className={`h-full transition-all duration-1000 ${
+                                  timeLeft <= 2 ? "bg-rose-500" : "bg-violet-500"
+                                }`}
+                                style={{ width: `${timeRatio}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          {feedbackState !== "idle" ? (
+                            <div
+                              className={`pointer-events-none absolute right-6 top-28 rounded-full px-4 py-2 text-sm font-black shadow-lg sm:right-8 ${
+                                feedbackState === "success"
+                                  ? "bg-emerald-500 text-white shadow-emerald-100"
+                                  : "bg-rose-500 text-white shadow-rose-100"
+                              }`}
+                            >
+                              {feedbackState === "success"
+                                ? "정답! 다음 카드로 이동"
+                                : "오답 또는 시간 초과"}
+                            </div>
+                          ) : null}
+
+                          <div className="grid items-stretch gap-6 lg:grid-cols-[1fr_280px] lg:gap-8">
+                            <div className="flex min-w-0 flex-col items-center justify-center text-center">
+                              <div className="mb-5 w-full rounded-[28px] border border-slate-100 bg-slate-50/80 px-5 py-4 sm:px-6 sm:py-5">
+                                <div className="mb-3 text-sm font-black uppercase tracking-[0.24em] text-slate-500 sm:text-[15px]">
+                                  Speak One Category
+                                </div>
+                                <div className="flex items-center justify-center gap-2 sm:gap-3">
+                                  {[
+                                    {
+                                      label: "과일",
+                                      emoji: "🍎",
+                                      color:
+                                        "bg-amber-100 text-amber-600 border-amber-200",
+                                    },
+                                    {
+                                      label: "동물",
+                                      emoji: "🐶",
+                                      color:
+                                        "bg-emerald-100 text-emerald-600 border-emerald-200",
+                                    },
+                                    {
+                                      label: "탈것",
+                                      emoji: "🚗",
+                                      color:
+                                        "bg-blue-100 text-blue-600 border-blue-200",
+                                    },
+                                  ].map((cat) => (
+                                    <div
+                                      key={cat.label}
+                                      className={`flex shrink-0 items-center gap-2 rounded-full border-2 px-4 py-2.5 text-sm font-black shadow-sm sm:px-6 sm:py-3 sm:text-base ${cat.color}`}
+                                    >
+                                      <span>{cat.emoji}</span>
+                                      {cat.label}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div
+                                className={`mb-5 flex w-full items-center gap-3 rounded-[24px] border px-5 py-4 text-left shadow-sm transition-all ${
+                                  micEnabled
+                                    ? "border-violet-200 bg-violet-50/80 shadow-violet-100"
+                                    : "border-slate-200 bg-slate-50"
+                                }`}
+                              >
+                                <span
+                                  className={`h-3 w-3 shrink-0 rounded-full ${
+                                    micEnabled
+                                      ? "animate-pulse bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.45)]"
+                                      : "bg-slate-300"
+                                  }`}
+                                />
+                                <div className="min-w-0">
+                                  <div
+                                    className={`text-xs font-black uppercase tracking-[0.18em] ${
+                                      micEnabled
+                                        ? "text-violet-600"
+                                        : "text-slate-400"
+                                    }`}
+                                  >
+                                    {micEnabled ? "자동 듣기 활성화" : "듣기 대기"}
+                                  </div>
+                                  <p
+                                    className={`mt-1 text-sm font-bold ${
+                                      micEnabled
+                                        ? "text-slate-700"
+                                        : "text-slate-500"
+                                    }`}
+                                  >
+                                    {micEnabled
+                                      ? "지금 과일, 동물, 탈것 중 하나를 말하세요."
+                                      : "마이크 연결 후 자동으로 듣기를 시작합니다."}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="group relative mb-6 flex aspect-square w-56 items-center justify-center rounded-[40px] border-2 border-slate-50 bg-slate-50 shadow-inner sm:w-64 sm:rounded-[48px]">
+                                <div className="absolute inset-0 rounded-[48px] bg-gradient-to-b from-white/50 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+                                <span className="relative z-10 select-none text-[150px] drop-shadow-2xl">
+                                  {currentCard.visual}
+                                </span>
+                              </div>
+                              <h2 className="mb-2 text-3xl font-black tracking-tighter text-slate-900 sm:text-4xl">
+                                알맞은 분류를 말해보세요
+                              </h2>
+                              <p className="text-base font-bold text-slate-400 sm:text-lg">
+                                그림을 보고 과일, 동물, 탈것 중 하나를 고르세요.
+                              </p>
+                              <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
+                                <span
+                                  className={`h-2.5 w-2.5 rounded-full ${
+                                  isMicReady && micEnabled
+                                    ? "animate-pulse bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.45)]"
+                                    : "bg-slate-300"
+                                  }`}
+                                />
+                                <span
+                                  className={`text-xs font-black uppercase tracking-[0.18em] ${
+                                    isMicReady && micEnabled ? "text-rose-500" : "text-slate-400"
+                                  }`}
+                                >
+                                  {isMicReady && micEnabled ? "녹음 중" : "녹음 대기"}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex h-full min-h-0 flex-col gap-4">
+                              <div
+                                className={`rounded-[24px] px-5 py-4 text-left shadow-xl transition-all sm:rounded-[28px] sm:px-6 sm:py-5 ${
+                                  isMicReady && micEnabled
+                                    ? "bg-slate-900 ring-2 ring-violet-400/30"
+                                    : "bg-slate-800"
+                                }`}
+                              >
+                                <div className="mb-1 text-[10px] font-black uppercase tracking-widest text-violet-400">
+                                  Listening Stream
+                                </div>
+                                <p className="truncate text-lg font-black text-white sm:text-xl">
+                                  {heardText ||
+                                    (isMicReady && micEnabled
+                                      ? "지금 분류를 말해 주세요..."
+                                      : "마이크 대기 중")}
+                                </p>
+                                <p className="mt-2 text-xs font-bold text-slate-300">
+                                  {isMicReady && micEnabled
+                                    ? "정답을 말하면 바로 다음 카드로 넘어갑니다."
+                                    : "세션이 시작되면 자동으로 음성을 듣습니다."}
+                                </p>
+                              </div>
+
+                              <div className="flex flex-1 flex-col rounded-[32px] border-2 border-slate-100 bg-slate-50/50 p-5 shadow-inner sm:rounded-[40px] sm:p-6">
+                                <div className="mb-4 flex items-center justify-between px-1 sm:px-2">
+                                  <span className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
+                                    Session Progress
+                                  </span>
+                                  <strong className="text-sm font-black text-violet-600">
+                                    {solvedRatio}%
+                                  </strong>
+                                </div>
+                                <div
+                                  className="grid gap-2.5 sm:gap-3"
+                                  style={
+                                    {
+                                      gridTemplateColumns: `repeat(${cardGridLayout.columns}, 1fr)`,
+                                      gridTemplateRows: `repeat(${cardGridLayout.rows}, 1fr)`,
+                                    } as CSSProperties
+                                  }
+                                >
+                                  {cards.map((card, i) => {
+                                    const isCorrect =
+                                      card.revealed || card.solved;
+                                    return (
+                                      <div
+                                        key={i}
+                                        className={`flex aspect-square items-center justify-center rounded-2xl border-2 p-2 text-center transition-all duration-700 ${
+                                          isCorrect
+                                            ? "border-violet-400 bg-violet-600 text-white shadow-lg shadow-violet-100"
+                                            : "border-white bg-white text-slate-200"
+                                        }`}
+                                      >
+                                        {isCorrect ? (
+                                          <span className="line-clamp-2 break-keep text-[11px] font-black leading-tight sm:text-xs">
+                                            {card.word}
+                                          </span>
+                                        ) : (
+                                          <span className="text-lg font-black opacity-20">
+                                            ?
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+
+                                <div className="mt-auto space-y-2 border-t border-slate-200 pt-4">
+                                  <div className="flex items-center justify-between text-[10px] font-black uppercase text-slate-400">
+                                    <span>Target Word</span>
+                                    <span className="text-slate-800">
+                                      {solvedCount} / {cards.length}
+                                    </span>
+                                  </div>
+                                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                                    <div
+                                      className="h-full bg-violet-500 transition-all duration-1000"
+                                      style={{ width: `${solvedRatio}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <aside className="tetris-status-panel">
+                    <MonitoringPanelShell
+                      title="안면 모니터링"
+                      icon="📹"
+                      className="tetris-report-card-compact memory-monitor-shell"
+                      bodyClassName="tetris-status-columns"
+                    >
+                      <div className="vt-monitor-card tetris-monitor-inline">
+                        <div className="vt-camera-frame">
+                          <video
+                            ref={videoRef}
+                            className="vt-camera-video"
+                            autoPlay
+                            muted
+                            playsInline
+                            style={{ display: cameraReady ? "block" : "none" }}
+                          />
+                          {!cameraReady ? (
+                            <div className="vt-camera-placeholder">
+                              <span>카메라 대기 중</span>
+                              <p>카메라를 확인한 뒤 다시 시도해 주세요.</p>
+                            </div>
+                          ) : null}
+                          <div className="vt-face-guide" />
+                        </div>
+
+                        <div className="vt-audio-card">
+                          <span className="vt-audio-label">음성 활성도</span>
+                          <div className="vt-audio-bars">
+                            {audioBars.map((bar, index) => (
+                              <span
+                                key={index}
+                                className="vt-audio-bar"
+                                style={{ height: `${bar}%` }}
+                              />
+                            ))}
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
 
-                <div className="memory-center-stack memory-question-panel">
-                  {currentCard ? (
-                    <div
-                      className={`vt-word-card memory-focus-card ${
-                        feedbackState === "fail" ? "memory-focus-card-fail" : ""
-                      } ${feedbackState === "success" ? "memory-focus-card-success" : ""}`}
-                    >
-                      <div className="vt-word-header">
-                        <span className="vt-word-label">
-                          이미지 보고 말하기
-                        </span>
-                        <span className="vt-word-timer">
-                          {micEnabled ? "듣는 중" : "대기 중"}
-                        </span>
-                      </div>
-                      <div
-                        className="memory-visual-prompt"
-                        aria-label={`${currentCard.word} 이미지 문제`}
-                      >
-                        <span
-                          className="memory-visual-emoji"
-                          aria-hidden="true"
-                        >
-                          {currentCard.visual}
-                        </span>
-                      </div>
-                      <h2 className="vt-word-text memory-prompt-title">
-                        이 그림은 무엇일까요?
-                      </h2>
-                      <p className="memory-focus-copy">
-                        그림을 보고 정답 단어의 분류를 말해 보세요.
-                      </p>
-                      <div className="vt-timer-track">
-                        <div
-                          className="vt-timer-fill"
-                          style={{ width: `${solvedRatio}%` }}
-                        />
-                      </div>
-                      <div
-                        className={`memory-feedback-badge is-${feedbackState}`}
-                      >
-                        {feedbackState === "success"
-                          ? "정답"
-                          : feedbackState === "fail"
-                            ? "다시 시도"
-                            : micEnabled
-                              ? "듣는 중"
-                              : "준비"}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="memory-problem-panel">
-                  <div
-                    className="memory-grid speech-memory-grid memory-dashboard-grid"
-                    style={
-                      {
-                        "--memory-columns": cardGridLayout.columns,
-                        "--memory-rows": cardGridLayout.rows,
-                      } as React.CSSProperties
-                    }
-                  >
-                    {cards.map((card) => {
-                      const categoryColor =
-                        MEMORY_CATEGORIES.find(
-                          (category) => category.id === card.category,
-                        )?.color ?? "#94a3b8";
-                      return (
-                        <div
-                          key={`${card.word}-${card.category}`}
-                          className={`speech-memory-card ${card.revealed || card.solved ? "speech-memory-card-open" : ""}`}
-                          style={
-                            {
-                              "--memory-color": categoryColor,
-                            } as React.CSSProperties
-                          }
-                        >
-                          <span>
-                            {card.revealed || card.solved ? card.word : "?"}
-                          </span>
+                        <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
+                          <div className="flex items-center justify-between px-2">
+                            <span className="text-[10px] font-black uppercase text-slate-400">
+                              Accuracy
+                            </span>
+                            <strong className="text-lg font-black text-violet-600">
+                              {accuracy}%
+                            </strong>
+                          </div>
+                          <div className="flex items-center justify-between px-2">
+                            <span className="text-[10px] font-black uppercase text-slate-400">
+                              Score
+                            </span>
+                            <strong className="text-lg font-black text-slate-800">
+                              {score}pt
+                            </strong>
+                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {!currentCard ? (
-                  <div className="vt-pause-screen">
-                    <span className="vt-pause-icon">🪄</span>
-                    <h3>말로 열기 완료</h3>
-                    <p>
-                      모든 카드를 분류했습니다. 다시 시작하면 새 카드 묶음으로
-                    이어집니다.
-                  </p>
-                </div>
-                ) : null}
-                {showDifficultyModal ? (
-                  <div className="vt-level-modal">
-                    <div className="vt-level-modal-card">
-                      <h3>단계를 선택해 주세요</h3>
-                      <p>
-                        단계에 따라 카드 수가 달라집니다.
-                        <br />
-                        처음에는 작은 카드로 시작해서 점점 늘려 보세요.
-                      </p>
-                      <div className="vt-level-modal-grid">
-                        {MEMORY_DIFFICULTIES.map((item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            className={`vt-level-btn ${difficulty === item.id ? "vt-level-btn-active" : ""}`}
-                            onClick={() => changeDifficulty(item.id)}
-                          >
-                            {item.label}
-                          </button>
-                        ))}
                       </div>
-                      <button
-                        type="button"
-                        className="ui-button vt-start-btn"
-                        onClick={() => void startGameForDifficulty()}
-                      >
-                        {
-                          MEMORY_DIFFICULTIES.find(
-                            (item) => item.id === difficulty,
-                          )?.label
-                        }{" "}
-                        단계로 시작
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-        </section>
-
-        <aside className="vt-right lingo-side-stack">
-          <div className="vt-glass vt-report-card">
-            <div className="vt-panel-title">
-              <span className="vt-panel-icon">🩺</span>
-              <strong>세션 요약</strong>
-            </div>
-
-            <div className="vt-score-hero">
-              <div>
-                <span>현재 점수</span>
-                <strong>
-                  {score}
-                  <em>점</em>
-                </strong>
+                    </MonitoringPanelShell>
+                  </aside>
+                </div>
               </div>
             </div>
 
-            <div className="lingo-kpi-grid">
-              <div className="lingo-kpi-card">
-                <span>정확도</span>
-                <strong>{accuracy}%</strong>
-              </div>
-              <div className="lingo-kpi-card">
-                <span>남은 카드</span>
-                <strong>{Math.max(cards.length - solvedCount, 0)}장</strong>
-              </div>
-              <div className="lingo-kpi-card">
-                <span>총 시도</span>
-                <strong>{attemptCount}회</strong>
-              </div>
-              <div className="lingo-kpi-card">
-                <span>오답</span>
-                <strong>{wrongCount}회</strong>
-              </div>
-            </div>
-
-            <div className="vt-glass-sub">
-              <div className="vt-sub-row">
-                <span>현재 단계</span>
-                <strong>
-                  {MEMORY_DIFFICULTIES.find((item) => item.id === difficulty)?.label}
-                </strong>
-              </div>
-              <div className="vt-sub-row">
-                <span>가장 헷갈린 분류</span>
-                <strong>{mostConfusedLabel}</strong>
-              </div>
-              <div className="vt-sub-row">
-                <span>카메라 연결</span>
-                <strong>{cameraReady ? "성공" : "미연결"}</strong>
-              </div>
-              <div className="vt-sub-row">
-                <span>얼굴 가이드</span>
-                <strong>{cameraReady ? `${faceGuideScore}%` : "-"}</strong>
-              </div>
-              <div className="vt-sub-row">
-                <span>완료 시간</span>
-                <strong>{elapsedTime}</strong>
-              </div>
-            </div>
-
-            <div className="lingo-transcript-card">
-              <span>최근 인식</span>
-              <p>{heardText || "아직 인식된 답변이 없습니다."}</p>
-            </div>
-
+            {showDifficultyModal ? (
+              <SelectionModal
+                difficulty={difficulty}
+                onSelect={changeDifficulty}
+                onStart={() => void startGameForDifficulty()}
+              />
+            ) : null}
+            {showReport ? (
+              <ResultModal
+                elapsedTime={elapsedTime}
+                accuracy={accuracy}
+                solvedCount={solvedCount}
+                totalCount={cards.length}
+                onRestart={restart}
+                onHome={onBack}
+              />
+            ) : null}
           </div>
-        </aside>
+        </section>
       </div>
     </LingoGameShell>
   );

@@ -62,13 +62,21 @@ const GAME_CARDS = [
 
 export default function SelectGameModePage() {
   const router = useRouter();
-  const { patient, ageGroup } = useTrainingSession();
+  const { patient, ageGroup, isLoading } = useTrainingSession();
   const [isMounted, setIsMounted] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const isAdmin = patient?.userRole === "admin";
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!isAdmin) {
+      router.replace("/select-page/mode");
+    }
+  }, [isAdmin, isLoading, router]);
 
   const logout = async () => {
     setIsLoggingOut(true);
@@ -135,6 +143,15 @@ export default function SelectGameModePage() {
       </header>
 
       <main className="flex-1 max-w-[1440px] mx-auto w-full px-4 sm:px-6 pt-6 sm:pt-8 lg:pt-10 pb-10 sm:pb-12 lg:pb-14">
+        {!isLoading && !isAdmin ? (
+          <div className="rounded-[32px] border border-violet-100 bg-white p-8 text-center shadow-sm">
+            <h1 className="text-2xl font-black text-slate-900">게임 모드는 관리자 전용입니다.</h1>
+            <p className="mt-2 text-sm font-medium text-slate-500">
+              활동 선택 화면으로 이동합니다.
+            </p>
+          </div>
+        ) : null}
+
         <SelectionHeroBanner
           badge="LingoFriends Games"
           title="말하기 훈련을 게임처럼 시작해 보세요."
