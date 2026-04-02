@@ -1,6 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  registerMediaStream,
+  unregisterMediaStream,
+} from '@/lib/client/mediaStreamRegistry';
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -25,6 +29,7 @@ export function useBalloonAudioInput() {
     }
 
     if (streamRef.current) {
+      unregisterMediaStream(streamRef.current);
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
@@ -60,6 +65,9 @@ export function useBalloonAudioInput() {
       }
 
       const context = new AudioContextClass();
+      if (context.state === 'suspended') {
+        await context.resume();
+      }
       const source = context.createMediaStreamSource(stream);
       const analyser = context.createAnalyser();
       analyser.fftSize = 1024;
@@ -69,6 +77,7 @@ export function useBalloonAudioInput() {
       const buffer = new Uint8Array(analyser.fftSize);
 
       streamRef.current = stream;
+      registerMediaStream(stream);
       audioContextRef.current = context;
       analyserRef.current = analyser;
       dataArrayRef.current = buffer;

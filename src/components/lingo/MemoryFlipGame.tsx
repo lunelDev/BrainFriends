@@ -18,6 +18,10 @@ import {
   type MemoryDifficultyId,
 } from "@/data/memoryGameData";
 import { useAudioAnalyzer } from "@/lib/audio/useAudioAnalyzer";
+import {
+  registerMediaStream,
+  unregisterMediaStream,
+} from "@/lib/client/mediaStreamRegistry";
 import { createPreferredCameraStream } from "@/lib/media/cameraPreferences";
 import MonitoringPanelShell from "@/components/training/MonitoringPanelShell";
 import LingoResultModalShell from "@/components/lingo/LingoResultModalShell";
@@ -26,16 +30,63 @@ function shuffle<T>(items: T[]) {
   return [...items].sort(() => Math.random() - 0.5);
 }
 
+function levenshtein(a: string, b: string) {
+  const dp = Array.from({ length: a.length + 1 }, () =>
+    Array<number>(b.length + 1).fill(0),
+  );
+  for (let i = 0; i <= a.length; i += 1) dp[i][0] = i;
+  for (let j = 0; j <= b.length; j += 1) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost,
+      );
+    }
+  }
+  return dp[a.length][b.length];
+}
+
+const CATEGORY_VARIANTS = {
+  fruit: ["과일", "과일이요", "과일입니다"],
+  animal: ["동물", "동물이요", "동물입니다"],
+  vehicle: ["탈것", "탈것이요", "탈것입니다", "탈거", "탈거요"],
+} as const;
+
 function parseCategory(text: string) {
   const normalized = text.replace(/\s+/g, "");
-  if (normalized.includes("과일")) return "fruit";
-  if (normalized.includes("동물")) return "animal";
-  if (
-    normalized.includes("탈것") ||
-    normalized.includes("탈거") ||
-    normalized.includes("차")
-  )
-    return "vehicle";
+  const entries = Object.entries(CATEGORY_VARIANTS) as Array<
+    [keyof typeof CATEGORY_VARIANTS, readonly string[]]
+  >;
+
+  for (const [category, variants] of entries) {
+    if (variants.some((variant) => normalized.includes(variant))) {
+      return category;
+    }
+  }
+
+  const tokens = normalized
+    .split(/[^가-힣a-zA-Z0-9]+/)
+    .filter(Boolean)
+    .flatMap((token) => [token, token.slice(0, 2), token.slice(0, 3)])
+    .filter(Boolean);
+
+  for (const [category, variants] of entries) {
+    if (
+      tokens.some((token) =>
+        variants.some(
+          (variant) =>
+            Math.abs(token.length - variant.length) <= 1 &&
+            levenshtein(token, variant) <= 1,
+        ),
+      )
+    ) {
+      return category;
+    }
+  }
+
   return null;
 }
 
@@ -283,6 +334,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   const handledTargetRef = useRef<string | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const volumeRef = useRef(0);
 
   const attachCameraPreview = useCallback(async () => {
     const video = videoRef.current;
@@ -294,6 +346,11 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     }
 
     try {
+      if (video.readyState < 2) {
+        await new Promise<void>((resolve) => {
+          video.onloadedmetadata = () => resolve();
+        });
+      }
       await video.play();
     } catch {
       // autoplay 정책이나 브라우저 타이밍 이슈가 있어도 재시도 effect가 다시 붙습니다.
@@ -328,6 +385,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
 
   const stopCamera = useCallback(() => {
     if (cameraStreamRef.current) {
+      unregisterMediaStream(cameraStreamRef.current);
       cameraStreamRef.current.getTracks().forEach((track) => track.stop());
       cameraStreamRef.current = null;
     }
@@ -363,6 +421,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
       const stream = await createPreferredCameraStream();
 
       cameraStreamRef.current = stream;
+      registerMediaStream(stream);
       setCameraReady(true);
       return true;
     } catch {
@@ -539,7 +598,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
         const result = event.results?.[i];
         const transcript = result?.[0]?.transcript?.trim() ?? "";
-        if (!transcript) continue;
+      if (!transcript) continue;
 
         setHeardText(transcript);
 
@@ -653,18 +712,29 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
 
   useEffect(() => () => stopListening(), [stopListening]);
 
+  // volume을 ref로 동기화 — 빠르게 바뀌는 volume이 setInterval deps에 있으면
+  // interval이 매 RAF마다 재생성되어 wave가 거의 업데이트되지 않음
+  useEffect(() => {
+    volumeRef.current = volume;
+  }, [volume]);
+
   useEffect(() => {
     const tick = window.setInterval(() => {
+      const v = volumeRef.current;
       setAudioBars((prev) =>
         prev.map((_, index) => {
           const wave = 0.55 + Math.sin(Date.now() / 180 + index * 0.6) * 0.22;
           const variance = 0.75 + (index % 5) * 0.08;
-          const next = isMicReady && micEnabled ? volume * wave * variance : 8 + index * 1.8;
-          return Math.max(8, Math.min(100, Math.round(next)));
+          // micEnabled 조건 제거 — 마이크가 켜져 있으면(isMicReady) 바로 반응
+          const boosted =
+            isMicReady
+              ? v * 2.4 * wave * variance + (v > 0 ? 10 : 0)
+              : 8 + index * 1.8;
+          return Math.max(8, Math.min(100, Math.round(boosted)));
         }),
       );
 
-      if (!isMicReady || !micEnabled) {
+      if (!isMicReady) {
         setFaceGuideScore(0);
         return;
       }
@@ -678,7 +748,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     }, 90);
 
     return () => window.clearInterval(tick);
-  }, [cameraReady, isMicReady, micEnabled, volume]);
+  }, [cameraReady, isMicReady]);
 
   const solvedRatio = Math.round((solvedCount / cards.length) * 100);
   const roundTimeLimit = getRoundTimeLimit(difficulty);

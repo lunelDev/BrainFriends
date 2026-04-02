@@ -4,7 +4,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { WORDS_BY_LEVEL } from "@/data/tetrisWords";
 import { useAudioAnalyzer } from "@/lib/audio/useAudioAnalyzer";
+import {
+  registerMediaStream,
+  unregisterMediaStream,
+} from "@/lib/client/mediaStreamRegistry";
 import { createPreferredCameraStream } from "@/lib/media/cameraPreferences";
+import {
+  createPreferredAudioStream,
+  listAudioInputDevices,
+  loadPreferredAudioInputId,
+  savePreferredAudioInputId,
+} from "@/lib/media/audioPreferences";
 import MonitoringPanelShell from "@/components/training/MonitoringPanelShell";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import LingoResultModalShell from "@/components/lingo/LingoResultModalShell";
@@ -68,7 +78,7 @@ const ROWS = 20;
 const COLS = 10;
 const BLOCK_SIZE = 24;
 const MATCH_COOLDOWN_MS = 900;
-const STT_CHUNK_MS = 700;
+const STT_CHUNK_MS = 1200;
 const STT_RESTART_DELAY_MS = 30;
 
 // ─── 코스튬 티어 ───────────────────────────────────────────────────────────────
@@ -809,10 +819,10 @@ function getDisplayTranscript(transcript: string) {
 
 function getPassThreshold(targetWord: string) {
   const length = normalizeText(targetWord).length;
-  if (length <= 2) return 88;
-  if (length <= 4) return 82;
-  if (length <= 7) return 76;
-  return 72;
+  if (length <= 2) return 80;
+  if (length <= 4) return 76;
+  if (length <= 7) return 72;
+  return 68;
 }
 
 function getSpeechGradeLabel(score: number, threshold: number) {
@@ -998,6 +1008,8 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     process.env.NEXT_PUBLIC_DEV_MODE === "true";
   const {
     volume,
+    isMicReady,
+    error,
     start: startAudioMonitor,
     stop: stopAudioMonitor,
   } = useAudioAnalyzer();
@@ -1026,6 +1038,12 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   const sttChunkStopTimerRef = useRef<number | null>(null);
   const sttUploadInFlightRef = useRef(false);
   const sttSessionActiveRef = useRef(false);
+  const preferredAudioInputIdRef = useRef("");
+  const browserRecognitionRef = useRef<BrowserSpeechRecognitionInstance | null>(
+    null,
+  );
+  const browserRecognitionRestartRef = useRef<number | null>(null);
+  const speechModeRef = useRef<"none" | "browser" | "server">("none");
 
   // Face-tracking / costume canvas refs
   const costumeCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -1034,6 +1052,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   const latestLandmarksRef = useRef<Landmark[] | null>(null);
   const faceProcessingRef = useRef(false);
   const costumeImagesRef = useRef<CostumeImages>({});
+  const volumeRef = useRef(0);
 
   // UI state
   const [gameStarted, setGameStarted] = useState(false);
@@ -1060,6 +1079,13 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   const [faceTracked, setFaceTracked] = useState(false);
   const [faceGuideScore, setFaceGuideScore] = useState(0);
   const [gameResult, setGameResult] = useState<GameResult | null>(null);
+  const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>(
+    [],
+  );
+  const [preferredAudioInputId, setPreferredAudioInputId] = useState("");
+  const [speechMode, setSpeechMode] = useState<"none" | "browser" | "server">(
+    "none",
+  );
   const [costumeUnlockToast, setCostumeUnlockToast] = useState<{
     id: number;
     icon: string;
@@ -1070,6 +1096,15 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   );
   const handleHome = onBack ?? (() => router.push("/select-page/game-mode"));
 
+  const refreshAudioInputDevices = useCallback(async () => {
+    try {
+      const devices = await listAudioInputDevices();
+      setAudioInputDevices(devices);
+    } catch (deviceError) {
+      console.warn("[Tetris Audio] failed to enumerate microphones", deviceError);
+    }
+  }, []);
+
   const setActiveWord = useCallback((word: string) => {
     currentWordRef.current = word;
     setCurrentWord(word);
@@ -1077,6 +1112,20 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     setHeardText("");
     setTotalAccuracy(0);
     recognitionCooldownRef.current = Date.now() + 450;
+  }, []);
+
+  const buildRecognition = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    const ctor =
+      (window as FaceMeshWindow).SpeechRecognition ??
+      (window as FaceMeshWindow).webkitSpeechRecognition;
+    if (!ctor) return null;
+    return new ctor();
+  }, []);
+
+  const shouldUseBrowserSpeech = useCallback((targetWord: string) => {
+    const normalized = normalizeText(targetWord).replace(/\s+/g, "");
+    return normalized.length > 0 && normalized.length <= 5;
   }, []);
 
   const stopCamera = useCallback(() => {
@@ -1098,6 +1147,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     setFaceTracked(false);
 
     if (cameraStreamRef.current) {
+      unregisterMediaStream(cameraStreamRef.current);
       cameraStreamRef.current.getTracks().forEach((track) => track.stop());
       cameraStreamRef.current = null;
     }
@@ -1107,6 +1157,47 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     }
 
     setCameraReady(false);
+  }, []);
+
+  const stopSpeechCapture = useCallback(() => {
+    sttSessionActiveRef.current = false;
+    speechModeRef.current = "none";
+    setSpeechMode("none");
+    if (sttChunkStopTimerRef.current !== null) {
+      window.clearTimeout(sttChunkStopTimerRef.current);
+      sttChunkStopTimerRef.current = null;
+    }
+    if (
+      mediaRecorderRef.current &&
+      mediaRecorderRef.current.state !== "inactive"
+    ) {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {
+        /* no-op */
+      }
+    }
+    mediaRecorderRef.current = null;
+    if (recordingStreamRef.current) {
+      unregisterMediaStream(recordingStreamRef.current);
+      recordingStreamRef.current.getTracks().forEach((track) => track.stop());
+      recordingStreamRef.current = null;
+    }
+    if (browserRecognitionRestartRef.current !== null) {
+      window.clearTimeout(browserRecognitionRestartRef.current);
+      browserRecognitionRestartRef.current = null;
+    }
+    if (browserRecognitionRef.current) {
+      try {
+        browserRecognitionRef.current.onresult = null;
+        browserRecognitionRef.current.onerror = null;
+        browserRecognitionRef.current.onend = null;
+        browserRecognitionRef.current.stop();
+      } catch {
+        /* no-op */
+      }
+      browserRecognitionRef.current = null;
+    }
   }, []);
 
   const attachCameraPreview = useCallback(async () => {
@@ -1119,6 +1210,11 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     }
 
     try {
+      if (video.readyState < 2) {
+        await new Promise<void>((resolve) => {
+          video.onloadedmetadata = () => resolve();
+        });
+      }
       await video.play();
     } catch {
       // 자동 재생 타이밍 이슈는 이후 effect에서 다시 맞춥니다.
@@ -1300,26 +1396,10 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   }, [setCameraError]);
 
   const stopSessionDevices = useCallback(() => {
-    sttSessionActiveRef.current = false;
-    if (sttChunkStopTimerRef.current !== null) {
-      window.clearTimeout(sttChunkStopTimerRef.current);
-      sttChunkStopTimerRef.current = null;
-    }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch (e) {
-        /* no-op */
-      }
-    }
-    mediaRecorderRef.current = null;
-    if (recordingStreamRef.current) {
-      recordingStreamRef.current.getTracks().forEach((track) => track.stop());
-      recordingStreamRef.current = null;
-    }
+    stopSpeechCapture();
     stopAudioMonitor();
     stopCamera();
-  }, [stopAudioMonitor, stopCamera]);
+  }, [stopAudioMonitor, stopCamera, stopSpeechCapture]);
 
   const goToNextWord = useCallback(() => {
     wordIdxRef.current = (wordIdxRef.current + 1) % 10;
@@ -1547,15 +1627,15 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
 
       const total = getSpeechScore(transcript, currentWordRef.current);
       const threshold = getPassThreshold(currentWordRef.current);
-      const visibleThreshold = Math.max(24, threshold - 36);
+      const visibleThreshold = Math.max(18, threshold - 44);
       const displayTranscript = getDisplayTranscript(transcript);
 
       if (displayTranscript && total >= visibleThreshold) {
         setHeardText(displayTranscript);
       } else if (displayTranscript && total >= 12) {
         setHeardText(displayTranscript);
-      } else if (!displayTranscript) {
-        setHeardText("");
+      } else {
+        setHeardText("...");
       }
 
       setTotalAccuracy(total);
@@ -1626,6 +1706,13 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
           body: formData,
         });
         const result = await response.json();
+        console.info("[Tetris STT] response", {
+          ok: response.ok,
+          status: response.status,
+          transcript: String(result?.text ?? "").trim(),
+          reason: String(result?.reason || result?.error || "").trim(),
+          target: currentWordRef.current,
+        });
 
         if (!response.ok) {
           const reason = String(result?.reason || result?.error || "").trim();
@@ -1638,13 +1725,21 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
 
         const transcript = String(result.text ?? "").trim();
         if (!transcript) {
+          console.info("[Tetris STT] empty transcript", {
+            target: currentWordRef.current,
+          });
           setSpeechError("");
           return;
         }
 
         setSpeechError("");
+        console.info("[Tetris STT] process transcript", {
+          transcript,
+          target: currentWordRef.current,
+        });
         processResult(transcript);
       } catch (error) {
+        console.error("[Tetris STT] request failed", error);
         const message =
           error instanceof Error
             ? error.message
@@ -1728,7 +1823,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     [scheduleRecorderStop, uploadSpeechChunk],
   );
 
-  const startServerStt = useCallback(async () => {
+  const startServerStt = useCallback(async (preferredAudioInputId = preferredAudioInputIdRef.current) => {
     if (!isRecordingSupported()) {
       setSpeechError("이 브라우저는 서버 STT 녹음을 지원하지 않습니다.");
       return false;
@@ -1739,20 +1834,25 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
+      const stream = await createPreferredAudioStream(preferredAudioInputId);
+      const activeTrack = stream.getAudioTracks()[0];
+      console.info("[Tetris STT] recording stream ready", {
+        label: activeTrack?.label || "unknown",
+        readyState: activeTrack?.readyState,
+        settings: activeTrack?.getSettings?.(),
       });
 
       recordingStreamRef.current = stream;
+      registerMediaStream(stream);
       sttSessionActiveRef.current = true;
+      speechModeRef.current = "server";
+      setSpeechMode("server");
       setSpeechError("");
       beginServerRecorder(stream);
+      void refreshAudioInputDevices();
       return true;
     } catch (error) {
+      console.error("[Tetris STT] failed to start recording stream", error);
       const message =
         error instanceof Error
           ? error.message
@@ -1760,7 +1860,86 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
       setSpeechError(message);
       return false;
     }
-  }, [beginServerRecorder]);
+  }, [beginServerRecorder, refreshAudioInputDevices]);
+
+  const startBrowserSpeechRecognition = useCallback(async () => {
+    const recognition = buildRecognition();
+    if (!recognition) {
+      setSpeechError("이 브라우저는 실시간 음성 인식을 지원하지 않습니다.");
+      return false;
+    }
+
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "ko-KR";
+    recognition.onresult = (event) => {
+      let latestTranscript = "";
+      for (let i = event.results.length - 1; i >= 0; i -= 1) {
+        const candidate = String(event.results[i]?.[0]?.transcript ?? "").trim();
+        if (candidate) {
+          latestTranscript = candidate;
+          break;
+        }
+      }
+      if (!latestTranscript) return;
+      setSpeechError("");
+      processResult(latestTranscript);
+    };
+    recognition.onerror = (event) => {
+      const reason = String(event?.error ?? "").trim();
+      if (reason === "aborted" || reason === "no-speech") return;
+      console.error("[Tetris Browser STT] error", reason);
+      setSpeechError(
+        reason
+          ? `브라우저 음성 인식이 실패했어요. (${reason})`
+          : "브라우저 음성 인식이 실패했어요.",
+      );
+    };
+    recognition.onend = () => {
+      browserRecognitionRef.current = null;
+      if (!sttSessionActiveRef.current || !runningRef.current) {
+        return;
+      }
+      browserRecognitionRestartRef.current = window.setTimeout(() => {
+        if (!sttSessionActiveRef.current || !runningRef.current) return;
+        void startBrowserSpeechRecognition();
+      }, 140);
+    };
+
+    try {
+      recognition.start();
+      browserRecognitionRef.current = recognition;
+      sttSessionActiveRef.current = true;
+      speechModeRef.current = "browser";
+      setSpeechMode("browser");
+      setSpeechError("");
+      console.info("[Tetris Browser STT] started");
+      return true;
+    } catch (error) {
+      console.error("[Tetris Browser STT] failed to start", error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "브라우저 음성 인식을 시작하지 못했어요.";
+      setSpeechError(message);
+      return false;
+    }
+  }, [buildRecognition, processResult]);
+
+  const syncSpeechCaptureForWord = useCallback(
+    async (targetWord: string, preferredAudioInputId = preferredAudioInputIdRef.current) => {
+      if (!runningRef.current || !targetWord) return;
+      stopSpeechCapture();
+      if (shouldUseBrowserSpeech(targetWord)) {
+        const started = await startBrowserSpeechRecognition();
+        if (started) {
+          return;
+        }
+      }
+      await startServerStt(preferredAudioInputId);
+    },
+    [shouldUseBrowserSpeech, startBrowserSpeechRecognition, startServerStt, stopSpeechCapture],
+  );
 
   // ─── 레벨 설정 ────────────────────────────────────────────────────────────
   function handleLevelSelect(lv: number) {
@@ -1789,13 +1968,24 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
       stopCamera();
       setCameraError("");
       const stream = await createPreferredCameraStream();
+      const nextTrack = stream.getVideoTracks()[0];
+      console.info("[Tetris Camera] stream ready", {
+        label: nextTrack?.label || "unknown",
+        readyState: nextTrack?.readyState,
+        settings: nextTrack?.getSettings?.(),
+      });
 
       cameraStreamRef.current = stream;
+      registerMediaStream(stream);
       setCameraReady(true);
+      window.requestAnimationFrame(() => {
+        void attachCameraPreview();
+      });
       return true;
     } catch (error) {
       setCameraReady(false);
       setCameraError("카메라 권한이 없어서 가이드 화면은 표시되지 않습니다.");
+      console.error("[Tetris Camera] failed to start", error);
       return false;
     }
   }, [attachCameraPreview, stopCamera]);
@@ -1804,13 +1994,12 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   async function startGameForLevel(startLevel = selectedLevel) {
     levelRef.current = startLevel;
     setLevel(startLevel);
-    setShowLevelModal(false);
 
-    const audioMonitorReady = await startAudioMonitor();
+    const audioMonitorReady = await startAudioMonitor(preferredAudioInputIdRef.current);
     if (!audioMonitorReady) {
       setSpeechError("마이크 입력을 확인해 주세요.");
     }
-    startCamera();
+    await startCamera();
     runningRef.current = true;
     setGameStarted(true);
     wordIdxRef.current = 0;
@@ -1834,7 +2023,11 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     dropCounterRef.current = 0;
     setActiveWord(getWord(startLevel, 0));
     setFallProgress(0);
-    await startServerStt();
+    setShowLevelModal(false);
+    window.requestAnimationFrame(() => {
+      void attachCameraPreview();
+      void initFaceTracking();
+    });
     animRef.current = requestAnimationFrame(gameLoop);
   }
 
@@ -1861,6 +2054,28 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     setShowLevelModal(true);
   }
 
+  const handleAudioInputChange = useCallback(
+    async (deviceId: string) => {
+      savePreferredAudioInputId(deviceId);
+      preferredAudioInputIdRef.current = deviceId;
+      setPreferredAudioInputId(deviceId);
+
+      if (!gameStarted) {
+        return;
+      }
+
+      stopSpeechCapture();
+      stopAudioMonitor();
+      const audioMonitorReady = await startAudioMonitor(deviceId);
+      if (!audioMonitorReady) {
+        setSpeechError("마이크 입력을 확인해 주세요.");
+        return;
+      }
+      await syncSpeechCaptureForWord(currentWordRef.current, deviceId);
+    },
+    [gameStarted, startAudioMonitor, stopAudioMonitor, stopSpeechCapture, syncSpeechCaptureForWord],
+  );
+
   // ─── cameraReady → video 요소에 스트림 연결 ─────────────────────────────
   // cameraReady → 비디오에 스트림 연결 + FaceMesh 초기화
   // (video는 항상 DOM에 있으므로 videoRef가 null이 아님)
@@ -1870,23 +2085,41 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     void initFaceTracking();
   }, [attachCameraPreview, cameraReady, initFaceTracking]);
 
+  useEffect(() => {
+    if (showLevelModal || !cameraReady) return;
+    window.requestAnimationFrame(() => {
+      void attachCameraPreview();
+    });
+  }, [attachCameraPreview, cameraReady, showLevelModal]);
+
   // ─── 초기 그리기 + 카메라 자동 연결 ──────────────────────────────────────
   useEffect(() => {
     boardRef.current = fillDebris(1);
     pieceRef.current = createPiece(1);
     setActiveWord(getWord(1, 0));
     draw();
+    const savedAudioInputId = loadPreferredAudioInputId();
+    preferredAudioInputIdRef.current = savedAudioInputId;
+    setPreferredAudioInputId(savedAudioInputId);
+    void refreshAudioInputDevices();
     startCamera();
-  }, [draw, setActiveWord, startCamera]);
+  }, [draw, refreshAudioInputDevices, setActiveWord, startCamera]);
+
+  // volume을 ref로 동기화 — 빠르게 바뀌는 volume이 setInterval deps에 있으면
+  // interval이 매 RAF마다 재생성되어 wave가 거의 업데이트되지 않음
+  useEffect(() => {
+    volumeRef.current = volume;
+  }, [volume]);
 
   useEffect(() => {
     const tick = window.setInterval(() => {
+      const v = volumeRef.current;
       setAudioBars((prev) =>
         prev.map((_, index) => {
           const wave = 0.55 + Math.sin(Date.now() / 180 + index * 0.6) * 0.22;
           const variance = 0.75 + (index % 5) * 0.08;
           const boosted = gameStarted
-            ? volume * 2.8 * wave * variance + (volume > 0 ? 10 : 0)
+            ? v * 2.8 * wave * variance + (v > 0 ? 10 : 0)
             : 8 + index * 1.8;
           return Math.max(8, Math.min(100, Math.round(boosted)));
         }),
@@ -1909,13 +2142,18 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     }, 90);
 
     return () => window.clearInterval(tick);
-  }, [actionFeedback?.type, cameraReady, gameStarted, volume]);
+  }, [actionFeedback?.type, cameraReady, gameStarted]);
 
   useEffect(() => {
     if (error) {
       setSpeechError(error);
     }
   }, [error]);
+
+  useEffect(() => {
+    if (!gameStarted || showLevelModal || !currentWord) return;
+    void syncSpeechCaptureForWord(currentWord, preferredAudioInputIdRef.current);
+  }, [currentWord, gameStarted, showLevelModal, syncSpeechCaptureForWord]);
 
   // ─── 코스튬 티어 감지 ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -1958,7 +2196,8 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     };
   }, [stopSessionDevices]);
 
-  const showStatusPanel = gameStarted || showLevelModal || Boolean(gameResult);
+  const showStatusPanel =
+    gameStarted || showLevelModal || cameraReady || Boolean(gameResult);
 
   // ─── 코스튬 계산 ──────────────────────────────────────────────────────────
   const successCount = successStreak;
@@ -1968,6 +2207,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   );
   const currentTier = COSTUME_TIERS[currentTierIdx];
   const isChampion = currentTier.id === "sparkle";
+  const micSignalDetected = isMicReady && volume > 4;
 
   // ─── 렌더 ─────────────────────────────────────────────────────────────────
   return (
@@ -2134,7 +2374,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
                           minHeight: "1.5rem",
                         }}
                       >
-                        {heardText ? (
+                        {heardText && heardText !== "..." ? (
                           <>
                             <span style={{ color: "#94a3b8", marginRight: "0.45rem" }}>
                               인식:
@@ -2142,7 +2382,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
                             <span>{heardText}</span>
                           </>
                         ) : gameStarted ? (
-                          "말한 단어가 여기 표시됩니다."
+                          "..."
                         ) : null}
                       </div>
                     </div>
@@ -2225,6 +2465,48 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
                                     />
                                   ))}
                                 </div>
+                                <div
+                                  style={{
+                                    marginTop: "0.55rem",
+                                    fontSize: "0.78rem",
+                                    fontWeight: 800,
+                                    color: micSignalDetected ? "#7c3aed" : "#94a3b8",
+                                  }}
+                                >
+                                  {isMicReady
+                                    ? micSignalDetected
+                                      ? "마이크 입력 감지됨"
+                                      : "마이크 입력 대기 중"
+                                    : "마이크 입력 없음"}
+                                </div>
+                              </div>
+
+                              <div className="tetris-status-card">
+                                <span className="tetris-accuracy-label">마이크 선택</span>
+                                <select
+                                  value={preferredAudioInputId}
+                                  onChange={(event) =>
+                                    void handleAudioInputChange(event.target.value)
+                                  }
+                                  style={{
+                                    width: "100%",
+                                    marginTop: "0.55rem",
+                                    borderRadius: "14px",
+                                    border: "1px solid #dbe4f0",
+                                    background: "#fff",
+                                    padding: "0.7rem 0.9rem",
+                                    color: "#0f172a",
+                                    fontSize: "0.85rem",
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  <option value="">기본 마이크</option>
+                                  {audioInputDevices.map((device) => (
+                                    <option key={device.deviceId} value={device.deviceId}>
+                                      {device.label || `마이크 ${device.deviceId.slice(0, 6)}`}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
 
                               <div className="tetris-status-card tetris-accuracy-card">
@@ -2232,6 +2514,20 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
                                 <strong className="tetris-accuracy-value">
                                   {gameStarted ? totalAccuracy : 0}
                                   <em>점</em>
+                                </strong>
+                              </div>
+
+                              <div className="tetris-status-card">
+                                <span className="tetris-accuracy-label">인식 방식</span>
+                                <strong
+                                  className="tetris-accuracy-value"
+                                  style={{ fontSize: "0.95rem", textAlign: "left" }}
+                                >
+                                  {speechMode === "browser"
+                                    ? "브라우저 음성 인식"
+                                    : speechMode === "server"
+                                      ? "서버 STT"
+                                      : "대기 중"}
                                 </strong>
                               </div>
 

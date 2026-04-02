@@ -1,6 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  registerMediaStream,
+  unregisterMediaStream,
+} from '@/lib/client/mediaStreamRegistry';
+import { createPreferredAudioStream } from '@/lib/media/audioPreferences';
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -24,6 +29,7 @@ export function useAudioAnalyzer() {
     }
 
     if (streamRef.current) {
+      unregisterMediaStream(streamRef.current);
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
@@ -39,21 +45,24 @@ export function useAudioAnalyzer() {
     setVolume(0);
   }, []);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (preferredAudioInputId = '') => {
     try {
       stop();
       setError('');
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
+      const stream = await createPreferredAudioStream(preferredAudioInputId);
+      const activeTrack = stream.getAudioTracks()[0];
+      console.info('[AudioAnalyzer] microphone stream ready', {
+        label: activeTrack?.label || 'unknown',
+        readyState: activeTrack?.readyState,
+        settings: activeTrack?.getSettings?.(),
       });
 
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       const context = new AudioContextClass();
+      if (context.state === 'suspended') {
+        await context.resume();
+      }
       const source = context.createMediaStreamSource(stream);
       const analyser = context.createAnalyser();
       analyser.fftSize = 2048;
@@ -62,6 +71,7 @@ export function useAudioAnalyzer() {
       const buffer = new Uint8Array(analyser.fftSize);
 
       streamRef.current = stream;
+      registerMediaStream(stream);
       audioContextRef.current = context;
       analyserRef.current = analyser;
       dataArrayRef.current = buffer;
@@ -87,6 +97,7 @@ export function useAudioAnalyzer() {
       animationFrameRef.current = requestAnimationFrame(update);
       return true;
     } catch (requestError) {
+      console.error('[AudioAnalyzer] microphone stream start failed', requestError);
       setError('마이크 권한이 필요합니다. 브라우저에서 마이크 허용 후 다시 시도해 주세요.');
       setIsMicReady(false);
       setVolume(0);

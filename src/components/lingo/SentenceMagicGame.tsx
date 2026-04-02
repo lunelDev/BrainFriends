@@ -6,6 +6,10 @@ import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import LingoGameShell from "@/components/lingo/LingoGameShell";
 import LingoResultModalShell from "@/components/lingo/LingoResultModalShell";
 import {
+  registerMediaStream,
+  unregisterMediaStream,
+} from "@/lib/client/mediaStreamRegistry";
+import {
   SENTENCE_EXAMPLE_QUESTIONS,
   SENTENCE_MAGIC_MODES,
   TONGUE_TWISTER_QUESTION_GROUPS,
@@ -561,6 +565,7 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
         mediaRecorderRef.current.stop();
       }
       if (recordingStreamRef.current) {
+        unregisterMediaStream(recordingStreamRef.current);
         recordingStreamRef.current.getTracks().forEach((track) => track.stop());
         recordingStreamRef.current = null;
       }
@@ -587,6 +592,7 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
       mediaRecorderRef.current.stop();
     }
     if (recordingStreamRef.current) {
+      unregisterMediaStream(recordingStreamRef.current);
       recordingStreamRef.current.getTracks().forEach((track) => track.stop());
       recordingStreamRef.current = null;
     }
@@ -744,6 +750,7 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
       const recorder = new MediaRecorder(stream, { mimeType });
       audioChunksRef.current = [];
       recordingStreamRef.current = stream;
+      registerMediaStream(stream);
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (event) => {
@@ -756,6 +763,7 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
         const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
         audioChunksRef.current = [];
         if (recordingStreamRef.current) {
+          unregisterMediaStream(recordingStreamRef.current);
           recordingStreamRef.current.getTracks().forEach((track) => track.stop());
           recordingStreamRef.current = null;
         }
@@ -859,10 +867,11 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
     }, 1200);
   }
 
-  const recordButtonScale = isRecording ? 1 + volume / 260 : 1;
+  const boostedVolume = Math.max(0, volume * 1.8 + (volume > 0 ? 6 : 0));
+  const recordButtonScale = isRecording ? 1 + boostedVolume / 260 : 1;
   const waveHeights = Array.from({ length: 9 }, (_, waveIndex) => {
     const distanceFromCenter = Math.abs(waveIndex - 4);
-    const heightBoost = Math.max(0, volume - distanceFromCenter * 8);
+    const heightBoost = Math.max(0, boostedVolume - distanceFromCenter * 8);
     return 10 + Math.round(heightBoost * 0.4);
   });
   const progressRatio = Math.round(((index + 1) / questions.length) * 100);

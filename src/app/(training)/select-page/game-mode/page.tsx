@@ -12,6 +12,7 @@ import {
 import SelectionHeroBanner from "@/components/training/SelectionHeroBanner";
 import SelectionImageCard from "@/components/training/SelectionImageCard";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
+import { stopRegisteredMediaStreams } from "@/lib/client/mediaStreamRegistry";
 
 const GAME_CARDS = [
   {
@@ -69,6 +70,22 @@ export default function SelectGameModePage() {
 
   useEffect(() => {
     setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    stopRegisteredMediaStreams();
+
+    const mediaElements = Array.from(
+      document.querySelectorAll("video, audio"),
+    ) as Array<HTMLVideoElement | HTMLAudioElement>;
+
+    for (const element of mediaElements) {
+      const stream = element.srcObject;
+      if (stream instanceof MediaStream) {
+        stream.getTracks().forEach((track) => track.stop());
+        element.srcObject = null;
+      }
+    }
   }, []);
 
   useEffect(() => {

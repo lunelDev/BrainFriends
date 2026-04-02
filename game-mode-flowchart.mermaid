@@ -1,0 +1,117 @@
+flowchart TD
+    START([🎮 게임 모드 진입\n/select-page/game-mode])
+    START --> STOP[모든 미디어 스트림 종료\nstopRegisteredMediaStreams]
+    STOP --> SELECT{게임 선택}
+
+    SELECT -- 한글 테트리스 --> T_MOUNT
+    SELECT -- 풍선 키우기 --> B_MOUNT
+    SELECT -- 말로 열기 --> M_MOUNT
+    SELECT -- 문장 대결 --> S_MOUNT
+
+    %% ─── 한글 테트리스 ────────────────────────────────────────────
+    subgraph TETRIS ["🧩 한글 테트리스 (TetrisGame)"]
+        direction TD
+        T_MOUNT([마운트]) --> T_INIT[게임 보드 초기화\nfillDebris · createPiece]
+        T_MOUNT --> T_CAM[startCamera 자동 실행]
+
+        T_CAM --> T_CAM_OK{카메라 권한?}
+        T_CAM_OK -- ✅ 허용 --> T_FACE[cameraReady = true\nFaceMesh 초기화]
+        T_CAM_OK -- ❌ 거부 --> T_PLACEHOLDER[카메라 대기 중 표시]
+
+        T_INIT --> T_LEVEL[레벨 선택 모달]
+        T_FACE --> T_LEVEL
+        T_PLACEHOLDER --> T_LEVEL
+
+        T_LEVEL --> T_START[게임 시작\nhandleStartGame]
+
+        T_START --> T_MIC[startAudioMonitor\n마이크 초기화]
+        T_MIC --> T_MIC_OK{마이크 권한?}
+        T_MIC_OK -- ✅ --> T_WAVE[volumeRef 동기화\n90ms interval → wave bars 업데이트]
+        T_MIC_OK -- ❌ --> T_MIC_ERR[음성 오류 표시]
+
+        T_START --> T_STT_LOOP[STT 루프 시작\nMediaRecorder 700ms 청크]
+        T_STT_LOOP --> T_API[POST /api/proxy/stt\nOpenAI Whisper]
+        T_API --> T_MATCH{단어 일치?}
+        T_MATCH -- ✅ 정답 --> T_CLEAR[블록 제거\n스트릭++ · 코스튬 획득]
+        T_MATCH -- ❌ 오답 --> T_STACK[블록 쌓임]
+
+        T_CLEAR --> T_GAME_END{게임 종료?}
+        T_STACK --> T_GAME_END
+        T_GAME_END -- 계속 --> T_STT_LOOP
+        T_GAME_END -- 블록 넘침 or 10단어 클리어 --> T_RESULT([📊 결과 모달])
+    end
+
+    %% ─── 풍선 키우기 ─────────────────────────────────────────────
+    subgraph BALLOON ["🎈 풍선 키우기 (BalloonGrowthGame)"]
+        direction TD
+        B_MOUNT([마운트]) --> B_MODAL[난이도 선택 모달\n하 · 중 · 상]
+        B_MODAL --> B_START[게임 시작]
+
+        B_START --> B_MIC[useBalloonAudioInput\nRMS + Peak 기반 음량 계산]
+        B_MIC --> B_MIC_OK{마이크 권한?}
+        B_MIC_OK -- ❌ --> B_MIC_ERR[오류 메시지]
+        B_MIC_OK -- ✅ --> B_LOOP[100ms 게임 루프]
+
+        B_LOOP --> B_VOL{음량 범위}
+        B_VOL -- Safe\n35-70dB --> B_GROW[풍선 성장\ngrowthPerSecond 적용]
+        B_VOL -- Danger\n≥ 85dB --> B_DANGER[위험 상태\n300ms 유지 시 펑!]
+        B_VOL -- 무음 --> B_SHRINK[풍선 축소\nshrinkPerSecond 적용]
+
+        B_GROW --> B_TIMER{타이머 종료?}
+        B_SHRINK --> B_TIMER
+        B_DANGER --> B_FAIL([💥 실패: 풍선 터짐])
+        B_TIMER -- 계속 --> B_LOOP
+        B_TIMER -- 시간 초과 --> B_SUCCESS([🎉 성공 결과])
+    end
+
+    %% ─── 말로 열기 ───────────────────────────────────────────────
+    subgraph MEMORY ["🧠 말로 열기 (MemoryFlipGame)"]
+        direction TD
+        M_MOUNT([마운트]) --> M_AUTOCAM[startCamera 자동 실행]
+        M_AUTOCAM --> M_MODAL[난이도 선택 모달]
+        M_MODAL --> M_START[게임 시작]
+
+        M_START --> M_MIC[startAudioMonitor\n마이크 초기화]
+        M_START --> M_CAM[startCamera 재확인]
+        M_START --> M_SPEECH[Web Speech API\nbeginContinuousListening]
+
+        M_MIC --> M_WAVE[isMicReady = true\n90ms interval → wave bars 업데이트]
+        M_SPEECH --> M_LISTEN[음성 인식 대기\ncontinuous 모드]
+
+        M_LISTEN --> M_MATCH{카테고리 일치?}
+        M_MATCH -- ✅ 과일·동물·탈것 일치 --> M_OPEN[카드 공개 성공]
+        M_MATCH -- ❌ 불일치 --> M_WRONG[오답 카운트++]
+
+        M_OPEN --> M_ALL{모든 카드 클리어?}
+        M_WRONG --> M_LISTEN
+        M_ALL -- 계속 --> M_LISTEN
+        M_ALL -- 완료 --> M_RESULT([📊 결과 화면])
+    end
+
+    %% ─── 문장 대결 ───────────────────────────────────────────────
+    subgraph SENTENCE ["✏️ 문장 대결 (SentenceMagicGame)"]
+        direction TD
+        S_MOUNT([마운트]) --> S_SHOW[문장 카드 표시]
+        S_SHOW --> S_REC[녹음 버튼 클릭\nisRecording = true]
+
+        S_REC --> S_WAVE[wave bars 활성화\n9개 bar 실시간 반응]
+        S_REC --> S_STT[POST /api/proxy/stt\nOpenAI Whisper]
+
+        S_STT --> S_SCORE{발음 정확도}
+        S_SCORE -- 높음 --> S_ATK[⚔️ 내가 공격]
+        S_SCORE -- 낮음 --> S_DEF[🛡️ 상대 반격]
+
+        S_ATK --> S_END{게임 종료?}
+        S_DEF --> S_END
+        S_END -- 계속 --> S_SHOW
+        S_END -- HP 0 --> S_RESULT([📊 최종 결과])
+    end
+
+    %% ─── 공통 미디어 초기화 흐름 (범례) ─────────────────────────
+    subgraph MEDIA ["📡 공통: 마이크 wave 시각화 흐름"]
+        direction LR
+        MIC_START([마이크 스트림 획득\ngetUserMedia]) --> AF[AudioContext\nAnalyserNode RAF 루프]
+        AF --> VOL_REF[volume → volumeRef 동기화\nuseEffect deps 분리]
+        VOL_REF --> TICK[90ms setInterval\nwave bars 계산]
+        TICK --> BARS[audioBars 상태 업데이트\nvt-audio-bar height 반영]
+    end
