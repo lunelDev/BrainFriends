@@ -32,6 +32,11 @@ export async function POST(req: Request) {
 
     const incoming = await req.formData();
     const apiKey = process.env.OPENAI_API_KEY;
+    console.info("[STT Proxy] key loaded", {
+      exists: Boolean(apiKey),
+      prefix: apiKey ? apiKey.slice(0, 7) : null,
+      length: apiKey?.length ?? 0,
+    });
 
     if (!apiKey) {
       console.error("[STT Proxy] OPENAI_API_KEY 누락 -> fallback");
