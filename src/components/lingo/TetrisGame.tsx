@@ -1809,7 +1809,6 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
       speechModeRef.current = "browser";
       setSpeechMode("browser");
       setSpeechError("");
-      console.info("[Tetris Browser STT] started");
       return true;
     } catch (error) {
       console.error("[Tetris Browser STT] failed to start", error);
@@ -1859,11 +1858,6 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
       setCameraError("");
       const stream = await createPreferredCameraStream();
       const nextTrack = stream.getVideoTracks()[0];
-      console.info("[Tetris Camera] stream ready", {
-        label: nextTrack?.label || "unknown",
-        readyState: nextTrack?.readyState,
-        settings: nextTrack?.getSettings?.(),
-      });
 
       cameraStreamRef.current = stream;
       registerMediaStream(stream);

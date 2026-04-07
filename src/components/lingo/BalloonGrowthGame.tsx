@@ -6,6 +6,7 @@ import LingoGameShell from "@/components/lingo/LingoGameShell";
 import LingoResultModalShell from "@/components/lingo/LingoResultModalShell";
 import { BALLOON_GROWTH_DIFFICULTIES } from "@/data/balloonGrowthData";
 import { useBalloonAudioInput } from "@/lib/audio/useBalloonAudioInput";
+import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 
 type BalloonResult = {
   type: "success" | "fail";
@@ -17,6 +18,45 @@ type BalloonResult = {
 };
 
 type BalloonDifficulty = (typeof BALLOON_GROWTH_DIFFICULTIES)[number];
+type SpeechRecognitionAlternativeLike = {
+  transcript: string;
+};
+
+type SpeechRecognitionResultLike = {
+  isFinal: boolean;
+  length: number;
+  0: SpeechRecognitionAlternativeLike;
+};
+
+type SpeechRecognitionEventLike = {
+  results: ArrayLike<SpeechRecognitionResultLike>;
+};
+
+type BalloonSpeechRecognitionInstance = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
+type BalloonSpeechRecognitionConstructor =
+  new () => BalloonSpeechRecognitionInstance;
+
+type BalloonSpeechWindow = Window &
+  typeof globalThis & {
+    SpeechRecognition?: BalloonSpeechRecognitionConstructor;
+    webkitSpeechRecognition?: BalloonSpeechRecognitionConstructor;
+  };
+
+const VOWEL_GUIDES = [
+  { vowel: "아", label: "입을 크게 열고 또렷하게" },
+  { vowel: "어", label: "자연스럽게 소리를 길게 유지" },
+  { vowel: "오", label: "입술을 둥글게 모아 발성" },
+] as const;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -286,6 +326,7 @@ function SelectionModal({
 
 export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
   const { volume, isMicReady, error, start, stop } = useBalloonAudioInput();
+  const [isAdminAccount, setIsAdminAccount] = useState(false);
   const [phase, setPhase] = useState<"select" | "playing" | "success" | "fail">(
     "select",
   );
@@ -297,6 +338,7 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
   const [message, setMessage] = useState("단계를 고른 뒤 풍선을 키워 보세요.");
   const [result, setResult] = useState<BalloonResult | null>(null);
   const [testVoiceBoost, setTestVoiceBoost] = useState(false);
+  const [waveDisplayLevel, setWaveDisplayLevel] = useState(0);
 
   const balloonSizeRef = useRef(18);
   const timeLeftRef = useRef(0);
@@ -307,22 +349,39 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
   const dangerMsRef = useRef(0);
   const silenceMsRef = useRef(0);
   const lastTickRef = useRef<number | null>(null);
+  const endTimeRef = useRef<number | null>(null);
   const previousVolumeRef = useRef(0);
   const toneHoldMsRef = useRef(0);
   const recentVoiceMsRef = useRef(0);
+  const effectiveVolumeRef = useRef(0);
+  const guideRecognitionRef = useRef<BalloonSpeechRecognitionInstance | null>(null);
+  const guideRecognitionShouldResumeRef = useRef(false);
+  const guideBoostUntilRef = useRef(0);
 
   const difficulty = selectedDifficulty ?? BALLOON_GROWTH_DIFFICULTIES[0];
   const stage = difficulty.stage;
+  const growthFloor = 12;
+  const voicedFloor = 7;
+  const effectiveDangerMin = Math.max(96, stage.dangerMin + 12);
+  const effectiveDangerHoldMs = Math.round(stage.dangerHoldMs * 2.5);
+  const mappedVolume =
+    volume <= 18 ? 0 : clamp(Math.round((volume - 18) * 2.8), 0, 100);
   const effectiveVolume = testVoiceBoost
     ? Math.max(volume, Math.round((stage.safeMin + stage.safeMax) / 2))
-    : volume;
-
-  const targetProgress = clamp((balloonSize / stage.targetSize) * 100, 0, 100);
+    : mappedVolume;
+  const growthSpan = Math.max(1, stage.targetSize - stage.startSize);
+  const relativeSize = clamp((balloonSize - stage.startSize) / growthSpan, 0, 1);
+  const targetProgress = clamp(relativeSize * 100, 0, 100);
+  const vowelGuide =
+    VOWEL_GUIDES[
+      Math.max(0, BALLOON_GROWTH_DIFFICULTIES.findIndex((item) => item.id === difficulty.id)) %
+        VOWEL_GUIDES.length
+    ];
   const safeWidth = stage.safeMax - stage.safeMin;
-  const dangerLeft = `${stage.dangerMin}%`;
+  const dangerLeft = `${effectiveDangerMin}%`;
   const safeLeft = `${stage.safeMin}%`;
   const liveWidth = `${effectiveVolume}%`;
-  const isDanger = phase === "playing" && effectiveVolume >= stage.dangerMin;
+  const isDanger = phase === "playing" && effectiveVolume >= effectiveDangerMin;
   const isSafe =
     phase === "playing" &&
     effectiveVolume >= stage.safeMin &&
@@ -335,7 +394,33 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
     1,
   );
   const isOptimal = isSafe && optimalRatio >= 0.72;
-  const balloonScale = 0.48 + (balloonSize / stage.targetSize) * 0.46;
+  const hasVoice = phase === "playing" && effectiveVolume >= voicedFloor;
+  const hasGrowthVoice = phase === "playing" && effectiveVolume >= growthFloor;
+  const balloonScale = 0.44 + relativeSize * 0.72;
+  const progressHeadline =
+    phase !== "playing"
+      ? "목표 크기까지 풍선을 키워 보세요"
+      : isDanger
+        ? "소리를 조금만 줄여 주세요"
+        : "목표까지 진행 중";
+  const progressDescription =
+    phase !== "playing"
+      ? "안정적인 발성으로 목표 크기까지 풍선을 키워 보세요."
+      : isDanger
+        ? "지금보다 살짝만 낮추면 안전하게 계속 커질 수 있어요."
+        : targetProgress >= 85
+          ? "조금만 더 힘내면 풍선을 완성할 수 있어요."
+        : targetProgress >= 60
+          ? "지금처럼 같은 크기의 소리를 유지해 보세요."
+        : targetProgress >= 30
+          ? "숨을 끊지 말고 꾸준히 이어서 소리를 내보세요."
+          : "입을 열고 편하게 소리를 내면 풍선이 커지기 시작해요.";
+  const wavePattern = [0.62, 0.74, 0.86, 0.98, 1, 0.92, 0.84, 0.92, 1, 0.98, 0.86, 0.74, 0.62];
+  const voiceWaveBars = wavePattern.map((multiplier) => {
+    const normalized = clamp(waveDisplayLevel / 100, 0, 1);
+    const height = 12 + normalized * 22 * multiplier;
+    return clamp(Math.round(height), 10, 36);
+  });
   const balloonTone =
     phase !== "playing"
       ? "준비"
@@ -343,15 +428,109 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
         ? "위험"
         : isOptimal
           ? "최적"
-          : isSafe
+          : hasGrowthVoice
             ? "성장 중"
             : "대기";
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetch("/api/auth/session", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json().catch(() => null);
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        const patient = payload?.patient;
+        setIsAdminAccount(
+          Boolean(patient && (patient.userRole === "admin" || patient.name === "관리자")),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIsAdminAccount(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
       stop();
     };
   }, [stop]);
+
+  useEffect(() => {
+    if (phase !== "playing") {
+      guideRecognitionShouldResumeRef.current = false;
+      guideBoostUntilRef.current = 0;
+      if (guideRecognitionRef.current) {
+        guideRecognitionRef.current.onend = null;
+        guideRecognitionRef.current.stop();
+        guideRecognitionRef.current = null;
+      }
+      return;
+    }
+
+    const SpeechRecognitionCtor =
+      (window as BalloonSpeechWindow).SpeechRecognition ??
+      (window as BalloonSpeechWindow).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionCtor) {
+      return;
+    }
+
+    const recognition = new SpeechRecognitionCtor();
+    guideRecognitionRef.current = recognition;
+    guideRecognitionShouldResumeRef.current = true;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "ko-KR";
+    recognition.onresult = (event) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i += 1) {
+        transcript += `${event.results[i][0]?.transcript ?? ""} `;
+      }
+
+      const normalized = transcript.replace(/\s+/g, "");
+      if (normalized.includes(vowelGuide.vowel)) {
+        guideBoostUntilRef.current = Date.now() + 1800;
+      }
+    };
+    recognition.onerror = () => {
+      // Ignore guide recognition errors; base growth still follows volume input.
+    };
+    recognition.onend = () => {
+      if (!guideRecognitionShouldResumeRef.current) {
+        return;
+      }
+      try {
+        recognition.start();
+      } catch {
+        // Ignore duplicate start errors during continuous guide listening.
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      // Ignore initial start errors; the game still works with volume-only growth.
+    }
+
+    return () => {
+      guideRecognitionShouldResumeRef.current = false;
+      guideBoostUntilRef.current = 0;
+      recognition.onend = null;
+      recognition.stop();
+      if (guideRecognitionRef.current === recognition) {
+        guideRecognitionRef.current = null;
+      }
+    };
+  }, [phase, vowelGuide.vowel]);
 
   useEffect(() => {
     balloonSizeRef.current = balloonSize;
@@ -362,8 +541,23 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
   }, [timeLeft]);
 
   useEffect(() => {
+    effectiveVolumeRef.current = effectiveVolume;
+  }, [effectiveVolume]);
+
+  useEffect(() => {
+    setWaveDisplayLevel((prev) => {
+      if (effectiveVolume <= 0) {
+        return prev * 0.72;
+      }
+      const blended = prev * 0.78 + effectiveVolume * 0.22;
+      return Math.abs(blended - effectiveVolume) < 1.2 ? effectiveVolume : blended;
+    });
+  }, [effectiveVolume]);
+
+  useEffect(() => {
     if (phase !== "playing") {
       lastTickRef.current = null;
+      endTimeRef.current = null;
       previousVolumeRef.current = 0;
       toneHoldMsRef.current = 0;
       recentVoiceMsRef.current = 0;
@@ -372,152 +566,93 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
 
     const timer = window.setInterval(() => {
       const now = performance.now();
-      const delta = lastTickRef.current ? now - lastTickRef.current : 100;
+      const deltaRaw = lastTickRef.current ? now - lastTickRef.current : 100;
       lastTickRef.current = now;
+      const delta = Math.min(deltaRaw, 120);
       const deltaSec = delta / 1000;
 
-      const nextTimeLeft = Math.max(0, timeLeftRef.current - deltaSec);
+      if (!endTimeRef.current) {
+        endTimeRef.current = now + timeLeftRef.current * 1000;
+      }
+      const nextTimeLeft = Math.max(0, (endTimeRef.current - now) / 1000);
       timeLeftRef.current = nextTimeLeft;
       let nextBalloonSize = balloonSizeRef.current;
+      const currentVolume = effectiveVolumeRef.current;
 
       const inSafeRange =
-        effectiveVolume >= stage.safeMin && effectiveVolume <= stage.safeMax;
-      const inDangerRange = effectiveVolume >= stage.dangerMin;
-      const voicedFloor = Math.max(4, stage.silenceThreshold - 5);
-      const isSilent = effectiveVolume <= voicedFloor;
-      const sustainedVoiceRange =
-        effectiveVolume > voicedFloor && effectiveVolume < stage.dangerMin;
-      const nearSafeLowRange =
-        effectiveVolume >= Math.max(voicedFloor + 1, stage.safeMin - 20) &&
-        effectiveVolume < stage.safeMin;
-      const volumeDelta = Math.abs(effectiveVolume - previousVolumeRef.current);
-      const toneStable = sustainedVoiceRange && volumeDelta <= 10;
+        currentVolume >= stage.safeMin && currentVolume <= stage.safeMax;
+      const inDangerRange = currentVolume >= effectiveDangerMin;
+      const hasVoice = currentVolume >= voicedFloor;
+      const hasGrowthVoice = currentVolume >= growthFloor;
+      const isSilent = !hasVoice;
 
-      if (toneStable) {
-        toneHoldMsRef.current += delta;
-      } else if (!inSafeRange) {
-        toneHoldMsRef.current = Math.max(0, toneHoldMsRef.current - delta * 0.4);
-      }
-
-      if (inSafeRange) {
-        const closeness = 1 - Math.abs(effectiveVolume - safeCenter) / safeHalf;
+      if (inDangerRange) {
+        voicedMsRef.current += delta;
+        totalVolumeRef.current += currentVolume;
+        sampleCountRef.current += 1;
+        silenceMsRef.current = 0;
+        dangerMsRef.current += delta;
+        recentVoiceMsRef.current = 1000;
+        setDangerRatio(
+          clamp((dangerMsRef.current / effectiveDangerHoldMs) * 100, 0, 100),
+        );
+        setMessage("위험해요. 소리를 조금만 줄여 보세요.");
+      } else if (hasGrowthVoice) {
+        const guideBoostActive = Date.now() < guideBoostUntilRef.current;
         const growth =
-          stage.growthPerSecond * clamp(0.95 + closeness * 0.75, 0.95, 1.7);
+          stage.growthPerSecond *
+          (inSafeRange ? 1.32 : 1.12) *
+          (guideBoostActive ? 1.35 : 1);
 
         voicedMsRef.current += delta;
-        safeMsRef.current += delta;
-        totalVolumeRef.current += effectiveVolume;
+        totalVolumeRef.current += currentVolume;
         sampleCountRef.current += 1;
+        if (inSafeRange) {
+          safeMsRef.current += delta;
+        }
         dangerMsRef.current = 0;
         silenceMsRef.current = 0;
-        recentVoiceMsRef.current = 1600;
+        recentVoiceMsRef.current = 1800;
         setDangerRatio(0);
         nextBalloonSize = clamp(
           balloonSizeRef.current + growth * deltaSec,
           stage.startSize,
           stage.targetSize,
         );
-        balloonSizeRef.current = nextBalloonSize;
         setMessage(
-          isOptimal
-            ? "완벽해요. 풍선이 가장 예쁘게 커지고 있어요."
-            : "좋아요. 풍선이 안정적으로 커지고 있어요.",
+          inSafeRange
+            ? "좋아요. 지금처럼 소리를 유지하면 풍선이 잘 커져요."
+            : "좋아요. 소리가 들어오는 동안 풍선이 계속 커져요.",
         );
-      } else if (toneHoldMsRef.current >= 120 && nearSafeLowRange) {
-        const toneGrowth =
-          stage.growthPerSecond *
-          clamp(0.9 + (toneHoldMsRef.current / 1200) * 0.48, 0.9, 1.28);
-
-        voicedMsRef.current += delta;
-        totalVolumeRef.current += effectiveVolume;
-        sampleCountRef.current += 1;
+      } else if (hasVoice) {
         dangerMsRef.current = 0;
-        silenceMsRef.current = 0;
-        recentVoiceMsRef.current = 1800;
         setDangerRatio(0);
-        nextBalloonSize = clamp(
-          balloonSizeRef.current + toneGrowth * deltaSec,
-          stage.startSize,
-          stage.targetSize,
-        );
-        balloonSizeRef.current = nextBalloonSize;
-        setMessage(
-          "좋아요. 일정한 톤을 유지하고 있어서 풍선이 커지고 있어요.",
-        );
-      } else if (sustainedVoiceRange) {
-        voicedMsRef.current += delta;
-        totalVolumeRef.current += effectiveVolume;
-        sampleCountRef.current += 1;
-        dangerMsRef.current = 0;
         silenceMsRef.current = 0;
-        recentVoiceMsRef.current = 2000;
-        setDangerRatio(0);
-
-        const normalizedVoice = clamp(
-          (effectiveVolume - voicedFloor) /
-            Math.max(8, stage.dangerMin - voicedFloor),
-          0.18,
-          1,
-        );
-        const sustainGrowth =
-          stage.growthPerSecond *
-          clamp(
-            0.72 + normalizedVoice * 0.9 + toneHoldMsRef.current / 2200,
-            0.72,
-            1.55,
-          );
-        nextBalloonSize = clamp(
-          balloonSizeRef.current + sustainGrowth * deltaSec,
-          stage.startSize,
-          stage.targetSize,
-        );
-        balloonSizeRef.current = nextBalloonSize;
-        setMessage(
-          toneHoldMsRef.current >= 120
-            ? "좋아요. 지금처럼 소리를 내면 풍선이 계속 커져요."
-            : "소리가 들어오고 있어요. 그대로 이어서 말해 보세요.",
-        );
-      } else if (inDangerRange) {
-        voicedMsRef.current += delta;
-        totalVolumeRef.current += effectiveVolume;
-        sampleCountRef.current += 1;
-        dangerMsRef.current += delta;
-        silenceMsRef.current = 0;
-        recentVoiceMsRef.current = 1000;
-        setDangerRatio(
-          clamp((dangerMsRef.current / stage.dangerHoldMs) * 100, 0, 100),
-        );
-        setMessage("위험해요. 소리를 조금만 줄여 보세요.");
+        recentVoiceMsRef.current = Math.max(recentVoiceMsRef.current, 900);
+        setMessage("조금만 더 크게 소리를 내면 풍선이 커져요.");
       } else if (isSilent) {
         dangerMsRef.current = 0;
         setDangerRatio(0);
         silenceMsRef.current += delta;
         recentVoiceMsRef.current = Math.max(0, recentVoiceMsRef.current - delta);
         setMessage("잠깐 쉬어도 괜찮아요. 다시 소리를 이어 보세요.");
-      } else if (effectiveVolume > 6) {
-        voicedMsRef.current += delta;
-        totalVolumeRef.current += effectiveVolume;
-        sampleCountRef.current += 1;
-        dangerMsRef.current = 0;
-        silenceMsRef.current = 0;
-        recentVoiceMsRef.current = Math.max(recentVoiceMsRef.current, 1200);
-        setDangerRatio(0);
-        setMessage("조금 더 안정적인 크기로 소리를 내 보세요.");
       }
 
-      previousVolumeRef.current = effectiveVolume;
+      previousVolumeRef.current = currentVolume;
       setTimeLeft(nextTimeLeft);
       if (nextBalloonSize !== balloonSizeRef.current) {
         balloonSizeRef.current = nextBalloonSize;
       }
       setBalloonSize(nextBalloonSize);
 
-      if (dangerMsRef.current >= stage.dangerHoldMs) {
+      if (dangerMsRef.current >= effectiveDangerHoldMs) {
         finishGame("burst");
         return;
       }
 
       if (nextBalloonSize >= stage.targetSize) {
+        balloonSizeRef.current = stage.targetSize;
+        setBalloonSize(stage.targetSize);
         finishGame("success");
         return;
       }
@@ -525,13 +660,14 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
       if (nextTimeLeft <= 0) {
         finishGame("timeout");
       }
-    }, 100);
+    }, 50);
 
     return () => window.clearInterval(timer);
   }, [
-    effectiveVolume,
     isOptimal,
     phase,
+    effectiveDangerHoldMs,
+    effectiveDangerMin,
     safeCenter,
     safeHalf,
     stage,
@@ -544,6 +680,7 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
     setTimeLeft(nextStage.durationSec);
     balloonSizeRef.current = nextStage.startSize;
     timeLeftRef.current = nextStage.durationSec;
+    endTimeRef.current = null;
     setDangerRatio(0);
     setResult(null);
     voicedMsRef.current = 0;
@@ -553,8 +690,10 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
     dangerMsRef.current = 0;
     silenceMsRef.current = 0;
     lastTickRef.current = null;
+    endTimeRef.current = null;
     previousVolumeRef.current = 0;
     toneHoldMsRef.current = 0;
+    guideBoostUntilRef.current = 0;
   }
 
   function buildResult(type: "success" | "burst" | "timeout"): BalloonResult {
@@ -625,8 +764,10 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
     setDangerRatio(0);
     setResult(null);
     setMessage("단계를 고른 뒤 풍선을 키워 보세요.");
+    endTimeRef.current = null;
     previousVolumeRef.current = 0;
     toneHoldMsRef.current = 0;
+    guideBoostUntilRef.current = 0;
   }
 
   return (
@@ -635,7 +776,23 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
       title="풍선 키우기"
       onRestart={handleRestart}
       onBack={onBack}
-      statusLabel={phase === "playing" ? balloonTone.toUpperCase() : "READY"}
+      headerActions={
+        isAdminAccount ? (
+          <button
+            type="button"
+            className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${
+              testVoiceBoost ? trainingButtonStyles.violet : trainingButtonStyles.slateSoft
+            }`}
+            onMouseDown={() => setTestVoiceBoost(true)}
+            onMouseUp={() => setTestVoiceBoost(false)}
+            onMouseLeave={() => setTestVoiceBoost(false)}
+            onTouchStart={() => setTestVoiceBoost(true)}
+            onTouchEnd={() => setTestVoiceBoost(false)}
+          >
+            {testVoiceBoost ? "테스트 발성 중" : "테스트 발성"}
+          </button>
+        ) : null
+      }
     >
       <div className="vt-layout vt-layout-playing tetris-layout-no-left">
         <section className="balloon-game-container relative flex h-full w-full flex-1 flex-col gap-3 px-0 py-4 sm:gap-5 sm:px-0 sm:py-5">
@@ -684,114 +841,82 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
                 className={`inline-flex min-h-[30px] items-center rounded-full px-3 text-[11px] font-black shadow-sm sm:min-h-[34px] sm:px-4 sm:text-xs lg:min-h-[38px] lg:px-5 lg:text-sm ${
                   isDanger
                     ? "bg-rose-500 text-white"
-                    : isOptimal
-                      ? "bg-violet-600 text-white"
-                      : isSafe
-                        ? "bg-violet-500 text-white"
-                        : "bg-white text-slate-500"
+                    : "bg-violet-500 text-white"
                 }`}
               >
-                {balloonTone}
+                {progressHeadline}
               </span>
               <p
-                className={`mx-auto mt-2 max-w-[260px] text-sm font-semibold leading-6 sm:mt-3 sm:max-w-xl sm:text-[15px] lg:mt-4 lg:max-w-3xl lg:text-base xl:text-lg ${
+                className={`mx-auto mt-2 min-h-[48px] max-w-[260px] text-sm font-semibold leading-6 sm:mt-3 sm:min-h-[54px] sm:max-w-xl sm:text-[15px] lg:mt-4 lg:min-h-[60px] lg:max-w-3xl lg:text-base xl:text-lg ${
                   isDanger ? "text-rose-600" : "text-slate-600"
                 }`}
               >
-                {message}
+                {progressDescription}
               </p>
             </div>
 
-            <div className="flex min-h-0 items-center justify-center px-4 py-4 sm:px-6 lg:px-8">
-              <div className="balloon-game-balloon-stage scale-[0.82] sm:scale-100 lg:scale-[1.18] xl:scale-[1.32]">
-                <div
-                  className={`balloon-game-ripples ${phase === "playing" ? "is-active" : ""} ${isDanger ? "is-danger" : ""}`}
-                  aria-hidden="true"
-                >
-                  <span />
-                  <span />
-                  <span />
-                </div>
-                <BalloonSvg
-                  scale={balloonScale}
-                  isDanger={isDanger}
-                  isPopped={phase === "fail" && result?.title === "풍선이 터졌어요"}
-                  isOptimal={isOptimal}
-                />
-                {isDanger ? <div className="balloon-game-warning">위험!</div> : null}
-              </div>
-            </div>
-
-            <div className="grid gap-3 border-t border-violet-100/80 bg-white/76 p-3 backdrop-blur-xl sm:gap-4 sm:p-4 lg:grid-cols-2 lg:p-5">
-              <div className="rounded-[24px] border border-slate-100 bg-white px-4 py-4 shadow-sm sm:rounded-[26px] sm:px-4 sm:py-4 lg:rounded-[30px] lg:px-5 lg:py-5">
-                <div className="mb-2 flex items-end justify-between gap-3 sm:mb-3">
-                  <span className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">
-                    Live Volume
-                  </span>
-                  <span className="text-lg font-black text-slate-700 sm:text-xl lg:text-2xl">
-                    {effectiveVolume}
-                    <small className="ml-1 text-[10px] font-medium text-slate-400">dB</small>
-                  </span>
-                </div>
-                <div className="relative h-4 overflow-hidden rounded-full bg-slate-100 shadow-inner">
+            <div className="grid min-h-0 flex-1 items-center gap-5 px-4 py-4 sm:px-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(260px,0.8fr)] lg:gap-8 lg:px-8">
+              <div className="flex min-h-0 flex-col items-center justify-center gap-4 sm:gap-5 lg:gap-6">
+                <div className="balloon-game-balloon-stage scale-[0.82] sm:scale-100 lg:scale-[1.18] xl:scale-[1.32]">
                   <div
-                    className="absolute z-10 h-full border-x border-violet-400/35 bg-violet-300/20"
-                    style={{ left: `${stage.safeMin}%`, width: `${safeWidth}%` }}
-                  />
-                  <div
-                    className="absolute z-0 h-full bg-rose-300/18"
-                    style={{ left: dangerLeft, width: `${100 - stage.dangerMin}%` }}
-                  />
-                  <div
-                    className={`absolute z-20 h-full rounded-full transition-all duration-150 ${
-                      isDanger
-                        ? "bg-gradient-to-r from-rose-400 to-rose-600"
-                        : "bg-gradient-to-r from-violet-400 to-indigo-600"
-                    }`}
-                    style={{ width: liveWidth }}
-                  />
-                </div>
-              </div>
-
-              <div className="rounded-[24px] border border-slate-100 bg-white px-4 py-4 shadow-sm sm:rounded-[26px] sm:px-4 sm:py-4 lg:rounded-[30px] lg:px-5 lg:py-5">
-                <div className="mb-2 flex items-end justify-between gap-3 sm:mb-3">
-                  <span className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">
-                    Danger Accumulation
-                  </span>
-                  <span
-                    className={`text-lg font-black sm:text-xl lg:text-2xl ${
-                      dangerRatio > 70 ? "text-rose-500" : "text-slate-700"
-                    }`}
+                    className={`balloon-game-ripples ${phase === "playing" ? "is-active" : ""} ${isDanger ? "is-danger" : ""}`}
+                    aria-hidden="true"
                   >
-                    {Math.round(dangerRatio)}%
-                  </span>
-                </div>
-                <div className="h-3 overflow-hidden rounded-full bg-slate-100 shadow-inner">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-rose-400 to-rose-600 transition-all duration-150"
-                    style={{ width: `${dangerRatio}%` }}
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                  <BalloonSvg
+                    scale={balloonScale}
+                    isDanger={isDanger}
+                    isPopped={phase === "fail" && result?.title === "풍선이 터졌어요"}
+                    isOptimal={isOptimal}
                   />
+                  {isDanger ? <div className="balloon-game-warning">위험!</div> : null}
+                </div>
+                <div className="relative flex min-h-[60px] items-center justify-center rounded-[999px] border border-violet-100/80 bg-white/80 px-4 py-3 shadow-[0_12px_24px_rgba(148,163,184,0.12)] backdrop-blur sm:min-h-[64px] sm:px-5 lg:min-h-[70px] lg:px-6">
+                  <span className="pointer-events-none absolute inset-x-4 inset-y-2 rounded-[999px] bg-gradient-to-r from-violet-50 via-white to-sky-50 opacity-90" />
+                  <span className="pointer-events-none absolute inset-x-5 bottom-2 h-px bg-gradient-to-r from-transparent via-violet-200/70 to-transparent" />
+                  <div className="relative flex items-end justify-center gap-1.5 sm:gap-2">
+                    {voiceWaveBars.map((barHeight, index) => (
+                      <span
+                        key={index}
+                        className={`relative w-1.5 rounded-full transition-all duration-100 sm:w-2 ${
+                          phase === "playing" && waveDisplayLevel >= 8
+                            ? isDanger
+                              ? "bg-gradient-to-t from-rose-500 via-rose-400 to-rose-200 shadow-[0_0_10px_rgba(244,63,94,0.35)]"
+                              : "bg-gradient-to-t from-violet-500 via-violet-400 to-sky-300 shadow-[0_0_10px_rgba(129,140,248,0.28)]"
+                            : "bg-slate-200"
+                        }`}
+                        style={{ height: `${barHeight}px` }}
+                        aria-hidden="true"
+                      >
+                        <span className="absolute inset-x-0 top-0 h-[35%] rounded-full bg-white/45" />
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex h-full min-h-[280px] items-center justify-center">
+                <div className="flex w-full max-w-[320px] flex-col items-center justify-center rounded-[32px] border border-violet-100/80 bg-white/78 px-6 py-8 text-center shadow-[0_18px_40px_rgba(148,163,184,0.14)] backdrop-blur-xl sm:rounded-[36px] sm:px-8 sm:py-10">
+                  <span className="rounded-full bg-violet-100 px-4 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-violet-700">
+                    단모음 가이드
+                  </span>
+                  <div className="mt-6 rounded-[28px] bg-gradient-to-br from-violet-500 to-indigo-600 px-10 py-8 text-white shadow-lg shadow-violet-200 sm:px-12 sm:py-10">
+                    <span className="text-7xl font-black sm:text-8xl">{vowelGuide.vowel}</span>
+                  </div>
+                  <p className="mt-5 text-base font-black text-slate-800 sm:text-lg">
+                    {vowelGuide.vowel} 발성 느낌으로 유지해 보세요
+                  </p>
+                  <p className="mt-2 text-sm font-semibold leading-6 text-slate-500 sm:text-[15px]">
+                    {vowelGuide.label}
+                  </p>
                 </div>
               </div>
             </div>
+
           </div>
-
-          <button
-            type="button"
-            className={`w-full rounded-[22px] py-3.5 text-base font-black text-white shadow-lg shadow-slate-200 transition-transform active:scale-[0.98] sm:rounded-[24px] sm:py-4 sm:text-base lg:rounded-[26px] lg:py-5 lg:text-lg ${
-              testVoiceBoost
-                ? "bg-gradient-to-r from-violet-600 to-indigo-600"
-                : "bg-slate-800"
-            }`}
-            onMouseDown={() => setTestVoiceBoost(true)}
-            onMouseUp={() => setTestVoiceBoost(false)}
-            onMouseLeave={() => setTestVoiceBoost(false)}
-            onTouchStart={() => setTestVoiceBoost(true)}
-            onTouchEnd={() => setTestVoiceBoost(false)}
-          >
-            테스트 발성 올리기
-          </button>
-
           {error ? (
             <p className="rounded-[20px] border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600 sm:rounded-[24px]">
               {error}

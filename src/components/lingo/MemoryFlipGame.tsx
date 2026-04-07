@@ -26,6 +26,245 @@ import { createPreferredCameraStream } from "@/lib/media/cameraPreferences";
 import MonitoringPanelShell from "@/components/training/MonitoringPanelShell";
 import LingoResultModalShell from "@/components/lingo/LingoResultModalShell";
 
+const COSTUME_TIERS = [
+  { minStreak: 0, id: "none" },
+  { minStreak: 1, id: "earrings" },
+  { minStreak: 2, id: "necklace" },
+  { minStreak: 3, id: "crown" },
+  { minStreak: 4, id: "sparkle" },
+] as const;
+
+type Landmark = { x: number; y: number; z: number };
+type CostumeImages = Record<string, HTMLImageElement>;
+type FaceMeshWindow = Window &
+  typeof globalThis & {
+    FaceMesh?: new (options: { locateFile: (file: string) => string }) => {
+      setOptions: (options: Record<string, unknown>) => void;
+      onResults: (callback: (results: { multiFaceLandmarks?: Landmark[][] }) => void) => void;
+      send: (input: { image: HTMLVideoElement }) => Promise<void>;
+      close: () => void;
+      initialize?: () => Promise<void>;
+    };
+  };
+
+const COSTUME_ASSETS = {
+  star: "/ai-costumes/star.png",
+  crown: "/ai-costumes/hats/crown.png",
+  tear: "/ai-costumes/stickers/tear.svg",
+  earring: "/ai-costumes/earrings/star-drop.svg",
+  necklace: "/ai-costumes/necklace.png",
+} as const;
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(img);
+    img.src = src;
+  });
+}
+
+function ensureGlobalScriptLoaded(
+  src: string,
+  globalName: string,
+): Promise<void> {
+  if (typeof window === "undefined") {
+    return Promise.reject(new Error("window를 사용할 수 없어요."));
+  }
+
+  if (typeof (window as unknown as Record<string, unknown>)[globalName] === "function") {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(
+      `script[data-global-script="${globalName}"]`,
+    ) as HTMLScriptElement | null;
+
+    if (existing) {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener(
+        "error",
+        () => reject(new Error(`${globalName} 스크립트를 불러오지 못했어요.`)),
+        { once: true },
+      );
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.dataset.globalScript = globalName;
+    script.onload = () => resolve();
+    script.onerror = () =>
+      reject(new Error(`${globalName} 스크립트를 불러오지 못했어요.`));
+    document.head.appendChild(script);
+  });
+}
+
+function drawImg(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  cx: number,
+  cy: number,
+  w: number,
+  h: number,
+) {
+  if (!img?.complete || img.naturalWidth === 0) return;
+  ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
+}
+
+function drawCameraOverlay(
+  ctx: CanvasRenderingContext2D,
+  canvasW: number,
+  canvasH: number,
+  tierId: string,
+) {
+  ctx.save();
+  const glow = ctx.createRadialGradient(
+    canvasW * 0.5,
+    canvasH * 0.42,
+    canvasW * 0.06,
+    canvasW * 0.5,
+    canvasH * 0.5,
+    canvasW * 0.7,
+  );
+  glow.addColorStop(0, "rgba(255,255,255,0.08)");
+  glow.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, canvasW, canvasH);
+
+  if (tierId === "sparkle") {
+    const aura = ctx.createRadialGradient(
+      canvasW * 0.5,
+      canvasH * 0.34,
+      canvasW * 0.05,
+      canvasW * 0.5,
+      canvasH * 0.4,
+      canvasW * 0.45,
+    );
+    aura.addColorStop(0, "rgba(255,241,165,0.18)");
+    aura.addColorStop(0.45, "rgba(125,211,252,0.10)");
+    aura.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = aura;
+    ctx.fillRect(0, 0, canvasW, canvasH);
+  }
+  ctx.restore();
+}
+
+function drawFaceCostume(
+  ctx: CanvasRenderingContext2D,
+  landmarks: Landmark[],
+  canvasW: number,
+  canvasH: number,
+  videoW: number,
+  videoH: number,
+  tierId: string,
+  failCnt: number,
+  images: CostumeImages,
+) {
+  const scale = Math.max(canvasW / videoW, canvasH / videoH);
+  const offsetX = (videoW * scale - canvasW) / 2;
+  const offsetY = (videoH * scale - canvasH) / 2;
+
+  const lx = (i: number) => landmarks[i].x * videoW * scale - offsetX;
+  const ly = (i: number) => landmarks[i].y * videoH * scale - offsetY;
+
+  const leftEyeX = lx(33);
+  const leftEyeY = ly(33);
+  const rightEyeX = lx(263);
+  const rightEyeY = ly(263);
+  const foreheadX = lx(10);
+  const foreheadY = ly(10);
+  const leftTempleX = lx(234);
+  const leftTempleY = ly(234);
+  const rightTempleX = lx(454);
+  const rightTempleY = ly(454);
+  const chinX = lx(152);
+  const chinY = ly(152);
+  const eyeDist = Math.hypot(rightEyeX - leftEyeX, rightEyeY - leftEyeY);
+  const hatSize = eyeDist * 1.9;
+  const badgeSz = eyeDist * 0.72;
+
+  if (tierId === "crown" && images.crown) {
+    drawImg(
+      ctx,
+      images.crown,
+      foreheadX,
+      foreheadY - hatSize * 0.5,
+      hatSize,
+      hatSize * 0.62,
+    );
+  }
+
+  const showEarrings =
+    tierId === "earrings" ||
+    tierId === "necklace" ||
+    tierId === "crown" ||
+    tierId === "sparkle";
+  const showNecklace =
+    tierId === "necklace" || tierId === "crown" || tierId === "sparkle";
+
+  if (showEarrings && images.earring) {
+    const ew = badgeSz * 0.9;
+    const eh = badgeSz * 1.55;
+    drawImg(
+      ctx,
+      images.earring,
+      leftTempleX - eyeDist * 0.18,
+      leftTempleY + eyeDist * 0.92,
+      ew,
+      eh,
+    );
+    drawImg(
+      ctx,
+      images.earring,
+      rightTempleX + eyeDist * 0.18,
+      rightTempleY + eyeDist * 0.92,
+      ew,
+      eh,
+    );
+  }
+
+  if (showNecklace && images.necklace) {
+    drawImg(
+      ctx,
+      images.necklace,
+      chinX,
+      chinY + eyeDist * 1.03,
+      eyeDist * 2.55,
+      eyeDist * 1.6,
+    );
+  }
+
+  if (tierId === "sparkle" && images.star) {
+    const sparkles = [
+      { x: foreheadX - eyeDist * 1.05, y: foreheadY - eyeDist * 0.48, s: 0.82 },
+      { x: foreheadX + eyeDist * 1.05, y: foreheadY - eyeDist * 0.46, s: 0.82 },
+      { x: (leftEyeX + rightEyeX) / 2, y: foreheadY - eyeDist * 1.02, s: 0.74 },
+    ];
+    ctx.save();
+    ctx.globalAlpha = 0.95;
+    sparkles.forEach(({ x, y, s }, idx) => {
+      const size = badgeSz * s * (1 + Math.sin(Date.now() / 240 + idx) * 0.08);
+      drawImg(ctx, images.star, x, y, size, size);
+    });
+    ctx.restore();
+  }
+
+  if (failCnt >= 1 && images.tear) {
+    const sway = Math.sin(Date.now() / 320) * 3;
+    drawImg(
+      ctx,
+      images.tear,
+      rightTempleX + eyeDist * 0.08,
+      foreheadY + eyeDist * 0.08 + sway,
+      badgeSz * 0.48,
+      badgeSz * 0.72,
+    );
+  }
+}
+
 function shuffle<T>(items: T[]) {
   return [...items].sort(() => Math.random() - 0.5);
 }
@@ -159,6 +398,40 @@ function parseCategory(text: string) {
   return null;
 }
 
+function matchesCardWord(text: string, word: string) {
+  const normalizedText = normalizeCategoryText(text);
+  const compactText = normalizedText.replace(/\s+/g, "");
+  const normalizedWord = normalizeCategoryText(word);
+  const compactWord = normalizedWord.replace(/\s+/g, "");
+
+  if (!compactText || !compactWord) return false;
+
+  if (
+    compactText === compactWord ||
+    compactText.includes(compactWord) ||
+    compactWord.includes(compactText)
+  ) {
+    return true;
+  }
+
+  const tokens = normalizedText
+    .split(" ")
+    .filter(Boolean)
+    .flatMap((token) => {
+      const compactToken = token.replace(/\s+/g, "");
+      return [compactToken, compactToken.slice(0, compactWord.length)];
+    })
+    .filter(Boolean);
+
+  return tokens.some((token) => {
+    if (token === compactWord || token.includes(compactWord)) return true;
+    return (
+      Math.abs(token.length - compactWord.length) <= 1 &&
+      levenshtein(token, compactWord) <= 1
+    );
+  });
+}
+
 function buildRecognition() {
   if (typeof window === "undefined") return null;
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -174,11 +447,59 @@ function buildDeck(difficulty: MemoryDifficultyId) {
     ).slice(0, config.cardsPerCategory),
   );
 
-  return shuffle(nextCards).map((card) => ({
+  const randomizedCards = shuffle(nextCards);
+  const randomizedDisplayOrder = shuffle(
+    Array.from({ length: randomizedCards.length }, (_, index) => index),
+  );
+
+  return randomizedCards.map((card, index) => ({
     ...card,
+    displayIndex: randomizedDisplayOrder[index],
     revealed: false,
     solved: false,
+    completed: false,
+    result: "pending" as "pending" | "success" | "fail",
   }));
+}
+
+function getMemoryCameraFilter(successStreak: number, failStreak: number) {
+  if (failStreak >= 6) {
+    return "grayscale(0.2) brightness(0.9) saturate(0.68) contrast(1.08)";
+  }
+  if (failStreak >= 5) {
+    return "grayscale(0.16) brightness(0.92) saturate(0.74) contrast(1.07)";
+  }
+  if (failStreak >= 4) {
+    return "grayscale(0.12) brightness(0.94) saturate(0.8) contrast(1.06)";
+  }
+  if (failStreak >= 3) {
+    return "grayscale(0.1) brightness(0.95) saturate(0.84) contrast(1.05)";
+  }
+  if (failStreak >= 2) {
+    return "grayscale(0.07) brightness(0.97) saturate(0.88) contrast(1.04)";
+  }
+  if (failStreak >= 1) {
+    return "grayscale(0.04) brightness(0.99) saturate(0.93) contrast(1.03)";
+  }
+  if (successStreak >= 6) {
+    return "brightness(1.18) saturate(1.32) contrast(1.1)";
+  }
+  if (successStreak >= 5) {
+    return "brightness(1.16) saturate(1.28) contrast(1.09)";
+  }
+  if (successStreak >= 4) {
+    return "brightness(1.14) saturate(1.24) contrast(1.08)";
+  }
+  if (successStreak >= 3) {
+    return "brightness(1.11) saturate(1.18) contrast(1.06)";
+  }
+  if (successStreak >= 2) {
+    return "brightness(1.08) saturate(1.14) contrast(1.05)";
+  }
+  if (successStreak >= 1) {
+    return "brightness(1.06) saturate(1.1) contrast(1.04)";
+  }
+  return "brightness(1.02) saturate(1.04)";
 }
 
 function formatDuration(ms: number) {
@@ -377,6 +698,8 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   const [solvedCount, setSolvedCount] = useState(0);
   const [attemptCount, setAttemptCount] = useState(0);
   const [wrongCount, setWrongCount] = useState(0);
+  const [successStreak, setSuccessStreak] = useState(0);
+  const [failStreak, setFailStreak] = useState(0);
   const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
   const [sessionFinishedAt, setSessionFinishedAt] = useState<number | null>(
     null,
@@ -394,6 +717,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   const [audioBars, setAudioBars] = useState(Array(16).fill(10));
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState("");
+  const [faceTracked, setFaceTracked] = useState(false);
   const [faceGuideScore, setFaceGuideScore] = useState(0);
   const [showDifficultyModal, setShowDifficultyModal] = useState(true);
   const [feedbackState, setFeedbackState] = useState<
@@ -411,7 +735,23 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   const timeLeftRef = useRef(0);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const costumeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const faceMeshRef = useRef<any>(null);
+  const faceLoopRef = useRef<number | null>(null);
+  const latestLandmarksRef = useRef<Landmark[] | null>(null);
+  const faceProcessingRef = useRef(false);
+  const costumeImagesRef = useRef<CostumeImages>({});
   const volumeRef = useRef(0);
+  const successStreakRef = useRef(0);
+  const failStreakRef = useRef(0);
+
+  useEffect(() => {
+    successStreakRef.current = successStreak;
+  }, [successStreak]);
+
+  useEffect(() => {
+    failStreakRef.current = failStreak;
+  }, [failStreak]);
 
   const attachCameraPreview = useCallback(async () => {
     const video = videoRef.current;
@@ -434,13 +774,133 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     }
   }, []);
 
+  const initFaceTracking = useCallback(async () => {
+    if (typeof window === "undefined") return;
+
+    if (faceLoopRef.current === null) {
+      const loop = () => {
+        const canvas = costumeCanvasRef.current;
+        const video = videoRef.current;
+
+        if (canvas && video && video.readyState >= 2) {
+          const container = canvas.parentElement;
+          if (container) {
+            const cw = container.offsetWidth;
+            const ch = container.offsetHeight;
+            if (canvas.width !== cw || canvas.height !== ch) {
+              canvas.width = cw;
+              canvas.height = ch;
+            }
+          }
+
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            const cw = canvas.width;
+            const ch = canvas.height;
+            const vw = video.videoWidth || 640;
+            const vh = video.videoHeight || 480;
+            const currentSuccessStreak = successStreakRef.current;
+            const currentFailStreak = failStreakRef.current;
+            const currentTierId = COSTUME_TIERS.reduce<string>(
+              (best, tier, i) =>
+                currentSuccessStreak >= tier.minStreak ? COSTUME_TIERS[i].id : best,
+              COSTUME_TIERS[0].id,
+            );
+
+            ctx.clearRect(0, 0, cw, ch);
+            drawCameraOverlay(ctx, cw, ch, currentTierId);
+
+            if (
+              latestLandmarksRef.current &&
+              Object.keys(costumeImagesRef.current).length > 0
+            ) {
+              drawFaceCostume(
+                ctx,
+                latestLandmarksRef.current,
+                cw,
+                ch,
+                vw,
+                vh,
+                currentTierId,
+                currentFailStreak,
+                costumeImagesRef.current,
+              );
+            }
+
+            if (!faceProcessingRef.current && faceMeshRef.current) {
+              faceProcessingRef.current = true;
+              faceMeshRef.current
+                .send({ image: video })
+                .catch(() => {})
+                .finally(() => {
+                  faceProcessingRef.current = false;
+                });
+            }
+          }
+        }
+
+        faceLoopRef.current = requestAnimationFrame(loop);
+      };
+
+      faceLoopRef.current = requestAnimationFrame(loop);
+    }
+
+    if (faceMeshRef.current) return;
+
+    try {
+      await ensureGlobalScriptLoaded(
+        "/mediapipe/face_mesh/face_mesh.js",
+        "FaceMesh",
+      );
+      const FaceMeshCtor = (window as FaceMeshWindow).FaceMesh;
+      if (typeof FaceMeshCtor !== "function") {
+        throw new Error("window.FaceMesh를 찾지 못했어요.");
+      }
+
+      const fm = new FaceMeshCtor({
+        locateFile: (file: string) => `/mediapipe/face_mesh/${file}`,
+      });
+      fm.setOptions({
+        maxNumFaces: 1,
+        refineLandmarks: false,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+      });
+      fm.onResults((results: { multiFaceLandmarks?: Landmark[][] }) => {
+        const nextLandmarks = results.multiFaceLandmarks?.[0] ?? null;
+        latestLandmarksRef.current = nextLandmarks;
+        setFaceTracked(Boolean(nextLandmarks));
+      });
+      await fm.initialize?.();
+      faceMeshRef.current = fm;
+
+      const [star, crown, tear, earring, necklace] = await Promise.all([
+        loadImage(COSTUME_ASSETS.star),
+        loadImage(COSTUME_ASSETS.crown),
+        loadImage(COSTUME_ASSETS.tear),
+        loadImage(COSTUME_ASSETS.earring),
+        loadImage(COSTUME_ASSETS.necklace),
+      ]);
+      costumeImagesRef.current = { star, crown, tear, earring, necklace };
+      setCameraError("");
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+            ? err
+            : "알 수 없는 오류";
+      setCameraError(`AI 합성 실패: ${message}`);
+    }
+  }, []);
+
   useEffect(() => {
     const Recognition = buildRecognition();
     setSupported(Boolean(Recognition));
   }, []);
 
   const currentCard = useMemo(() => {
-    const remaining = cards.filter((card) => !card.solved);
+    const remaining = cards.filter((card) => !card.completed);
     if (remaining.length === 0) return null;
     if (!targetWord) return remaining[0];
     return (
@@ -461,7 +921,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   useEffect(() => {
     if (showDifficultyModal) return;
     if (targetWord) return;
-    const firstRemaining = cards.find((card) => !card.solved);
+    const firstRemaining = cards.find((card) => !card.completed);
     if (firstRemaining) {
       setTargetWord(firstRemaining.word);
     }
@@ -503,6 +963,21 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   }, [currentCard?.word, showDifficultyModal]);
 
   const stopCamera = useCallback(() => {
+    if (faceLoopRef.current !== null) {
+      cancelAnimationFrame(faceLoopRef.current);
+      faceLoopRef.current = null;
+    }
+    if (faceMeshRef.current) {
+      try {
+        faceMeshRef.current.close();
+      } catch {
+        /* no-op */
+      }
+      faceMeshRef.current = null;
+    }
+    latestLandmarksRef.current = null;
+    faceProcessingRef.current = false;
+    setFaceTracked(false);
     if (cameraStreamRef.current) {
       unregisterMediaStream(cameraStreamRef.current);
       cameraStreamRef.current.getTracks().forEach((track) => track.stop());
@@ -559,8 +1034,13 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     void attachCameraPreview();
   }, [attachCameraPreview, cameraReady]);
 
+  useEffect(() => {
+    if (!cameraReady) return;
+    void initFaceTracking();
+  }, [cameraReady, initFaceTracking]);
+
   function getNextTargetWord(nextCards: typeof cards, currentWord?: string) {
-    const remaining = nextCards.filter((card) => !card.solved);
+    const remaining = nextCards.filter((card) => !card.completed);
     if (remaining.length === 0) {
       return null;
     }
@@ -569,7 +1049,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
       : -1;
     return (
       nextCards.find(
-        (card, index) => index > currentIndex && !card.solved,
+        (card, index) => index > currentIndex && !card.completed,
       ) ?? remaining[0]
     ).word;
   }
@@ -581,7 +1061,13 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   function revealCategory(targetWord: string, correct: boolean) {
     const nextCards = cardsRef.current.map((card) => {
       if (card.word === targetWord) {
-        return correct ? { ...card, revealed: true, solved: true } : card;
+        return {
+          ...card,
+          revealed: true,
+          solved: correct,
+          completed: true,
+          result: correct ? "success" : "fail",
+        };
       }
       return card;
     });
@@ -589,9 +1075,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     cardsRef.current = nextCards;
     setCards(nextCards);
 
-    if (correct) {
-      chooseNextTarget(nextCards, targetWord);
-    }
+    chooseNextTarget(nextCards, targetWord);
   }
 
   function triggerFeedback(nextState: "success" | "fail") {
@@ -616,10 +1100,12 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
       ...value,
       [activeCard.category]: (value[activeCard.category] ?? 0) + 1,
     }));
+    setSuccessStreak(0);
+    setFailStreak((value) => Math.min(6, value + 1));
     setHeardText("");
-    setMessage("시간 초과예요. 다음 그림으로 넘어갑니다.");
+    revealCategory(activeCard.word, false);
+    setMessage("시간 초과예요. 오답으로 표시하고 다음 그림으로 넘어갑니다.");
     triggerFeedback("fail");
-    setTargetWord(getNextTargetWord(cardsRef.current, activeCard.word));
   }, []);
 
   function handleSpeechResult(transcript: string) {
@@ -634,21 +1120,19 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     setHeardText(transcript);
 
     const parsedCategory = parseCategory(transcript);
-    console.info("[Memory] speech result", {
-      transcript,
-      parsedCategory,
-      currentWord: activeCard.word,
-      currentCategory: activeCard.category,
-    });
+    const matchedByWord = matchesCardWord(transcript, activeCard.word);
+    const recognizedCategory = matchedByWord
+      ? activeCard.category
+      : parsedCategory;
 
-    if (!parsedCategory) {
+    if (!recognizedCategory) {
       setMessage("과일, 동물, 탈것 중 하나를 말해 주세요.");
       return;
     }
 
     setAttemptCount((value) => value + 1);
 
-    if (parsedCategory === activeCard.category) {
+    if (recognizedCategory === activeCard.category) {
       transitionLockRef.current = true;
       ignoreSpeechUntilRef.current = Date.now() + 900;
       handledTargetRef.current = `done-${activeCard.word}`;
@@ -657,6 +1141,8 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
       triggerFeedback("success");
       setScore((value) => value + 15);
       setSolvedCount((value) => value + 1);
+      setSuccessStreak((value) => value + 1);
+      setFailStreak(0);
       setMessage(`정답이에요. ${activeCard.word} 카드가 열렸습니다.`);
       return;
     }
@@ -668,7 +1154,15 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
       ...value,
       [activeCard.category]: (value[activeCard.category] ?? 0) + 1,
     }));
-    setMessage(`아직 아니에요. ${Math.max(timeLeftRef.current, 0)}초 안에 다시 말해 보세요.`);
+    setSuccessStreak(0);
+    setFailStreak((value) => Math.min(6, value + 1));
+    transitionLockRef.current = true;
+    ignoreSpeechUntilRef.current = Date.now() + 900;
+    handledTargetRef.current = `done-${activeCard.word}`;
+    setHeardText("");
+    revealCategory(activeCard.word, false);
+    setMessage("오답이에요. 실패로 표시하고 다음 그림으로 넘어갑니다.");
+    triggerFeedback("fail");
   }
 
   function runSpeechTestInput(transcript: string) {
@@ -724,7 +1218,11 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
 
         setHeardText(transcript);
 
-        if (parseCategory(transcript)) {
+        if (
+          parseCategory(transcript) ||
+          (currentCardRef.current &&
+            matchesCardWord(transcript, currentCardRef.current.word))
+        ) {
           handleSpeechResult(transcript);
           return;
         }
@@ -829,6 +1327,8 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     setSolvedCount(0);
     setAttemptCount(0);
     setWrongCount(0);
+    setSuccessStreak(0);
+    setFailStreak(0);
     setSessionStartedAt(null);
     setSessionFinishedAt(null);
     setWrongByCategory({ fruit: 0, animal: 0, vehicle: 0 });
@@ -839,7 +1339,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   async function startGameForDifficulty() {
     const nextCards = buildDeck(difficulty);
     setCards(nextCards);
-    setTargetWord(nextCards.find((card) => !card.solved)?.word ?? null);
+    setTargetWord(nextCards.find((card) => !card.completed)?.word ?? null);
     setHeardText("");
     setMessage(
       "한 번 마이크를 켜면 계속 듣습니다. 그림을 보고 정답 분류를 말해 보세요.",
@@ -848,6 +1348,8 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     setSolvedCount(0);
     setAttemptCount(0);
     setWrongCount(0);
+    setSuccessStreak(0);
+    setFailStreak(0);
     setSessionStartedAt(Date.now());
     setSessionFinishedAt(null);
     setWrongByCategory({ fruit: 0, animal: 0, vehicle: 0 });
@@ -906,6 +1408,10 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   }, [cameraReady, isMicReady]);
 
   const solvedRatio = Math.round((solvedCount / cards.length) * 100);
+  const displayCards = useMemo(
+    () => [...cards].sort((a, b) => a.displayIndex - b.displayIndex),
+    [cards],
+  );
   const roundTimeLimit = getRoundTimeLimit(difficulty);
   const timeRatio = Math.max(
     0,
@@ -1198,22 +1704,27 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
                                     } as CSSProperties
                                   }
                                 >
-                                  {cards.map((card, i) => {
-                                    const isCorrect =
-                                      card.revealed || card.solved;
+                                  {displayCards.map((card, i) => {
+                                    const isResolved = card.completed || card.revealed;
+                                    const isSuccess = card.result === "success";
+                                    const isFail = card.result === "fail";
                                     return (
                                       <div
                                         key={i}
                                         className={`flex aspect-square items-center justify-center rounded-2xl border-2 p-2 text-center transition-all duration-700 ${
-                                          isCorrect
+                                          isSuccess
                                             ? "border-violet-400 bg-violet-600 text-white shadow-lg shadow-violet-100"
-                                            : "border-white bg-white text-slate-200"
+                                            : isFail
+                                              ? "border-rose-300 bg-rose-500 text-white shadow-lg shadow-rose-100"
+                                              : "border-white bg-white text-slate-200"
                                         }`}
                                       >
-                                        {isCorrect ? (
-                                          <span className="line-clamp-2 break-keep text-[11px] font-black leading-tight sm:text-xs">
-                                            {card.word}
-                                          </span>
+                                        {isResolved ? (
+                                          <div className="flex flex-col items-center gap-1">
+                                            <span className="line-clamp-2 break-keep text-[11px] font-black leading-tight sm:text-xs">
+                                              {card.word}
+                                            </span>
+                                          </div>
                                         ) : (
                                           <span className="text-lg font-black opacity-20">
                                             ?
@@ -1254,23 +1765,39 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
                       className="tetris-report-card-compact memory-monitor-shell"
                       bodyClassName="tetris-status-columns"
                     >
-                      <div className="vt-monitor-card tetris-monitor-inline">
+                        <div className="vt-monitor-card tetris-monitor-inline">
                         <div className="vt-camera-frame">
-                          <video
-                            ref={videoRef}
-                            className="vt-camera-video"
-                            autoPlay
-                            muted
-                            playsInline
-                            style={{ display: cameraReady ? "block" : "none" }}
-                          />
-                          {!cameraReady ? (
+                          {cameraReady ? (
+                            <>
+                              <video
+                                ref={videoRef}
+                                className="vt-camera-video"
+                                autoPlay
+                                muted
+                                playsInline
+                                style={{
+                                  display: "block",
+                                  filter: getMemoryCameraFilter(successStreak, failStreak),
+                                }}
+                              />
+                              <canvas
+                                ref={costumeCanvasRef}
+                                className="vt-camera-canvas"
+                              />
+                            </>
+                          ) : (
                             <div className="vt-camera-placeholder">
                               <span>카메라 대기 중</span>
                               <p>카메라를 확인한 뒤 다시 시도해 주세요.</p>
                             </div>
-                          ) : null}
+                          )}
                           <div className="vt-face-guide" />
+                          <div className="tetris-camera-chip">
+                            <span className="tetris-camera-chip-label">안면 상태</span>
+                            <strong className="tetris-camera-chip-value">
+                              {cameraReady ? (faceTracked ? "인식 중" : "준비") : "대기"}
+                            </strong>
+                          </div>
                         </div>
 
                         <div className="vt-audio-card">

@@ -51,12 +51,6 @@ export function useAudioAnalyzer() {
       setError('');
 
       const stream = await createPreferredAudioStream(preferredAudioInputId);
-      const activeTrack = stream.getAudioTracks()[0];
-      console.info('[AudioAnalyzer] microphone stream ready', {
-        label: activeTrack?.label || 'unknown',
-        readyState: activeTrack?.readyState,
-        settings: activeTrack?.getSettings?.(),
-      });
 
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       const context = new AudioContextClass();

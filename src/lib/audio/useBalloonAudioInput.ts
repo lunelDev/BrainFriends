@@ -70,8 +70,8 @@ export function useBalloonAudioInput() {
       }
       const source = context.createMediaStreamSource(stream);
       const analyser = context.createAnalyser();
-      analyser.fftSize = 1024;
-      analyser.smoothingTimeConstant = 0.58;
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.18;
       source.connect(analyser);
 
       const buffer = new Uint8Array(analyser.fftSize);
@@ -101,14 +101,18 @@ export function useBalloonAudioInput() {
         const rms = Math.sqrt(sum / dataArrayRef.current.length);
         // 풍선 게임은 지속 발성 체감이 중요해서 일반 발성이 40~60 구간까지
         // 좀 더 쉽게 올라오도록 스케일을 적극적으로 보정한다.
-        const boosted = clamp(Math.round(rms * 440 + peak * 92), 0, 100);
+        const boosted = clamp(Math.round(rms * 520 + peak * 148), 0, 100);
 
         // 풍선 게임은 "말하는 중 바로 커지고, 멈추면 바로 유지/감쇠"가 중요하다.
         // 평균값을 길게 끌기보다 상승은 즉시, 감쇠는 짧게 주는 방식으로 바꾼다.
         if (boosted >= smoothedVolumeRef.current) {
-          smoothedVolumeRef.current = boosted;
+          smoothedVolumeRef.current =
+            smoothedVolumeRef.current * 0.18 + boosted * 0.82;
         } else {
-          smoothedVolumeRef.current = Math.max(0, smoothedVolumeRef.current * 0.82 - 1.4);
+          smoothedVolumeRef.current = Math.max(
+            0,
+            smoothedVolumeRef.current * 0.68 - 2.8,
+          );
         }
 
         const nextVolume = clamp(Math.round(smoothedVolumeRef.current), 0, 100);
