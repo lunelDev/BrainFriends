@@ -163,8 +163,8 @@ function SelectionModal({
   const handleBack = onBack ?? (() => router.push("/select-page/game-mode"));
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-md sm:p-6">
-      <div className="relative w-full max-w-[520px] overflow-hidden rounded-[36px] border-4 border-white bg-white shadow-[0_24px_60px_rgba(0,0,0,0.32)] ring-1 ring-slate-300 transition-all sm:rounded-[56px] sm:border-[6px] sm:shadow-[0_32px_80px_rgba(0,0,0,0.4)]">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center overflow-y-auto bg-slate-900/80 p-4 backdrop-blur-md sm:p-6">
+      <div className="relative my-auto w-full max-w-[520px] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[36px] border-4 border-white bg-white shadow-[0_24px_60px_rgba(0,0,0,0.32)] ring-1 ring-slate-300 transition-all sm:rounded-[56px] sm:border-[6px] sm:shadow-[0_32px_80px_rgba(0,0,0,0.4)]">
         <button
           type="button"
           onClick={handleBack}
@@ -298,6 +298,8 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
   const [result, setResult] = useState<BalloonResult | null>(null);
   const [testVoiceBoost, setTestVoiceBoost] = useState(false);
 
+  const balloonSizeRef = useRef(18);
+  const timeLeftRef = useRef(0);
   const voicedMsRef = useRef(0);
   const safeMsRef = useRef(0);
   const totalVolumeRef = useRef(0);
@@ -307,6 +309,7 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
   const lastTickRef = useRef<number | null>(null);
   const previousVolumeRef = useRef(0);
   const toneHoldMsRef = useRef(0);
+  const recentVoiceMsRef = useRef(0);
 
   const difficulty = selectedDifficulty ?? BALLOON_GROWTH_DIFFICULTIES[0];
   const stage = difficulty.stage;
@@ -351,10 +354,19 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
   }, [stop]);
 
   useEffect(() => {
+    balloonSizeRef.current = balloonSize;
+  }, [balloonSize]);
+
+  useEffect(() => {
+    timeLeftRef.current = timeLeft;
+  }, [timeLeft]);
+
+  useEffect(() => {
     if (phase !== "playing") {
       lastTickRef.current = null;
       previousVolumeRef.current = 0;
       toneHoldMsRef.current = 0;
+      recentVoiceMsRef.current = 0;
       return;
     }
 
@@ -364,7 +376,9 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
       lastTickRef.current = now;
       const deltaSec = delta / 1000;
 
-      setTimeLeft((prev) => Math.max(0, prev - deltaSec));
+      const nextTimeLeft = Math.max(0, timeLeftRef.current - deltaSec);
+      timeLeftRef.current = nextTimeLeft;
+      let nextBalloonSize = balloonSizeRef.current;
 
       const inSafeRange =
         effectiveVolume >= stage.safeMin && effectiveVolume <= stage.safeMax;
@@ -388,7 +402,7 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
       if (inSafeRange) {
         const closeness = 1 - Math.abs(effectiveVolume - safeCenter) / safeHalf;
         const growth =
-          stage.growthPerSecond * clamp(0.55 + closeness * 0.45, 0.55, 1);
+          stage.growthPerSecond * clamp(0.95 + closeness * 0.75, 0.95, 1.7);
 
         voicedMsRef.current += delta;
         safeMsRef.current += delta;
@@ -396,29 +410,37 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
         sampleCountRef.current += 1;
         dangerMsRef.current = 0;
         silenceMsRef.current = 0;
+        recentVoiceMsRef.current = 1600;
         setDangerRatio(0);
-        setBalloonSize((prev) =>
-          clamp(prev + growth * deltaSec, stage.startSize, stage.targetSize),
+        nextBalloonSize = clamp(
+          balloonSizeRef.current + growth * deltaSec,
+          stage.startSize,
+          stage.targetSize,
         );
+        balloonSizeRef.current = nextBalloonSize;
         setMessage(
           isOptimal
             ? "완벽해요. 풍선이 가장 예쁘게 커지고 있어요."
             : "좋아요. 풍선이 안정적으로 커지고 있어요.",
         );
-      } else if (toneHoldMsRef.current >= 180 && nearSafeLowRange) {
+      } else if (toneHoldMsRef.current >= 120 && nearSafeLowRange) {
         const toneGrowth =
           stage.growthPerSecond *
-          clamp(0.42 + (toneHoldMsRef.current / 1800) * 0.28, 0.42, 0.72);
+          clamp(0.9 + (toneHoldMsRef.current / 1200) * 0.48, 0.9, 1.28);
 
         voicedMsRef.current += delta;
         totalVolumeRef.current += effectiveVolume;
         sampleCountRef.current += 1;
         dangerMsRef.current = 0;
         silenceMsRef.current = 0;
+        recentVoiceMsRef.current = 1800;
         setDangerRatio(0);
-        setBalloonSize((prev) =>
-          clamp(prev + toneGrowth * deltaSec, stage.startSize, stage.targetSize),
+        nextBalloonSize = clamp(
+          balloonSizeRef.current + toneGrowth * deltaSec,
+          stage.startSize,
+          stage.targetSize,
         );
+        balloonSizeRef.current = nextBalloonSize;
         setMessage(
           "좋아요. 일정한 톤을 유지하고 있어서 풍선이 커지고 있어요.",
         );
@@ -428,25 +450,40 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
         sampleCountRef.current += 1;
         dangerMsRef.current = 0;
         silenceMsRef.current = 0;
+        recentVoiceMsRef.current = 2000;
         setDangerRatio(0);
 
-        if (toneHoldMsRef.current >= 120) {
-          const sustainGrowth =
-            stage.growthPerSecond *
-            clamp(0.18 + (toneHoldMsRef.current / 2200) * 0.2, 0.18, 0.34);
-          setBalloonSize((prev) =>
-            clamp(prev + sustainGrowth * deltaSec, stage.startSize, stage.targetSize),
+        const normalizedVoice = clamp(
+          (effectiveVolume - voicedFloor) /
+            Math.max(8, stage.dangerMin - voicedFloor),
+          0.18,
+          1,
+        );
+        const sustainGrowth =
+          stage.growthPerSecond *
+          clamp(
+            0.72 + normalizedVoice * 0.9 + toneHoldMsRef.current / 2200,
+            0.72,
+            1.55,
           );
-          setMessage("아주 좋아요. 소리를 유지하면 풍선이 천천히 커져요.");
-        } else {
-          setMessage("좋아요. 계속 같은 소리로 유지해 보세요.");
-        }
+        nextBalloonSize = clamp(
+          balloonSizeRef.current + sustainGrowth * deltaSec,
+          stage.startSize,
+          stage.targetSize,
+        );
+        balloonSizeRef.current = nextBalloonSize;
+        setMessage(
+          toneHoldMsRef.current >= 120
+            ? "좋아요. 지금처럼 소리를 내면 풍선이 계속 커져요."
+            : "소리가 들어오고 있어요. 그대로 이어서 말해 보세요.",
+        );
       } else if (inDangerRange) {
         voicedMsRef.current += delta;
         totalVolumeRef.current += effectiveVolume;
         sampleCountRef.current += 1;
         dangerMsRef.current += delta;
         silenceMsRef.current = 0;
+        recentVoiceMsRef.current = 1000;
         setDangerRatio(
           clamp((dangerMsRef.current / stage.dangerHoldMs) * 100, 0, 100),
         );
@@ -455,51 +492,49 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
         dangerMsRef.current = 0;
         setDangerRatio(0);
         silenceMsRef.current += delta;
-        if (silenceMsRef.current >= stage.silenceDelayMs * 1.8) {
-          setBalloonSize((prev) =>
-            Math.max(stage.startSize, prev - stage.shrinkPerSecond * 0.65 * deltaSec),
-          );
-          setMessage("소리가 멈췄어요. 풍선이 다시 작아지고 있어요.");
-        } else {
-          setMessage("잠깐 멈췄어요. 다시 소리를 내 보세요.");
-        }
+        recentVoiceMsRef.current = Math.max(0, recentVoiceMsRef.current - delta);
+        setMessage("잠깐 쉬어도 괜찮아요. 다시 소리를 이어 보세요.");
       } else if (effectiveVolume > 6) {
         voicedMsRef.current += delta;
         totalVolumeRef.current += effectiveVolume;
         sampleCountRef.current += 1;
         dangerMsRef.current = 0;
         silenceMsRef.current = 0;
+        recentVoiceMsRef.current = Math.max(recentVoiceMsRef.current, 1200);
         setDangerRatio(0);
         setMessage("조금 더 안정적인 크기로 소리를 내 보세요.");
       }
 
       previousVolumeRef.current = effectiveVolume;
+      setTimeLeft(nextTimeLeft);
+      if (nextBalloonSize !== balloonSizeRef.current) {
+        balloonSizeRef.current = nextBalloonSize;
+      }
+      setBalloonSize(nextBalloonSize);
 
       if (dangerMsRef.current >= stage.dangerHoldMs) {
         finishGame("burst");
         return;
       }
 
-      if (balloonSize >= stage.targetSize) {
+      if (nextBalloonSize >= stage.targetSize) {
         finishGame("success");
         return;
       }
 
-      if (timeLeft - deltaSec <= 0) {
+      if (nextTimeLeft <= 0) {
         finishGame("timeout");
       }
     }, 100);
 
     return () => window.clearInterval(timer);
   }, [
-    balloonSize,
     effectiveVolume,
     isOptimal,
     phase,
     safeCenter,
     safeHalf,
     stage,
-    timeLeft,
   ]);
 
   function resetSessionState(nextDifficulty: BalloonDifficulty) {
@@ -507,6 +542,8 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
     setSelectedDifficulty(nextDifficulty);
     setBalloonSize(nextStage.startSize);
     setTimeLeft(nextStage.durationSec);
+    balloonSizeRef.current = nextStage.startSize;
+    timeLeftRef.current = nextStage.durationSec;
     setDangerRatio(0);
     setResult(null);
     voicedMsRef.current = 0;

@@ -310,8 +310,8 @@ export default function LoginPage() {
       `}</style>
 
       {showFirstDiagnosisModal && pendingPatient ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-[2px]">
-          <div className="w-full max-w-md rounded-3xl border border-orange-100 bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/45 p-4 backdrop-blur-[2px]">
+          <div className="my-auto w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-orange-100 bg-white p-6 shadow-2xl">
             <p className="mb-2 text-[10px] font-black uppercase tracking-[0.25em] text-orange-500">
               First Diagnosis
             </p>
@@ -349,8 +349,8 @@ export default function LoginPage() {
       ) : null}
 
       {showPermissionModal && pendingPatient ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-[2px]">
-          <div className="w-full max-w-md rounded-3xl border border-orange-100 bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/45 p-4 backdrop-blur-[2px]">
+          <div className="my-auto w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-orange-100 bg-white p-6 shadow-2xl">
             <p className="mb-2 text-[10px] font-black uppercase tracking-[0.25em] text-orange-500">
               Device Permission
             </p>

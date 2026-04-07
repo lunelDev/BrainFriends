@@ -5336,6 +5336,37 @@ body {
   background: linear-gradient(90deg, #38bdf8, #818cf8);
 }
 
+.tetris-camera-chip {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  max-width: calc(100% - 24px);
+  padding: 0.5rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(191, 219, 254, 0.9);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(10px);
+  z-index: 2;
+}
+
+.tetris-camera-chip-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.tetris-camera-chip-value {
+  font-size: 0.76rem;
+  font-weight: 900;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
 .vt-audio-card {
   padding: 12px 14px;
   border-radius: 16px;
@@ -5595,6 +5626,17 @@ body {
   border: 1px solid rgba(121, 169, 197, 0.14);
 }
 
+.tetris-speech-status-card {
+  min-height: 96px;
+}
+
+.tetris-speech-status-card .tetris-accuracy-value {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .tetris-accuracy-card {
   display: flex;
   justify-content: space-between;
@@ -5602,10 +5644,52 @@ body {
   gap: 0.75rem;
 }
 
+.tetris-accuracy-copy {
+  display: grid;
+  gap: 0.4rem;
+}
+
 .tetris-accuracy-label {
   color: #6b8695;
   font-size: 0.82rem;
   font-weight: 700;
+}
+
+.tetris-grade-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  padding: 0.28rem 0.58rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+}
+
+.tetris-grade-perfect {
+  color: #6d28d9;
+  background: rgba(237, 233, 254, 0.96);
+  border-color: rgba(167, 139, 250, 0.42);
+}
+
+.tetris-grade-excellent {
+  color: #1d4ed8;
+  background: rgba(219, 234, 254, 0.96);
+  border-color: rgba(96, 165, 250, 0.42);
+}
+
+.tetris-grade-good {
+  color: #047857;
+  background: rgba(209, 250, 229, 0.96);
+  border-color: rgba(52, 211, 153, 0.42);
+}
+
+.tetris-grade-fail {
+  color: #b91c1c;
+  background: rgba(254, 226, 226, 0.96);
+  border-color: rgba(248, 113, 113, 0.42);
 }
 
 .tetris-accuracy-value {
@@ -5691,12 +5775,75 @@ body {
 }
 
 .tetris-status-card .vt-chips-row {
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.55rem;
 }
 
 .tetris-status-card .vt-chip {
-  width: 28px;
-  height: 28px;
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+}
+
+.tetris-status-card .vt-chip-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.45rem;
+  padding: 0 0.7rem;
+  border-radius: 999px;
+  background: #f8fafc;
+  border: 1px solid #dbe4f0;
+  color: #64748b;
+  font-size: 0.74rem;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.tetris-status-card .vt-chip-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #cbd5e1;
+}
+
+.tetris-status-card .vt-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tetris-status-card .vt-chip-pill.vt-chip-done {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #2563eb;
+}
+
+.tetris-status-card .vt-chip-pill.vt-chip-done .vt-chip-dot {
+  background: #38bdf8;
+}
+
+.tetris-status-card .vt-chip-pill.vt-chip-fail {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #e11d48;
+}
+
+.tetris-status-card .vt-chip-pill.vt-chip-fail .vt-chip-dot {
+  background: #fb7185;
+}
+
+.tetris-status-card .vt-chip-pill:not(.vt-chip-done):not(.vt-chip-fail) {
+  background: #f8fafc;
+  border-color: #dbe4f0;
+  color: #64748b;
+}
+
+.tetris-status-card .vt-chip-pill:not(.vt-chip-done):not(.vt-chip-fail) .vt-chip-dot {
+  background: #94a3b8;
 }
 
 .tetris-content-layout.has-status {
@@ -5748,7 +5895,7 @@ body {
   width: 100%;
   display: flex;
   justify-content: center;
-  align-items: flex-end;
+  align-items: flex-start;
   min-height: 100%;
 }
 

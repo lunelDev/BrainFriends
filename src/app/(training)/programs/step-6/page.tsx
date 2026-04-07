@@ -1060,7 +1060,7 @@ function Step6Content() {
       </div>
       {isImageZoomOpen && (
         <div
-          className="fixed inset-0 z-[70] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-[70] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center overflow-y-auto p-4"
           onClick={() => setIsImageZoomOpen(false)}
           role="dialog"
           aria-modal="true"

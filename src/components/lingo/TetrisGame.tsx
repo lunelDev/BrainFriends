@@ -10,7 +10,6 @@ import {
 } from "@/lib/client/mediaStreamRegistry";
 import { createPreferredCameraStream } from "@/lib/media/cameraPreferences";
 import {
-  createPreferredAudioStream,
   listAudioInputDevices,
   loadPreferredAudioInputId,
   savePreferredAudioInputId,
@@ -78,8 +77,6 @@ const ROWS = 20;
 const COLS = 10;
 const BLOCK_SIZE = 24;
 const MATCH_COOLDOWN_MS = 900;
-const STT_CHUNK_MS = 1200;
-const STT_RESTART_DELAY_MS = 30;
 
 // ─── 코스튬 티어 ───────────────────────────────────────────────────────────────
 const COSTUME_TIERS = [
@@ -676,6 +673,22 @@ function collide(board: Board, piece: PieceLike) {
   return false;
 }
 
+function getDropStepsUntilCollision(board: Board, piece: PieceLike) {
+  let steps = 0;
+  const probe: PieceLike = {
+    pos: { x: piece.pos.x, y: piece.pos.y },
+    matrix: piece.matrix.map((row) => [...row]),
+  };
+
+  while (true) {
+    probe.pos.y += 1;
+    if (collide(board, probe)) {
+      return steps;
+    }
+    steps += 1;
+  }
+}
+
 function rotatePiece(matrix: PieceMatrix): PieceMatrix {
   return matrix[0].map((_: number, i: number) => matrix.map((row: number[]) => row[i]).reverse());
 }
@@ -731,6 +744,28 @@ function getWord(level: number, idx: number) {
   const levelWords =
     WORDS_BY_LEVEL[Math.min(level, 8) as keyof typeof WORDS_BY_LEVEL] ?? [];
   return levelWords[idx % 10] ?? "";
+}
+
+function splitTargetIntoSegments(targetWord: string) {
+  const parts = targetWord
+    .trim()
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length <= 1) return [targetWord.trim()];
+  if (parts.length <= 3) return parts;
+
+  const chunkCount = Math.min(4, Math.ceil(parts.length / 2));
+  const chunkSize = Math.ceil(parts.length / chunkCount);
+  const segments: string[] = [];
+
+  for (let i = 0; i < parts.length; i += chunkSize) {
+    const segment = parts.slice(i, i + chunkSize).join(" ").trim();
+    if (segment) segments.push(segment);
+  }
+
+  return segments.length > 0 ? segments : [targetWord.trim()];
 }
 
 function normalizeText(text: string) {
@@ -817,6 +852,14 @@ function getDisplayTranscript(transcript: string) {
     .slice(0, 24);
 }
 
+function shouldHideTranscriptDisplay(transcript: string) {
+  const value = transcript.trim();
+  if (!value) return true;
+  if (/^\d+$/.test(value)) return true;
+  if (value.length === 1 && !/[가-힣]/.test(value)) return true;
+  return false;
+}
+
 function getPassThreshold(targetWord: string) {
   const length = normalizeText(targetWord).length;
   if (length <= 2) return 80;
@@ -853,8 +896,8 @@ function LevelSelectionModal({
   const previewWord = levelWords[0] ?? "";
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 p-6 backdrop-blur-md">
-      <div className="relative w-full max-w-[560px] overflow-hidden rounded-[56px] border-[6px] border-white bg-white shadow-[0_32px_80px_rgba(0,0,0,0.4)] ring-1 ring-slate-200">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-900/80 p-6 backdrop-blur-md">
+      <div className="relative my-auto flex w-full max-w-[560px] max-h-[calc(100dvh-3rem)] flex-col overflow-hidden rounded-[56px] border-[6px] border-white bg-white shadow-[0_32px_80px_rgba(0,0,0,0.4)] ring-1 ring-slate-200">
         <button
           type="button"
           onClick={onHome}
@@ -890,7 +933,7 @@ function LevelSelectionModal({
           </h3>
         </div>
 
-        <div className="bg-white p-8">
+        <div className="overflow-y-auto bg-white p-8">
           <div className="mb-10 grid grid-cols-3 gap-4">
             {Array.from({ length: 9 }, (_, i) => i + 1).map((lv) => (
               <button
@@ -1028,22 +1071,21 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   const wordsClearedRef = useRef(0);
   const wordIdxRef = useRef(0);
   const currentWordRef = useRef("");
+  const currentSegmentRef = useRef("");
+  const targetSegmentsRef = useRef<string[]>([]);
+  const segmentIdxRef = useRef(0);
   const recognitionCooldownRef = useRef(0);
   const failCountRef = useRef(0);
   const failStreakRef = useRef(0);
   const prevCostumeTierRef = useRef(0);
   const successStreakRef = useRef(0);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const recordingStreamRef = useRef<MediaStream | null>(null);
-  const sttChunkStopTimerRef = useRef<number | null>(null);
-  const sttUploadInFlightRef = useRef(false);
   const sttSessionActiveRef = useRef(false);
   const preferredAudioInputIdRef = useRef("");
   const browserRecognitionRef = useRef<BrowserSpeechRecognitionInstance | null>(
     null,
   );
   const browserRecognitionRestartRef = useRef<number | null>(null);
-  const speechModeRef = useRef<"none" | "browser" | "server">("none");
+  const speechModeRef = useRef<"none" | "browser">("none");
 
   // Face-tracking / costume canvas refs
   const costumeCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -1061,7 +1103,12 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   const [showLevelModal, setShowLevelModal] = useState(true);
   const [wordsCleared, setWordsCleared] = useState(0);
   const [currentWord, setCurrentWord] = useState("");
+  const [currentSegment, setCurrentSegment] = useState("");
+  const [segmentIndex, setSegmentIndex] = useState(0);
+  const [segmentCount, setSegmentCount] = useState(1);
   const [fallProgress, setFallProgress] = useState(0);
+  const [dropTimeLeftMs, setDropTimeLeftMs] = useState(0);
+  const [dropTimeTotalMs, setDropTimeTotalMs] = useState(0);
   const [totalAccuracy, setTotalAccuracy] = useState(0);
   const [failCount, setFailCount] = useState(0);
   const [failStreak, setFailStreak] = useState(0);
@@ -1083,9 +1130,10 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     [],
   );
   const [preferredAudioInputId, setPreferredAudioInputId] = useState("");
-  const [speechMode, setSpeechMode] = useState<"none" | "browser" | "server">(
+  const [speechMode, setSpeechMode] = useState<"none" | "browser">(
     "none",
   );
+  const [showSpeechDetails, setShowSpeechDetails] = useState(false);
   const [costumeUnlockToast, setCostumeUnlockToast] = useState<{
     id: number;
     icon: string;
@@ -1095,6 +1143,9 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     null,
   );
   const handleHome = onBack ?? (() => router.push("/select-page/game-mode"));
+  const currentSpeechGrade = gameStarted
+    ? getSpeechGradeLabel(totalAccuracy, passThreshold)
+    : null;
 
   const refreshAudioInputDevices = useCallback(async () => {
     try {
@@ -1108,10 +1159,42 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   const setActiveWord = useCallback((word: string) => {
     currentWordRef.current = word;
     setCurrentWord(word);
-    setPassThreshold(getPassThreshold(word));
+    const segments = splitTargetIntoSegments(word);
+    targetSegmentsRef.current = segments;
+    segmentIdxRef.current = 0;
+    setSegmentIndex(0);
+    setSegmentCount(segments.length);
+    currentSegmentRef.current = segments[0] ?? word;
+    setCurrentSegment(currentSegmentRef.current);
+    setPassThreshold(getPassThreshold(currentSegmentRef.current));
     setHeardText("");
     setTotalAccuracy(0);
     recognitionCooldownRef.current = Date.now() + 450;
+  }, []);
+
+  const syncDropTiming = useCallback(() => {
+    const piece = pieceRef.current;
+    if (!piece) {
+      setFallProgress(0);
+      setDropTimeLeftMs(0);
+      setDropTimeTotalMs(0);
+      return;
+    }
+
+    const interval = getDropInterval(levelRef.current);
+    const remainingSteps = getDropStepsUntilCollision(boardRef.current, piece);
+    const toNextStep = Math.max(0, interval - dropCounterRef.current);
+    const totalMs = interval * Math.max(1, remainingSteps + 1);
+    const remainingMs = remainingSteps > 0 ? toNextStep + (remainingSteps - 1) * interval : toNextStep;
+    const safeRemainingMs = Math.max(0, remainingMs);
+
+    setDropTimeTotalMs(totalMs);
+    setDropTimeLeftMs(safeRemainingMs);
+    setFallProgress(
+      totalMs > 0
+        ? Math.max(0, Math.min(100, Math.round((safeRemainingMs / totalMs) * 100)))
+        : 0,
+    );
   }, []);
 
   const buildRecognition = useCallback(() => {
@@ -1121,11 +1204,6 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
       (window as FaceMeshWindow).webkitSpeechRecognition;
     if (!ctor) return null;
     return new ctor();
-  }, []);
-
-  const shouldUseBrowserSpeech = useCallback((targetWord: string) => {
-    const normalized = normalizeText(targetWord).replace(/\s+/g, "");
-    return normalized.length > 0 && normalized.length <= 5;
   }, []);
 
   const stopCamera = useCallback(() => {
@@ -1163,26 +1241,6 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     sttSessionActiveRef.current = false;
     speechModeRef.current = "none";
     setSpeechMode("none");
-    if (sttChunkStopTimerRef.current !== null) {
-      window.clearTimeout(sttChunkStopTimerRef.current);
-      sttChunkStopTimerRef.current = null;
-    }
-    if (
-      mediaRecorderRef.current &&
-      mediaRecorderRef.current.state !== "inactive"
-    ) {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch {
-        /* no-op */
-      }
-    }
-    mediaRecorderRef.current = null;
-    if (recordingStreamRef.current) {
-      unregisterMediaStream(recordingStreamRef.current);
-      recordingStreamRef.current.getTracks().forEach((track) => track.stop());
-      recordingStreamRef.current = null;
-    }
     if (browserRecognitionRestartRef.current !== null) {
       window.clearTimeout(browserRecognitionRestartRef.current);
       browserRecognitionRestartRef.current = null;
@@ -1449,12 +1507,13 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     boardRef.current = raiseGarbageRow(boardRef.current);
     goToNextWord();
     pieceRef.current = createPiece(levelRef.current);
-    setFallProgress(0);
+    dropCounterRef.current = 0;
+    syncDropTiming();
 
     setTimeout(() => {
       setActionFeedback(null);
     }, 1600);
-  }, [goToNextWord, stopSessionDevices, totalAccuracy]);
+  }, [goToNextWord, stopSessionDevices, syncDropTiming, totalAccuracy]);
 
   // ─── Canvas 그리기 ────────────────────────────────────────────────────────
   const draw = useCallback(() => {
@@ -1498,16 +1557,15 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   const playerDrop = useCallback(() => {
     if (!pieceRef.current) return;
     pieceRef.current.pos.y++;
-    setFallProgress(
-      Math.min(100, Math.round((pieceRef.current.pos.y / (ROWS - 1)) * 100)),
-    );
 
     if (collide(boardRef.current, pieceRef.current)) {
       pieceRef.current.pos.y--;
       applyDangerPenalty();
+      return;
     }
     dropCounterRef.current = 0;
-  }, [applyDangerPenalty]);
+    syncDropTiming();
+  }, [applyDangerPenalty, syncDropTiming]);
 
   // ─── 게임 루프 ────────────────────────────────────────────────────────────
   const gameLoop = useCallback(
@@ -1516,12 +1574,13 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
       const delta = time - lastTimeRef.current;
       lastTimeRef.current = time;
       dropCounterRef.current += delta;
+      syncDropTiming();
       if (dropCounterRef.current > getDropInterval(levelRef.current))
         playerDrop();
       draw();
       animRef.current = requestAnimationFrame(gameLoop);
     },
-    [draw, playerDrop],
+    [draw, playerDrop, syncDropTiming],
   );
 
   // ─── PERFECT: AI 자동 최적 배치 ──────────────────────────────────────────
@@ -1584,7 +1643,9 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
       boardRef.current = fillDebris(levelRef.current);
       pieceRef.current = createPiece(levelRef.current);
     }
-  }, []);
+    dropCounterRef.current = 0;
+    syncDropTiming();
+  }, [syncDropTiming]);
 
   const advanceAfterMatch = useCallback(() => {
     const successIndex = wordIdxRef.current % 10;
@@ -1622,17 +1683,14 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   // ─── 발화 결과 처리 ───────────────────────────────────────────────────────
   const processResult = useCallback(
     (transcript: string) => {
-      if (!runningRef.current || !currentWordRef.current) return;
+      if (!runningRef.current || !currentSegmentRef.current) return;
       if (Date.now() < recognitionCooldownRef.current) return;
 
-      const total = getSpeechScore(transcript, currentWordRef.current);
-      const threshold = getPassThreshold(currentWordRef.current);
-      const visibleThreshold = Math.max(18, threshold - 44);
+      const total = getSpeechScore(transcript, currentSegmentRef.current);
+      const threshold = getPassThreshold(currentSegmentRef.current);
       const displayTranscript = getDisplayTranscript(transcript);
 
-      if (displayTranscript && total >= visibleThreshold) {
-        setHeardText(displayTranscript);
-      } else if (displayTranscript && total >= 12) {
+      if (displayTranscript && !shouldHideTranscriptDisplay(displayTranscript)) {
         setHeardText(displayTranscript);
       } else {
         setHeardText("...");
@@ -1643,24 +1701,49 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
       if (total < threshold) return;
 
       recognitionCooldownRef.current = Date.now() + MATCH_COOLDOWN_MS;
+
+      const nextSegmentIndex = segmentIdxRef.current + 1;
+      if (nextSegmentIndex < targetSegmentsRef.current.length) {
+        segmentIdxRef.current = nextSegmentIndex;
+        currentSegmentRef.current = targetSegmentsRef.current[nextSegmentIndex];
+        setCurrentSegment(currentSegmentRef.current);
+        setSegmentIndex(nextSegmentIndex);
+        setPassThreshold(getPassThreshold(currentSegmentRef.current));
+        setActionFeedback({
+          id: Date.now(),
+          type: "success",
+          label: `${nextSegmentIndex + 1}구간으로 이동`,
+        });
+        pieceRef.current = createPiece(levelRef.current);
+        if (collide(boardRef.current, pieceRef.current)) {
+          boardRef.current = fillDebris(levelRef.current);
+          pieceRef.current = createPiece(levelRef.current);
+        }
+        dropCounterRef.current = 0;
+        syncDropTiming();
+        setTimeout(() => {
+          setActionFeedback(null);
+        }, 900);
+        return;
+      }
+
       setActionFeedback({
         id: Date.now(),
         type: "success",
         label: getSpeechGradeLabel(total, threshold),
       });
       autoPlaceAndClear();
-      setFallProgress(0);
       advanceAfterMatch();
       setTimeout(() => {
         setActionFeedback(null);
       }, 1800);
     },
-    [advanceAfterMatch, autoPlaceAndClear],
+    [advanceAfterMatch, autoPlaceAndClear, syncDropTiming],
   );
 
   const simulateMatch = useCallback(() => {
-    if (!runningRef.current || !currentWordRef.current) return;
-    processResult(currentWordRef.current);
+    if (!runningRef.current || !currentSegmentRef.current) return;
+    processResult(currentSegmentRef.current);
   }, [processResult]);
 
   const simulateStack = useCallback(() => {
@@ -1674,193 +1757,6 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
       successStreak >= tier.minStreak ? COSTUME_TIERS[i].id : best,
     COSTUME_TIERS[0].id,
   );
-
-  // ─── 서버 STT ──────────────────────────────────────────────────────────────
-  const uploadSpeechChunk = useCallback(
-    async (blob: Blob) => {
-      if (
-        !blob.size ||
-        sttUploadInFlightRef.current ||
-        !sttSessionActiveRef.current ||
-        !runningRef.current
-      ) {
-        return;
-      }
-
-      sttUploadInFlightRef.current = true;
-
-      try {
-        const formData = new FormData();
-        const normalizedAudio = new File([blob], "tetris.webm", {
-          type: "audio/webm",
-        });
-        formData.append("audio", normalizedAudio);
-        formData.append("targetText", currentWordRef.current);
-        formData.append(
-          "threshold",
-          String(getPassThreshold(currentWordRef.current)),
-        );
-
-        const response = await fetch("/api/proxy/stt", {
-          method: "POST",
-          body: formData,
-        });
-        const result = await response.json();
-        console.info("[Tetris STT] response", {
-          ok: response.ok,
-          status: response.status,
-          transcript: String(result?.text ?? "").trim(),
-          reason: String(result?.reason || result?.error || "").trim(),
-          target: currentWordRef.current,
-        });
-
-        if (!response.ok) {
-          const reason = String(result?.reason || result?.error || "").trim();
-          throw new Error(
-            reason
-              ? `서버 STT 요청에 실패했어요. (${reason})`
-              : "서버 STT 요청에 실패했어요.",
-          );
-        }
-
-        const transcript = String(result.text ?? "").trim();
-        if (!transcript) {
-          console.info("[Tetris STT] empty transcript", {
-            target: currentWordRef.current,
-          });
-          setSpeechError("");
-          return;
-        }
-
-        setSpeechError("");
-        console.info("[Tetris STT] process transcript", {
-          transcript,
-          target: currentWordRef.current,
-        });
-        processResult(transcript);
-      } catch (error) {
-        console.error("[Tetris STT] request failed", error);
-        const message =
-          error instanceof Error
-            ? error.message
-            : "음성 인식 서버와 연결하지 못했어요.";
-        setSpeechError(message);
-      } finally {
-        sttUploadInFlightRef.current = false;
-      }
-    },
-    [processResult],
-  );
-
-  const scheduleRecorderStop = useCallback(() => {
-    if (sttChunkStopTimerRef.current !== null) {
-      window.clearTimeout(sttChunkStopTimerRef.current);
-    }
-    sttChunkStopTimerRef.current = window.setTimeout(() => {
-      const recorder = mediaRecorderRef.current;
-      if (
-        recorder &&
-        recorder.state === "recording" &&
-        sttSessionActiveRef.current &&
-        runningRef.current
-      ) {
-        try {
-          recorder.stop();
-        } catch {
-          /* no-op */
-        }
-      }
-    }, STT_CHUNK_MS);
-  }, []);
-
-  const beginServerRecorder = useCallback(
-    (stream: MediaStream) => {
-      if (!sttSessionActiveRef.current || !runningRef.current) return;
-
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : "audio/webm";
-
-      const recorder = new MediaRecorder(stream, { mimeType });
-      mediaRecorderRef.current = recorder;
-
-      recorder.ondataavailable = (event) => {
-        if (!sttSessionActiveRef.current || !runningRef.current) return;
-        if (event.data && event.data.size > 0) {
-          void uploadSpeechChunk(event.data);
-        }
-      };
-
-      recorder.onerror = () => {
-        setSpeechError("테트리스 음성 녹음 중 오류가 발생했어요.");
-      };
-
-      recorder.onstop = () => {
-        mediaRecorderRef.current = null;
-        if (sttChunkStopTimerRef.current !== null) {
-          window.clearTimeout(sttChunkStopTimerRef.current);
-          sttChunkStopTimerRef.current = null;
-        }
-
-        if (!sttSessionActiveRef.current || !runningRef.current) {
-          return;
-        }
-
-        window.setTimeout(() => {
-          if (
-            sttSessionActiveRef.current &&
-            runningRef.current &&
-            recordingStreamRef.current
-          ) {
-            beginServerRecorder(recordingStreamRef.current);
-          }
-        }, STT_RESTART_DELAY_MS);
-      };
-
-      recorder.start();
-      scheduleRecorderStop();
-    },
-    [scheduleRecorderStop, uploadSpeechChunk],
-  );
-
-  const startServerStt = useCallback(async (preferredAudioInputId = preferredAudioInputIdRef.current) => {
-    if (!isRecordingSupported()) {
-      setSpeechError("이 브라우저는 서버 STT 녹음을 지원하지 않습니다.");
-      return false;
-    }
-
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      return true;
-    }
-
-    try {
-      const stream = await createPreferredAudioStream(preferredAudioInputId);
-      const activeTrack = stream.getAudioTracks()[0];
-      console.info("[Tetris STT] recording stream ready", {
-        label: activeTrack?.label || "unknown",
-        readyState: activeTrack?.readyState,
-        settings: activeTrack?.getSettings?.(),
-      });
-
-      recordingStreamRef.current = stream;
-      registerMediaStream(stream);
-      sttSessionActiveRef.current = true;
-      speechModeRef.current = "server";
-      setSpeechMode("server");
-      setSpeechError("");
-      beginServerRecorder(stream);
-      void refreshAudioInputDevices();
-      return true;
-    } catch (error) {
-      console.error("[Tetris STT] failed to start recording stream", error);
-      const message =
-        error instanceof Error
-          ? error.message
-          : "마이크를 시작하지 못했어요.";
-      setSpeechError(message);
-      return false;
-    }
-  }, [beginServerRecorder, refreshAudioInputDevices]);
 
   const startBrowserSpeechRecognition = useCallback(async () => {
     const recognition = buildRecognition();
@@ -1927,18 +1823,12 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   }, [buildRecognition, processResult]);
 
   const syncSpeechCaptureForWord = useCallback(
-    async (targetWord: string, preferredAudioInputId = preferredAudioInputIdRef.current) => {
+    async (targetWord: string) => {
       if (!runningRef.current || !targetWord) return;
       stopSpeechCapture();
-      if (shouldUseBrowserSpeech(targetWord)) {
-        const started = await startBrowserSpeechRecognition();
-        if (started) {
-          return;
-        }
-      }
-      await startServerStt(preferredAudioInputId);
+      await startBrowserSpeechRecognition();
     },
-    [shouldUseBrowserSpeech, startBrowserSpeechRecognition, startServerStt, stopSpeechCapture],
+    [startBrowserSpeechRecognition, stopSpeechCapture],
   );
 
   // ─── 레벨 설정 ────────────────────────────────────────────────────────────
@@ -2022,7 +1912,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     lastTimeRef.current = 0;
     dropCounterRef.current = 0;
     setActiveWord(getWord(startLevel, 0));
-    setFallProgress(0);
+    syncDropTiming();
     setShowLevelModal(false);
     window.requestAnimationFrame(() => {
       void attachCameraPreview();
@@ -2047,6 +1937,9 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
       prevCostumeTierRef.current = 0;
       setPendingCostumeTier(null);
       setCostumeUnlockToast(null);
+      setFallProgress(0);
+      setDropTimeLeftMs(0);
+      setDropTimeTotalMs(0);
       setShowLevelModal(true);
       return;
     }
@@ -2071,7 +1964,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
         setSpeechError("마이크 입력을 확인해 주세요.");
         return;
       }
-      await syncSpeechCaptureForWord(currentWordRef.current, deviceId);
+      await syncSpeechCaptureForWord(currentWordRef.current);
     },
     [gameStarted, startAudioMonitor, stopAudioMonitor, stopSpeechCapture, syncSpeechCaptureForWord],
   );
@@ -2151,9 +2044,9 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   }, [error]);
 
   useEffect(() => {
-    if (!gameStarted || showLevelModal || !currentWord) return;
-    void syncSpeechCaptureForWord(currentWord, preferredAudioInputIdRef.current);
-  }, [currentWord, gameStarted, showLevelModal, syncSpeechCaptureForWord]);
+    if (!gameStarted || showLevelModal || !currentSegment) return;
+    void syncSpeechCaptureForWord(currentSegment, preferredAudioInputIdRef.current);
+  }, [currentSegment, gameStarted, showLevelModal, syncSpeechCaptureForWord]);
 
   // ─── 코스튬 티어 감지 ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -2332,17 +2225,8 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
                               <span className="vt-word-label">
                                   한글 음성 퍼즐 · Level {level}
                               </span>
-                              <span className="vt-word-timer">
-                                낙하 {fallProgress}%
-                              </span>
                             </div>
-                            <h2 className="vt-word-text">{currentWord}</h2>
-                            <div className="vt-timer-track">
-                              <div
-                                className="vt-timer-fill"
-                                style={{ width: `${fallProgress}%` }}
-                              />
-                            </div>
+                            <h2 className="vt-word-text">{currentSegment || currentWord}</h2>
                           </div>
                         </div>
                       ) : null}
@@ -2432,25 +2316,15 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
                                   </div>
                                 )}
 
-                                <div className="vt-camera-status">
-                                  <div className="vt-camera-row">
-                                    <span>안면 상태</span>
-                                    <strong>
-                                      {cameraReady
-                                        ? faceTracked
-                                          ? "인식 중"
-                                          : "준비"
-                                        : "대기"}
-                                    </strong>
-                                  </div>
-                                  <div className="vt-face-track">
-                                    <div
-                                      className="vt-face-fill"
-                                      style={{
-                                        width: `${cameraReady ? (faceTracked ? 100 : 54) : 28}%`,
-                                      }}
-                                    />
-                                  </div>
+                                <div className="tetris-camera-chip">
+                                  <span className="tetris-camera-chip-label">안면 상태</span>
+                                  <strong className="tetris-camera-chip-value">
+                                    {cameraReady
+                                      ? faceTracked
+                                        ? "인식 중"
+                                        : "준비"
+                                      : "대기"}
+                                  </strong>
                                 </div>
                               </div>
 
@@ -2510,59 +2384,124 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
                               </div>
 
                               <div className="tetris-status-card tetris-accuracy-card">
-                                <span className="tetris-accuracy-label">음성 정확도</span>
+                                <div className="tetris-accuracy-copy">
+                                  <span className="tetris-accuracy-label">음성 정확도</span>
+                                  {currentSpeechGrade && (
+                                    <span
+                                      className={`tetris-grade-badge tetris-grade-${currentSpeechGrade.toLowerCase()}`}
+                                    >
+                                      {currentSpeechGrade}
+                                    </span>
+                                  )}
+                                </div>
                                 <strong className="tetris-accuracy-value">
                                   {gameStarted ? totalAccuracy : 0}
                                   <em>점</em>
                                 </strong>
                               </div>
 
-                              <div className="tetris-status-card">
-                                <span className="tetris-accuracy-label">인식 방식</span>
-                                <strong
-                                  className="tetris-accuracy-value"
-                                  style={{ fontSize: "0.95rem", textAlign: "left" }}
-                                >
-                                  {speechMode === "browser"
-                                    ? "브라우저 음성 인식"
-                                    : speechMode === "server"
-                                      ? "서버 STT"
-                                      : "대기 중"}
-                                </strong>
-                              </div>
+                                <div className="vt-progress-block tetris-status-card">
+                                  <div className="vt-chips-label">문제 흐름</div>
+                                  <div className="vt-chips-row">
+                                    {wordChips.map((cleared, i) => (
+                                      <div
+                                        key={i}
+                                        className={`vt-chip vt-chip-pill ${cleared === "success" ? "vt-chip-done" : ""} ${cleared === "fail" ? "vt-chip-fail" : ""}`}
+                                      >
+                                        <span className="vt-chip-dot" />
+                                        <span className="vt-chip-text">
+                                          {cleared === "success"
+                                            ? `${i + 1}번 성공`
+                                            : cleared === "fail"
+                                              ? `${i + 1}번 실패`
+                                              : `${i + 1}번 대기`}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
 
-                              {speechError ? (
-                                <div className="tetris-status-card">
-                                  <span className="tetris-accuracy-label">음성 상태</span>
-                                  <strong
-                                    className="tetris-accuracy-value"
+                              <div className="tetris-status-card">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setShowSpeechDetails((previous) => !previous)
+                                  }
+                                  style={{
+                                    width: "100%",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    border: "1px solid #dbe4f0",
+                                    background: "#fff",
+                                    borderRadius: "14px",
+                                    padding: "0.85rem 0.95rem",
+                                    color: "#334155",
+                                    fontSize: "0.82rem",
+                                    fontWeight: 800,
+                                  }}
+                                >
+                                  <span>기술 상태</span>
+                                  <span>{showSpeechDetails ? "접기" : "보기"}</span>
+                                </button>
+
+                                {showSpeechDetails ? (
+                                  <div
                                     style={{
-                                      fontSize: "0.95rem",
-                                      lineHeight: 1.5,
-                                      textAlign: "left",
+                                      display: "grid",
+                                      gap: "0.7rem",
+                                      marginTop: "0.8rem",
                                     }}
                                   >
-                                    {speechError}
-                                  </strong>
-                                </div>
-                              ) : null}
-
-                              <div className="vt-progress-block tetris-status-card">
-                                <div className="vt-chips-label">문제 흐름</div>
-                                <div className="vt-chips-row">
-                                  {wordChips.map((cleared, i) => (
                                     <div
-                                      key={i}
-                                      className={`vt-chip ${cleared === "success" ? "vt-chip-done" : ""} ${cleared === "fail" ? "vt-chip-fail" : ""}`}
+                                      style={{
+                                        border: "1px solid #e2e8f0",
+                                        borderRadius: "14px",
+                                        background: "#f8fafc",
+                                        padding: "0.8rem 0.9rem",
+                                      }}
                                     >
-                                      {cleared === "success"
-                                        ? "✓"
-                                        : cleared === "fail"
-                                          ? "X"
-                                          : i + 1}
+                                      <div className="tetris-accuracy-label">인식 방식</div>
+                                      <strong
+                                        className="tetris-accuracy-value"
+                                        style={{
+                                          fontSize: "0.92rem",
+                                          textAlign: "left",
+                                          marginTop: "0.35rem",
+                                        }}
+                                      >
+                                        {speechMode === "browser"
+                                          ? "브라우저 음성 인식"
+                                          : "대기 중"}
+                                      </strong>
                                     </div>
-                                  ))}
-                                </div>
+
+                                    <div
+                                      style={{
+                                        border: "1px solid #e2e8f0",
+                                        borderRadius: "14px",
+                                        background: "#f8fafc",
+                                        padding: "0.8rem 0.9rem",
+                                      }}
+                                    >
+                                      <div className="tetris-accuracy-label">음성 상태</div>
+                                      <strong
+                                        className="tetris-accuracy-value"
+                                        style={{
+                                          fontSize: "0.92rem",
+                                          lineHeight: 1.5,
+                                          textAlign: "left",
+                                          marginTop: "0.35rem",
+                                        }}
+                                      >
+                                        {speechError ||
+                                          (speechMode === "browser"
+                                            ? "브라우저 음성 인식 준비됨"
+                                            : "음성 인식 대기 중")}
+                                      </strong>
+                                    </div>
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
                         </MonitoringPanelShell>

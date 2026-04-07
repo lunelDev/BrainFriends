@@ -50,37 +50,106 @@ function levenshtein(a: string, b: string) {
 }
 
 const CATEGORY_VARIANTS = {
-  fruit: ["과일", "과일이요", "과일입니다"],
-  animal: ["동물", "동물이요", "동물입니다"],
-  vehicle: ["탈것", "탈것이요", "탈것입니다", "탈거", "탈거요"],
+  fruit: [
+    "과일",
+    "과일이",
+    "과일을",
+    "과일로",
+    "과일은",
+    "과일이요",
+    "과일이에요",
+    "과일입니다",
+    "과일이야",
+    "과일요",
+    "과이",
+    "과릴",
+  ],
+  animal: [
+    "동물",
+    "동물이",
+    "동물을",
+    "동물로",
+    "동물은",
+    "동물이요",
+    "동물이에요",
+    "동물입니다",
+    "동물이야",
+    "동물요",
+    "동무",
+    "동믈",
+  ],
+  vehicle: [
+    "탈것",
+    "탈것이",
+    "탈것을",
+    "탈것은",
+    "탈것이요",
+    "탈것이에요",
+    "탈것입니다",
+    "탈것이야",
+    "탈것요",
+    "탈거",
+    "탈거요",
+    "탈거에요",
+    "탈껏",
+    "탈것중",
+    "탈 것",
+  ],
 } as const;
 
+function normalizeCategoryText(text: string) {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[^가-힣a-zA-Z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function parseCategory(text: string) {
-  const normalized = text.replace(/\s+/g, "");
+  const normalized = normalizeCategoryText(text);
+  const compact = normalized.replace(/\s+/g, "");
+  const tokens = normalized
+    .split(" ")
+    .filter(Boolean)
+    .flatMap((token) => {
+      const compactToken = token.replace(/\s+/g, "");
+      return [compactToken, compactToken.slice(0, 2), compactToken.slice(0, 3)];
+    })
+    .filter(Boolean);
+
   const entries = Object.entries(CATEGORY_VARIANTS) as Array<
     [keyof typeof CATEGORY_VARIANTS, readonly string[]]
   >;
 
   for (const [category, variants] of entries) {
-    if (variants.some((variant) => normalized.includes(variant))) {
+    if (
+      variants.some((variant) => {
+        const normalizedVariant = normalizeCategoryText(variant).replace(
+          /\s+/g,
+          "",
+        );
+        return compact === normalizedVariant || compact.includes(normalizedVariant);
+      })
+    ) {
       return category;
     }
   }
 
-  const tokens = normalized
-    .split(/[^가-힣a-zA-Z0-9]+/)
-    .filter(Boolean)
-    .flatMap((token) => [token, token.slice(0, 2), token.slice(0, 3)])
-    .filter(Boolean);
-
   for (const [category, variants] of entries) {
     if (
       tokens.some((token) =>
-        variants.some(
-          (variant) =>
-            Math.abs(token.length - variant.length) <= 1 &&
-            levenshtein(token, variant) <= 1,
-        ),
+        variants.some((variant) => {
+          const normalizedVariant = normalizeCategoryText(variant).replace(
+            /\s+/g,
+            "",
+          );
+          return (
+            token.length > 0 &&
+            Math.abs(token.length - normalizedVariant.length) <= 1 &&
+            levenshtein(token, normalizedVariant) <= 1
+          );
+        }),
       )
     ) {
       return category;
@@ -122,10 +191,13 @@ function formatDuration(ms: number) {
 function getRoundTimeLimit(difficulty: MemoryDifficultyId) {
   switch (difficulty) {
     case "easy":
+      return 10;
     case "normal":
+      return 7;
     case "hard":
+      return 5;
     default:
-      return 30;
+      return 7;
   }
 }
 
@@ -139,8 +211,8 @@ function SelectionModal({
   onStart: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 p-6 backdrop-blur-md">
-      <div className="relative w-full max-w-[540px] overflow-hidden rounded-[56px] border-[6px] border-white bg-white shadow-[0_32px_80px_rgba(0,0,0,0.4)] ring-1 ring-slate-200">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-900/80 p-6 backdrop-blur-md">
+      <div className="relative my-auto w-full max-w-[540px] max-h-[calc(100dvh-3rem)] overflow-y-auto rounded-[56px] border-[6px] border-white bg-white shadow-[0_32px_80px_rgba(0,0,0,0.4)] ring-1 ring-slate-200">
         <div className="border-b-2 border-slate-100 bg-slate-50/80 px-8 pb-8 pt-12 text-center">
           <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-[32px] bg-violet-600 text-white shadow-xl ring-4 ring-violet-50">
             <span className="text-4xl">🧠</span>
@@ -296,7 +368,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
 
   const [difficulty, setDifficulty] = useState<MemoryDifficultyId>("normal");
   const [cards, setCards] = useState(() => buildDeck("normal"));
-  const [targetIndex, setTargetIndex] = useState(0);
+  const [targetWord, setTargetWord] = useState<string | null>(null);
   const [heardText, setHeardText] = useState("");
   const [message, setMessage] = useState(
     "한 번 마이크를 켜면 계속 듣습니다. 그림을 보고 정답 분류를 말해 보세요.",
@@ -332,6 +404,11 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   const recognitionRef = useRef<any>(null);
   const keepListeningRef = useRef(false);
   const handledTargetRef = useRef<string | null>(null);
+  const transitionLockRef = useRef(false);
+  const ignoreSpeechUntilRef = useRef(0);
+  const currentCardRef = useRef<typeof currentCard>(null);
+  const cardsRef = useRef(cards);
+  const timeLeftRef = useRef(0);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const volumeRef = useRef(0);
@@ -364,8 +441,31 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
 
   const currentCard = useMemo(() => {
     const remaining = cards.filter((card) => !card.solved);
-    return remaining[targetIndex] ?? remaining[0] ?? null;
-  }, [cards, targetIndex]);
+    if (remaining.length === 0) return null;
+    if (!targetWord) return remaining[0];
+    return (
+      remaining.find((card) => card.word === targetWord) ?? remaining[0] ?? null
+    );
+  }, [cards, targetWord]);
+
+  useEffect(() => {
+    cardsRef.current = cards;
+  }, [cards]);
+
+  useEffect(() => {
+    if (showDifficultyModal) return;
+    if (currentCard) return;
+    setTargetWord(null);
+  }, [currentCard, showDifficultyModal]);
+
+  useEffect(() => {
+    if (showDifficultyModal) return;
+    if (targetWord) return;
+    const firstRemaining = cards.find((card) => !card.solved);
+    if (firstRemaining) {
+      setTargetWord(firstRemaining.word);
+    }
+  }, [cards, showDifficultyModal, targetWord]);
 
   useEffect(() => {
     if (!currentCard) {
@@ -379,9 +479,28 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   }, [currentCard?.word]);
 
   useEffect(() => {
+    currentCardRef.current = currentCard;
+  }, [currentCard]);
+
+  useEffect(() => {
     if (showDifficultyModal || !currentCard) return;
     setTimeLeft(getRoundTimeLimit(difficulty));
   }, [currentCard, difficulty, showDifficultyModal]);
+
+  useEffect(() => {
+    timeLeftRef.current = timeLeft;
+  }, [timeLeft]);
+
+  useEffect(() => {
+    if (showDifficultyModal || !currentCard) return;
+    setHeardText("");
+    setMessage("지금 과일, 동물, 탈것 중 하나를 말하세요.");
+    ignoreSpeechUntilRef.current = Date.now() + 1200;
+    const unlockTimer = window.setTimeout(() => {
+      transitionLockRef.current = false;
+    }, 220);
+    return () => window.clearTimeout(unlockTimer);
+  }, [currentCard?.word, showDifficultyModal]);
 
   const stopCamera = useCallback(() => {
     if (cameraStreamRef.current) {
@@ -440,40 +559,39 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     void attachCameraPreview();
   }, [attachCameraPreview, cameraReady]);
 
-  function chooseNextTarget(nextCards: typeof cards, currentWord?: string) {
+  function getNextTargetWord(nextCards: typeof cards, currentWord?: string) {
     const remaining = nextCards.filter((card) => !card.solved);
     if (remaining.length === 0) {
-      setTargetIndex(0);
-      return;
+      return null;
     }
-
-    const nextPool =
-      currentWord && remaining.length > 1
-        ? remaining.filter((card) => card.word !== currentWord)
-        : remaining;
-    const nextTarget =
-      nextPool[Math.floor(Math.random() * nextPool.length)] ?? remaining[0];
-    const nextIndex = remaining.findIndex(
-      (card) => card.word === nextTarget.word,
-    );
-    setTargetIndex(Math.max(0, nextIndex));
+    const currentIndex = currentWord
+      ? nextCards.findIndex((card) => card.word === currentWord)
+      : -1;
+    return (
+      nextCards.find(
+        (card, index) => index > currentIndex && !card.solved,
+      ) ?? remaining[0]
+    ).word;
   }
 
-  function revealCategory(targetCategory: string, correct: boolean) {
-    setCards((current) => {
-      const next = current.map((card) => {
-        if (card.word === currentCard?.word) {
-          return correct ? { ...card, revealed: true, solved: true } : card;
-        }
+  function chooseNextTarget(nextCards: typeof cards, currentWord?: string) {
+    setTargetWord(getNextTargetWord(nextCards, currentWord));
+  }
 
-        return card;
-      });
-
-      if (correct) {
-        chooseNextTarget(next, currentCard?.word);
+  function revealCategory(targetWord: string, correct: boolean) {
+    const nextCards = cardsRef.current.map((card) => {
+      if (card.word === targetWord) {
+        return correct ? { ...card, revealed: true, solved: true } : card;
       }
-      return next;
+      return card;
     });
+
+    cardsRef.current = nextCards;
+    setCards(nextCards);
+
+    if (correct) {
+      chooseNextTarget(nextCards, targetWord);
+    }
   }
 
   function triggerFeedback(nextState: "success" | "fail") {
@@ -484,70 +602,73 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   }
 
   const handleRoundTimeout = useCallback(() => {
-    if (!currentCard) return;
-    if (handledTargetRef.current === `done-${currentCard.word}`) return;
+    const activeCard = currentCardRef.current;
+    if (!activeCard) return;
+    if (handledTargetRef.current === `done-${activeCard.word}`) return;
 
-    handledTargetRef.current = `done-${currentCard.word}`;
+    transitionLockRef.current = true;
+    ignoreSpeechUntilRef.current = Date.now() + 900;
+    handledTargetRef.current = `done-${activeCard.word}`;
     setAttemptCount((value) => value + 1);
     setWrongCount((value) => value + 1);
     setScore((value) => Math.max(0, value - 2));
     setWrongByCategory((value) => ({
       ...value,
-      [currentCard.category]: (value[currentCard.category] ?? 0) + 1,
+      [activeCard.category]: (value[activeCard.category] ?? 0) + 1,
     }));
     setHeardText("");
     setMessage("시간 초과예요. 다음 그림으로 넘어갑니다.");
     triggerFeedback("fail");
-
-    setCards((current) => {
-      const next = [...current];
-      chooseNextTarget(next, currentCard.word);
-      return next;
-    });
-  }, [currentCard]);
+    setTargetWord(getNextTargetWord(cardsRef.current, activeCard.word));
+  }, []);
 
   function handleSpeechResult(transcript: string) {
-    if (!currentCard || handledTargetRef.current === `done-${currentCard.word}`)
+    const activeCard = currentCardRef.current;
+    if (
+      !activeCard ||
+      transitionLockRef.current ||
+      Date.now() < ignoreSpeechUntilRef.current ||
+      handledTargetRef.current === `done-${activeCard.word}`
+    )
       return;
-
-    handledTargetRef.current = `done-${currentCard.word}`;
     setHeardText(transcript);
 
     const parsedCategory = parseCategory(transcript);
-    setAttemptCount((value) => value + 1);
+    console.info("[Memory] speech result", {
+      transcript,
+      parsedCategory,
+      currentWord: activeCard.word,
+      currentCategory: activeCard.category,
+    });
 
     if (!parsedCategory) {
-      handledTargetRef.current = currentCard.word;
-      triggerFeedback("fail");
-      setMessage("잘 분류해 보세요.");
-      setScore((value) => Math.max(0, value - 1));
-      setWrongCount((value) => value + 1);
-      setWrongByCategory((value) => ({
-        ...value,
-        [currentCard.category]: (value[currentCard.category] ?? 0) + 1,
-      }));
+      setMessage("과일, 동물, 탈것 중 하나를 말해 주세요.");
       return;
     }
 
-    if (parsedCategory === currentCard.category) {
-      revealCategory(parsedCategory, true);
+    setAttemptCount((value) => value + 1);
+
+    if (parsedCategory === activeCard.category) {
+      transitionLockRef.current = true;
+      ignoreSpeechUntilRef.current = Date.now() + 900;
+      handledTargetRef.current = `done-${activeCard.word}`;
+      setHeardText("");
+      revealCategory(activeCard.word, true);
       triggerFeedback("success");
       setScore((value) => value + 15);
       setSolvedCount((value) => value + 1);
-      setMessage(`정답이에요. ${currentCard.word} 카드가 열렸습니다.`);
+      setMessage(`정답이에요. ${activeCard.word} 카드가 열렸습니다.`);
       return;
     }
 
-    revealCategory(parsedCategory, false);
-    handledTargetRef.current = currentCard.word;
     triggerFeedback("fail");
     setScore((value) => Math.max(0, value - 2));
     setWrongCount((value) => value + 1);
     setWrongByCategory((value) => ({
       ...value,
-      [currentCard.category]: (value[currentCard.category] ?? 0) + 1,
+      [activeCard.category]: (value[activeCard.category] ?? 0) + 1,
     }));
-    setMessage("잘 분류해 보세요.");
+    setMessage(`아직 아니에요. ${Math.max(timeLeftRef.current, 0)}초 안에 다시 말해 보세요.`);
   }
 
   function runSpeechTestInput(transcript: string) {
@@ -574,7 +695,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   }, [currentCard, handleRoundTimeout, showDifficultyModal]);
 
   const beginContinuousListening = useCallback(() => {
-    if (!supported || recognitionRef.current || !currentCard) return;
+    if (!supported || recognitionRef.current || !currentCardRef.current) return;
 
     const Recognition = buildRecognition();
     if (!Recognition) {
@@ -598,7 +719,8 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
         const result = event.results?.[i];
         const transcript = result?.[0]?.transcript?.trim() ?? "";
-      if (!transcript) continue;
+        if (!transcript) continue;
+        if (Date.now() < ignoreSpeechUntilRef.current) continue;
 
         setHeardText(transcript);
 
@@ -608,15 +730,18 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
         }
 
         if (result?.isFinal) {
-          handleSpeechResult(transcript);
-          return;
+          setMessage("과일, 동물, 탈것 중 하나를 또박또박 말해 주세요.");
         }
       }
     };
 
     recognition.onend = () => {
       recognitionRef.current = null;
-      if (keepListeningRef.current && currentCard) {
+      if (
+        keepListeningRef.current &&
+        currentCardRef.current &&
+        !transitionLockRef.current
+      ) {
         window.setTimeout(() => beginContinuousListening(), 150);
         return;
       }
@@ -630,7 +755,37 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
 
     recognitionRef.current = recognition;
     recognition.start();
-  }, [currentCard, supported]);
+  }, [supported]);
+
+  useEffect(() => {
+    if (showDifficultyModal || !currentCard || !keepListeningRef.current) return;
+
+    const restartTimer = window.setTimeout(() => {
+      if (recognitionRef.current) {
+        const recognition = recognitionRef.current;
+        recognition.onend = () => {
+          recognitionRef.current = null;
+          if (keepListeningRef.current && currentCardRef.current) {
+            window.setTimeout(() => beginContinuousListening(), 120);
+            return;
+          }
+          setIsListening(false);
+          setMicEnabled(false);
+        };
+
+        try {
+          recognition.stop();
+          return;
+        } catch {
+          recognitionRef.current = null;
+        }
+      }
+
+      beginContinuousListening();
+    }, 180);
+
+    return () => window.clearTimeout(restartTimer);
+  }, [beginContinuousListening, currentCard?.word, currentCard, showDifficultyModal]);
 
   async function startListening() {
     if (micEnabled || !currentCard) return;
@@ -667,7 +822,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     stopListening();
     setDifficulty(nextDifficulty);
     setCards(buildDeck(nextDifficulty));
-    setTargetIndex(0);
+    setTargetWord(null);
     setHeardText("");
     setMessage("난이도를 바꿨어요. 그림을 보고 정답 분류를 말해 보세요.");
     setScore(0);
@@ -684,7 +839,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   async function startGameForDifficulty() {
     const nextCards = buildDeck(difficulty);
     setCards(nextCards);
-    setTargetIndex(0);
+    setTargetWord(nextCards.find((card) => !card.solved)?.word ?? null);
     setHeardText("");
     setMessage(
       "한 번 마이크를 켜면 계속 듣습니다. 그림을 보고 정답 분류를 말해 보세요.",

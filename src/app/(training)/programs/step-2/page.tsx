@@ -200,6 +200,7 @@ function Step2Content() {
   const [showTracking, setShowTracking] = useState(true);
   const [isHomeExitModalOpen, setIsHomeExitModalOpen] = useState(false);
   const [isDesktopViewport, setIsDesktopViewport] = useState(false);
+  const [showSidePanel, setShowSidePanel] = useState(false);
   const flowTokenRef = useRef(0);
   const articulationStateRef = useRef(createInitialArticulationAnalyzerState());
   const liveArticulationRef = useRef({
@@ -1343,6 +1344,13 @@ function Step2Content() {
               SKIP
             </button>
           ) : null}
+          <button
+            type="button"
+            onClick={() => setShowSidePanel((v) => !v)}
+            className={`lg:hidden px-3 py-1.5 rounded-full font-black text-[11px] border ${showSidePanel ? (isRehabMode ? "bg-sky-500 text-white border-sky-500" : "bg-orange-500 text-white border-orange-500") : (isRehabMode ? "bg-sky-50 text-sky-700 border-sky-200" : "bg-orange-50 text-orange-700 border-orange-200")}`}
+          >
+            분석 패널
+          </button>
           <div
             className={`px-4 py-1.5 rounded-full font-black text-xs border ${isRehabMode ? "bg-sky-50 text-sky-700 border-sky-200" : "bg-orange-50 text-orange-700 border-orange-200"}`}
           >
@@ -1673,7 +1681,14 @@ function Step2Content() {
             </div>
           </div>
         </main>
-        <aside className="hidden lg:flex w-[380px] h-auto lg:h-full border-t lg:border-t-0 lg:border-l border-slate-50 bg-white shrink-0 flex-col p-3 sm:p-4 lg:p-4 overflow-visible lg:overflow-hidden order-2">
+        {/* 모바일 오버레이 */}
+        {showSidePanel && (
+          <div
+            className="fixed inset-0 z-20 bg-black/30 backdrop-blur-[2px] lg:hidden"
+            onClick={() => setShowSidePanel(false)}
+          />
+        )}
+        <aside className={`fixed top-0 right-0 z-30 h-full w-[300px] bg-white border-l border-slate-100 overflow-y-auto transition-transform duration-300 ease-in-out shrink-0 flex flex-col p-3 sm:p-4 lg:p-4 lg:static lg:z-auto lg:flex lg:w-[380px] lg:h-full lg:border-t-0 lg:border-l lg:border-slate-50 lg:translate-x-0 lg:overflow-hidden order-2 ${showSidePanel ? "translate-x-0" : "translate-x-full"}`}>
           <AnalysisSidebar
             videoRef={videoRef}
             canvasRef={canvasRef}

@@ -214,8 +214,8 @@ function SentenceSetupModal({
   const handleHome = onHome ?? (() => router.push("/select-page/game-mode"));
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 p-6 backdrop-blur-md">
-      <div className="relative w-full max-w-[560px] overflow-hidden rounded-[56px] border-[6px] border-white bg-white shadow-[0_32px_80px_rgba(0,0,0,0.4)] ring-1 ring-slate-200">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-900/80 p-6 backdrop-blur-md">
+      <div className="relative my-auto w-full max-w-[560px] max-h-[calc(100dvh-3rem)] overflow-y-auto rounded-[56px] border-[6px] border-white bg-white shadow-[0_32px_80px_rgba(0,0,0,0.4)] ring-1 ring-slate-200">
         <button
           type="button"
           onClick={handleHome}
