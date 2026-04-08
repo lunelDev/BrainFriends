@@ -214,8 +214,8 @@ function SentenceSetupModal({
   const handleHome = onHome ?? (() => router.push("/select-page/game-mode"));
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-900/80 p-6 backdrop-blur-md">
-      <div className="relative my-auto w-full max-w-[560px] max-h-[calc(100dvh-3rem)] overflow-y-auto rounded-[56px] border-[6px] border-white bg-white shadow-[0_32px_80px_rgba(0,0,0,0.4)] ring-1 ring-slate-200">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-900/80 p-4 [@media(min-height:901px)]:p-6 backdrop-blur-md">
+      <div className="relative my-auto w-full max-w-[560px] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[40px] [@media(min-height:901px)]:rounded-[56px] border-[6px] border-white bg-white shadow-[0_32px_80px_rgba(0,0,0,0.4)] ring-1 ring-slate-200">
         <button
           type="button"
           onClick={handleHome}
@@ -230,35 +230,35 @@ function SentenceSetupModal({
           </svg>
         </button>
 
-        <div className="border-b-2 border-slate-100 bg-slate-50/80 px-8 pb-8 pt-12 text-center">
-          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-[32px] bg-violet-600 text-white shadow-xl ring-4 ring-violet-50">
-            <span className="text-4xl">✨</span>
+        <div className="border-b-2 border-slate-100 bg-slate-50/80 px-5 pb-5 pt-7 [@media(min-height:901px)]:px-8 [@media(min-height:901px)]:pb-8 [@media(min-height:901px)]:pt-12 text-center">
+          <div className="mx-auto mb-3 [@media(min-height:901px)]:mb-6 flex h-14 w-14 [@media(min-height:901px)]:h-20 [@media(min-height:901px)]:w-20 items-center justify-center rounded-[24px] [@media(min-height:901px)]:rounded-[32px] bg-violet-600 text-white shadow-xl ring-4 ring-violet-50">
+            <span className="text-2xl [@media(min-height:901px)]:text-4xl">✨</span>
           </div>
           <span className="mb-2 block text-[12px] font-black uppercase tracking-[0.4em] text-violet-500">
             Sentence Magic Protocol
           </span>
-          <h3 className="text-4xl font-black tracking-tighter text-slate-900">문장 마법</h3>
-          <p className="mt-3 break-keep text-sm font-bold text-slate-400">
+          <h3 className="text-2xl [@media(min-height:901px)]:text-4xl font-black tracking-tighter text-slate-900">문장 마법</h3>
+          <p className="mt-2 break-keep text-sm font-bold text-slate-400">
             모드와 도전 단계를 선택한 뒤 문장을 또렷하게 읽어 보세요.
           </p>
         </div>
 
-        <div className="bg-white p-8">
-          <div className="mb-8 grid gap-4 sm:grid-cols-2">
+        <div className="bg-white p-5 [@media(min-height:901px)]:p-8">
+          <div className="mb-4 [@media(min-height:901px)]:mb-8 grid gap-3 [@media(min-height:901px)]:gap-4 sm:grid-cols-2">
             {SENTENCE_MAGIC_MODES.map((item) => (
               <button
                 key={item.id}
                 type="button"
-                className={`rounded-[32px] border-2 p-5 text-left transition-all ${
+                className={`rounded-[24px] [@media(min-height:901px)]:rounded-[32px] border-2 p-4 [@media(min-height:901px)]:p-5 text-left transition-all ${
                   selectedModeId === item.id
                     ? "border-violet-600 bg-violet-600 text-white shadow-lg"
                     : "border-slate-300 bg-slate-50 text-slate-500 hover:border-violet-300 hover:bg-white"
                 }`}
                 onClick={() => onSelectMode(item.id)}
               >
-                <div className="mb-3 flex items-center gap-3">
-                  <span className="text-3xl">{item.emoji}</span>
-                  <strong className="text-xl font-black">{item.label}</strong>
+                <div className="mb-2 [@media(min-height:901px)]:mb-3 flex items-center gap-2 [@media(min-height:901px)]:gap-3">
+                  <span className="text-2xl [@media(min-height:901px)]:text-3xl">{item.emoji}</span>
+                  <strong className="text-base [@media(min-height:901px)]:text-xl font-black">{item.label}</strong>
                 </div>
                 <p className={`text-sm font-bold ${selectedModeId === item.id ? "text-violet-100" : "text-slate-400"}`}>
                   {item.desc}
@@ -267,16 +267,16 @@ function SentenceSetupModal({
             ))}
           </div>
 
-          <div className="mb-8 rounded-[32px] border-2 border-violet-100 bg-violet-50/60 p-6">
-            <span className="mb-4 block text-center text-[11px] font-black uppercase tracking-[0.28em] text-violet-500">
+          <div className="mb-4 [@media(min-height:901px)]:mb-8 rounded-[24px] [@media(min-height:901px)]:rounded-[32px] border-2 border-violet-100 bg-violet-50/60 p-4 [@media(min-height:901px)]:p-6">
+            <span className="mb-3 [@media(min-height:901px)]:mb-4 block text-center text-[11px] font-black uppercase tracking-[0.28em] text-violet-500">
               도전 단계
             </span>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-2 [@media(min-height:901px)]:gap-3">
               {TONGUE_TWISTER_THRESHOLDS.map((item) => (
                 <button
                   key={item.id}
                   type="button"
-                  className={`rounded-[22px] border-2 px-4 py-3 text-sm font-black transition-all ${
+                  className={`rounded-[18px] [@media(min-height:901px)]:rounded-[22px] border-2 px-3 py-2 [@media(min-height:901px)]:px-4 [@media(min-height:901px)]:py-3 text-sm font-black transition-all ${
                     selectedThreshold === item.threshold
                       ? "border-violet-600 bg-violet-600 text-white"
                       : "border-slate-200 bg-white text-slate-500 hover:border-violet-300"
@@ -291,7 +291,7 @@ function SentenceSetupModal({
 
           <button
             type="button"
-            className="flex h-20 w-full items-center justify-center gap-3 rounded-[28px] bg-slate-900 text-xl font-black text-white shadow-2xl shadow-slate-200 transition-transform active:scale-95"
+            className="flex h-14 [@media(min-height:901px)]:h-20 w-full items-center justify-center gap-3 rounded-[24px] [@media(min-height:901px)]:rounded-[28px] bg-slate-900 text-base [@media(min-height:901px)]:text-xl font-black text-white shadow-2xl shadow-slate-200 transition-transform active:scale-95"
             onClick={onStart}
           >
             시작하기

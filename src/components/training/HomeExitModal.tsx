@@ -31,7 +31,7 @@ export function HomeExitModal({ open, onConfirm, onCancel }: Props) {
 
   return (
     <div className="fixed inset-0 z-[80] bg-black/45 backdrop-blur-[2px] flex items-center justify-center overflow-y-auto p-4">
-      <div className="my-auto w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto bg-white rounded-3xl border border-orange-100 p-6 shadow-2xl">
+      <div className="my-auto w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto bg-white rounded-3xl border border-orange-100 p-4 [@media(min-height:901px)]:p-6 shadow-2xl">
         <p className="text-[10px] font-black text-orange-500 uppercase tracking-[0.25em] mb-2">
           Home
         </p>

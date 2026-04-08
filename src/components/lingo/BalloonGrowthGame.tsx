@@ -228,8 +228,8 @@ function SelectionModal({
             <path d="M10 21v-5h4v5" />
           </svg>
         </button>
-        <div className="border-b-2 border-slate-200 bg-slate-50/80 px-5 pb-6 pt-8 text-center sm:px-8 sm:pb-8 sm:pt-12">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-violet-600 text-white shadow-[0_12px_30px_rgba(124,58,237,0.3)] ring-4 ring-violet-50 sm:mb-6 sm:h-20 sm:w-20 sm:rounded-[32px]">
+        <div className="border-b-2 border-slate-200 bg-slate-50/80 px-5 pb-5 pt-7 text-center sm:px-8 sm:pb-8 sm:pt-12 [@media(max-height:900px)]:px-5 [@media(max-height:900px)]:pb-5 [@media(max-height:900px)]:pt-7">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-[18px] bg-violet-600 text-white shadow-[0_12px_30px_rgba(124,58,237,0.3)] ring-4 ring-violet-50 sm:mb-5 sm:h-16 sm:w-16 sm:rounded-[24px] [@media(min-height:901px)]:mb-5 [@media(min-height:901px)]:h-16 [@media(min-height:901px)]:w-16 [@media(min-height:901px)]:rounded-[24px]">
             <svg
               width="30"
               height="30"
@@ -248,17 +248,17 @@ function SelectionModal({
           <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.28em] text-violet-500 sm:text-[12px] sm:tracking-[0.4em]">
             Rehab Protocol
           </span>
-          <h3 className="text-[1.9rem] font-black tracking-tighter text-slate-900 sm:text-4xl">
+          <h3 className="text-xl font-black tracking-tighter text-slate-900 sm:text-[1.9rem] [@media(min-height:901px)]:text-[1.9rem]">
             훈련 단계 설정
           </h3>
         </div>
 
-        <div className="space-y-3 bg-white p-4 sm:space-y-4 sm:p-8">
+        <div className="space-y-2 bg-white p-3 sm:space-y-3 sm:p-5 [@media(min-height:901px)]:space-y-4 [@media(min-height:901px)]:p-6">
           {difficulties.map((item, index) => (
             <button
               key={item.id}
               type="button"
-              className="group relative flex w-full items-center gap-3 rounded-[24px] border-2 border-slate-300 bg-slate-50/70 p-4 text-left transition-all hover:border-violet-500 hover:bg-white hover:shadow-[0_20px_40px_rgba(124,58,237,0.1)] active:scale-[0.97] sm:gap-6 sm:rounded-[32px] sm:p-6"
+              className="group relative flex w-full items-center gap-3 rounded-[18px] border-2 border-slate-300 bg-slate-50/70 p-3 text-left transition-all hover:border-violet-500 hover:bg-white hover:shadow-[0_20px_40px_rgba(124,58,237,0.1)] active:scale-[0.97] sm:gap-4 sm:rounded-[24px] sm:p-4 [@media(min-height:901px)]:gap-6 [@media(min-height:901px)]:rounded-[28px] [@media(min-height:901px)]:p-5"
               onClick={() => onSelect(item)}
             >
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-white text-base font-black text-slate-800 shadow-sm ring-1 ring-slate-300 transition-all group-hover:bg-violet-600 group-hover:text-white group-hover:ring-violet-600 sm:h-14 sm:w-14 sm:rounded-[22px] sm:text-lg">
@@ -354,6 +354,7 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
   const toneHoldMsRef = useRef(0);
   const recentVoiceMsRef = useRef(0);
   const effectiveVolumeRef = useRef(0);
+  const rawVolumeRef = useRef(0);
   const guideRecognitionRef = useRef<BalloonSpeechRecognitionInstance | null>(null);
   const guideRecognitionShouldResumeRef = useRef(false);
   const guideBoostUntilRef = useRef(0);
@@ -362,8 +363,9 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
   const stage = difficulty.stage;
   const growthFloor = 12;
   const voicedFloor = 7;
-  const effectiveDangerMin = Math.max(96, stage.dangerMin + 12);
-  const effectiveDangerHoldMs = Math.round(stage.dangerHoldMs * 2.5);
+  const effectiveDangerMin = stage.dangerMin;
+  const visualDangerMin = stage.dangerMin;
+  const effectiveDangerHoldMs = Math.round(stage.dangerHoldMs * 2.1);
   const mappedVolume =
     volume <= 18 ? 0 : clamp(Math.round((volume - 18) * 2.8), 0, 100);
   const effectiveVolume = testVoiceBoost
@@ -378,10 +380,10 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
         VOWEL_GUIDES.length
     ];
   const safeWidth = stage.safeMax - stage.safeMin;
-  const dangerLeft = `${effectiveDangerMin}%`;
+  const dangerLeft = `${visualDangerMin}%`;
   const safeLeft = `${stage.safeMin}%`;
   const liveWidth = `${effectiveVolume}%`;
-  const isDanger = phase === "playing" && effectiveVolume >= effectiveDangerMin;
+  const isDanger = phase === "playing" && effectiveVolume >= visualDangerMin;
   const isSafe =
     phase === "playing" &&
     effectiveVolume >= stage.safeMin &&
@@ -545,6 +547,10 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
   }, [effectiveVolume]);
 
   useEffect(() => {
+    rawVolumeRef.current = volume;
+  }, [volume]);
+
+  useEffect(() => {
     setWaveDisplayLevel((prev) => {
       if (effectiveVolume <= 0) {
         return prev * 0.72;
@@ -578,12 +584,14 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
       timeLeftRef.current = nextTimeLeft;
       let nextBalloonSize = balloonSizeRef.current;
       const currentVolume = effectiveVolumeRef.current;
+      const currentRawVolume = rawVolumeRef.current;
 
       const inSafeRange =
         currentVolume >= stage.safeMin && currentVolume <= stage.safeMax;
       const inDangerRange = currentVolume >= effectiveDangerMin;
-      const hasVoice = currentVolume >= voicedFloor;
-      const hasGrowthVoice = currentVolume >= growthFloor;
+      const showDangerState = currentVolume >= visualDangerMin;
+      const hasVoice = currentRawVolume >= 18 && currentVolume >= voicedFloor;
+      const hasGrowthVoice = currentRawVolume >= 20 && currentVolume >= growthFloor;
       const isSilent = !hasVoice;
 
       if (inDangerRange) {
@@ -596,7 +604,11 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
         setDangerRatio(
           clamp((dangerMsRef.current / effectiveDangerHoldMs) * 100, 0, 100),
         );
-        setMessage("위험해요. 소리를 조금만 줄여 보세요.");
+        setMessage(
+          showDangerState
+            ? "위험해요. 소리를 조금만 줄여 보세요."
+            : "조금 높아요. 살짝만 줄이면 더 안전하게 유지할 수 있어요.",
+        );
       } else if (hasGrowthVoice) {
         const guideBoostActive = Date.now() < guideBoostUntilRef.current;
         const growth =
@@ -877,23 +889,34 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
                 <div className="relative flex min-h-[60px] items-center justify-center rounded-[999px] border border-violet-100/80 bg-white/80 px-4 py-3 shadow-[0_12px_24px_rgba(148,163,184,0.12)] backdrop-blur sm:min-h-[64px] sm:px-5 lg:min-h-[70px] lg:px-6">
                   <span className="pointer-events-none absolute inset-x-4 inset-y-2 rounded-[999px] bg-gradient-to-r from-violet-50 via-white to-sky-50 opacity-90" />
                   <span className="pointer-events-none absolute inset-x-5 bottom-2 h-px bg-gradient-to-r from-transparent via-violet-200/70 to-transparent" />
-                  <div className="relative flex items-end justify-center gap-1.5 sm:gap-2">
-                    {voiceWaveBars.map((barHeight, index) => (
-                      <span
-                        key={index}
-                        className={`relative w-1.5 rounded-full transition-all duration-100 sm:w-2 ${
-                          phase === "playing" && waveDisplayLevel >= 8
-                            ? isDanger
-                              ? "bg-gradient-to-t from-rose-500 via-rose-400 to-rose-200 shadow-[0_0_10px_rgba(244,63,94,0.35)]"
-                              : "bg-gradient-to-t from-violet-500 via-violet-400 to-sky-300 shadow-[0_0_10px_rgba(129,140,248,0.28)]"
-                            : "bg-slate-200"
-                        }`}
-                        style={{ height: `${barHeight}px` }}
-                        aria-hidden="true"
-                      >
-                        <span className="absolute inset-x-0 top-0 h-[35%] rounded-full bg-white/45" />
+                  <div className="relative flex items-center justify-center gap-3 sm:gap-4">
+                    <div className="flex items-end justify-center gap-1.5 sm:gap-2">
+                      {voiceWaveBars.map((barHeight, index) => (
+                        <span
+                          key={index}
+                          className={`relative w-1.5 rounded-full transition-all duration-100 sm:w-2 ${
+                            phase === "playing" && waveDisplayLevel >= 8
+                              ? isDanger
+                                ? "bg-gradient-to-t from-rose-500 via-rose-400 to-rose-200 shadow-[0_0_10px_rgba(244,63,94,0.35)]"
+                                : "bg-gradient-to-t from-violet-500 via-violet-400 to-sky-300 shadow-[0_0_10px_rgba(129,140,248,0.28)]"
+                              : "bg-slate-200"
+                          }`}
+                          style={{ height: `${barHeight}px` }}
+                          aria-hidden="true"
+                        >
+                          <span className="absolute inset-x-0 top-0 h-[35%] rounded-full bg-white/45" />
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex min-w-[48px] flex-col items-end text-right">
+                      <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-300">
+                        input
                       </span>
-                    ))}
+                      <span className={`text-sm font-black ${isDanger ? "text-rose-500" : "text-slate-500"}`}>
+                        {Math.round(effectiveVolume)}
+                        <span className="ml-1 text-[10px] font-semibold text-slate-300">dB</span>
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>

@@ -311,18 +311,18 @@ export default function LoginPage() {
 
       {showFirstDiagnosisModal && pendingPatient ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/45 p-4 backdrop-blur-[2px]">
-          <div className="my-auto w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-orange-100 bg-white p-6 shadow-2xl">
+          <div className="my-auto w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-orange-100 bg-white p-4 [@media(min-height:901px)]:p-6 shadow-2xl">
             <p className="mb-2 text-[10px] font-black uppercase tracking-[0.25em] text-orange-500">
               First Diagnosis
             </p>
-            <h3 className="mb-2 text-xl font-black text-slate-900">
+            <h3 className="mb-2 text-lg [@media(min-height:901px)]:text-xl font-black text-slate-900">
               최초 1회는 자가 진단이 필요합니다
             </h3>
-            <p className="mb-6 text-sm font-bold text-slate-600">
+            <p className="mb-4 [@media(min-height:901px)]:mb-6 text-sm font-bold text-slate-600">
               카메라와 마이크 권한을 확인한 뒤 자가진단을 시작합니다.
             </p>
 
-            <div className="grid grid-cols-1 gap-3">
+            <div className="grid grid-cols-1 gap-2 [@media(min-height:901px)]:gap-3">
               <button
                 type="button"
                 onClick={() => {
@@ -350,18 +350,18 @@ export default function LoginPage() {
 
       {showPermissionModal && pendingPatient ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/45 p-4 backdrop-blur-[2px]">
-          <div className="my-auto w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-orange-100 bg-white p-6 shadow-2xl">
+          <div className="my-auto w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-orange-100 bg-white p-4 [@media(min-height:901px)]:p-6 shadow-2xl">
             <p className="mb-2 text-[10px] font-black uppercase tracking-[0.25em] text-orange-500">
               Device Permission
             </p>
-            <h3 className="mb-2 text-xl font-black text-slate-900">
+            <h3 className="mb-2 text-lg [@media(min-height:901px)]:text-xl font-black text-slate-900">
               카메라와 마이크 권한을 확인합니다
             </h3>
-            <p className="mb-6 text-sm font-bold text-slate-600">
+            <p className="mb-4 [@media(min-height:901px)]:mb-6 text-sm font-bold text-slate-600">
               다음 페이지로 이동하기 전에 장치 권한이 필요합니다.
             </p>
 
-            <div className="grid grid-cols-1 gap-3">
+            <div className="grid grid-cols-1 gap-2 [@media(min-height:901px)]:gap-3">
               <button
                 type="button"
                 onClick={async () => {

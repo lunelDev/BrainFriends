@@ -896,8 +896,8 @@ function LevelSelectionModal({
   const previewWord = levelWords[0] ?? "";
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-900/80 p-6 backdrop-blur-md">
-      <div className="relative my-auto flex w-full max-w-[560px] max-h-[calc(100dvh-3rem)] flex-col overflow-hidden rounded-[56px] border-[6px] border-white bg-white shadow-[0_32px_80px_rgba(0,0,0,0.4)] ring-1 ring-slate-200">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-900/80 p-4 [@media(min-height:901px)]:p-6 backdrop-blur-md">
+      <div className="relative my-auto flex w-full max-w-[560px] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-[40px] [@media(min-height:901px)]:rounded-[56px] border-[6px] border-white bg-white shadow-[0_32px_80px_rgba(0,0,0,0.4)] ring-1 ring-slate-200">
         <button
           type="button"
           onClick={onHome}
@@ -921,25 +921,25 @@ function LevelSelectionModal({
             <path d="M10 21v-5h4v5" />
           </svg>
         </button>
-        <div className="border-b-2 border-slate-100 bg-slate-50/80 px-8 pb-8 pt-12 text-center">
-          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-[32px] bg-violet-600 text-white shadow-xl ring-4 ring-violet-50">
-            <span className="text-4xl">🎙️</span>
+        <div className="border-b-2 border-slate-100 bg-slate-50/80 px-5 pb-5 pt-7 [@media(min-height:901px)]:px-8 [@media(min-height:901px)]:pb-8 [@media(min-height:901px)]:pt-12 text-center">
+          <div className="mx-auto mb-3 [@media(min-height:901px)]:mb-6 flex h-14 w-14 [@media(min-height:901px)]:h-20 [@media(min-height:901px)]:w-20 items-center justify-center rounded-[24px] [@media(min-height:901px)]:rounded-[32px] bg-violet-600 text-white shadow-xl ring-4 ring-violet-50">
+            <span className="text-2xl [@media(min-height:901px)]:text-4xl">🎙️</span>
           </div>
           <span className="mb-2 block text-[12px] font-black uppercase tracking-[0.4em] text-violet-500">
             Voice Puzzle Protocol
           </span>
-          <h3 className="text-4xl font-black tracking-tighter text-slate-900">
+          <h3 className="text-2xl [@media(min-height:901px)]:text-4xl font-black tracking-tighter text-slate-900">
             훈련 단계 선택
           </h3>
         </div>
 
-        <div className="overflow-y-auto bg-white p-8">
-          <div className="mb-10 grid grid-cols-3 gap-4">
+        <div className="overflow-y-auto bg-white p-5 [@media(min-height:901px)]:p-8">
+          <div className="mb-5 [@media(min-height:901px)]:mb-10 grid grid-cols-3 gap-3 [@media(min-height:901px)]:gap-4">
             {Array.from({ length: 9 }, (_, i) => i + 1).map((lv) => (
               <button
                 key={lv}
                 onClick={() => onSelect(lv)}
-                className={`group relative flex h-24 flex-col items-center justify-center gap-1 rounded-[32px] border-2 transition-all ${
+                className={`group relative flex h-16 [@media(min-height:901px)]:h-24 flex-col items-center justify-center gap-1 rounded-[20px] [@media(min-height:901px)]:rounded-[32px] border-2 transition-all ${
                   selectedLevel === lv
                     ? "scale-105 border-violet-600 bg-violet-600 text-white shadow-lg"
                     : "border-slate-300 bg-slate-50 text-slate-500 hover:border-violet-300 hover:bg-white"
@@ -948,12 +948,12 @@ function LevelSelectionModal({
                 <span className="text-[10px] font-black uppercase opacity-60">
                   Level
                 </span>
-                <strong className="text-3xl font-black">{lv}</strong>
+                <strong className="text-2xl [@media(min-height:901px)]:text-3xl font-black">{lv}</strong>
               </button>
             ))}
           </div>
 
-          <div className="mb-8 rounded-[32px] border border-violet-100 bg-violet-50 p-6 text-center">
+          <div className="mb-4 [@media(min-height:901px)]:mb-8 rounded-[24px] [@media(min-height:901px)]:rounded-[32px] border border-violet-100 bg-violet-50 p-4 [@media(min-height:901px)]:p-6 text-center">
             <p className="text-sm font-bold leading-relaxed text-violet-600">
               <span className="mb-1 block text-[11px] font-black tracking-widest opacity-60">
                 SELECTED LEVEL PREVIEW
@@ -964,7 +964,7 @@ function LevelSelectionModal({
 
           <button
             onClick={onStart}
-            className="flex h-20 w-full items-center justify-center gap-3 rounded-[28px] bg-slate-900 text-xl font-black text-white shadow-2xl shadow-slate-200 transition-transform active:scale-95"
+            className="flex h-14 [@media(min-height:901px)]:h-20 w-full items-center justify-center gap-3 rounded-[24px] [@media(min-height:901px)]:rounded-[28px] bg-slate-900 text-base [@media(min-height:901px)]:text-xl font-black text-white shadow-2xl shadow-slate-200 transition-transform active:scale-95"
           >
             {selectedLevel}단계 훈련 시작하기
             <svg

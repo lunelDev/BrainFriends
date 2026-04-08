@@ -100,7 +100,7 @@ export async function listAdminPatientReportSummaries(sessionToken: string) {
         ) AS sing_count
       FROM patient_pii pii
       JOIN patient_pseudonym_map ppm ON ppm.patient_id = pii.patient_id
-      LEFT JOIN app_users au ON au.patient_id = pii.patient_id
+      JOIN app_users au ON au.patient_id = pii.patient_id
       ORDER BY latest_activity_at DESC NULLS LAST, pii.created_at DESC
     `,
   );
@@ -241,7 +241,7 @@ export async function listAdminReportValidationSample(sessionToken: string) {
           au.login_id
         FROM patient_pii pii
         JOIN patient_pseudonym_map ppm ON ppm.patient_id = pii.patient_id
-        LEFT JOIN app_users au ON au.patient_id = pii.patient_id
+        JOIN app_users au ON au.patient_id = pii.patient_id
       `,
     ),
     pool.query(
@@ -350,7 +350,7 @@ export async function getAdminPatientReportDetail(
         au.login_id
       FROM patient_pii pii
       JOIN patient_pseudonym_map ppm ON ppm.patient_id = pii.patient_id
-      LEFT JOIN app_users au ON au.patient_id = pii.patient_id
+      JOIN app_users au ON au.patient_id = pii.patient_id
       WHERE pii.patient_id::text = $1
       LIMIT 1
     `,
