@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { WORDS_BY_LEVEL } from "@/data/tetrisWords";
+import { getGameModeNodePayload } from "@/constants/gameModeStagePayloads";
 import { useAudioAnalyzer } from "@/lib/audio/useAudioAnalyzer";
 import {
   registerMediaStream,
@@ -17,18 +18,19 @@ import {
 import MonitoringPanelShell from "@/components/training/MonitoringPanelShell";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import LingoResultModalShell from "@/components/lingo/LingoResultModalShell";
+import { markGameModeStageCleared } from "@/lib/gameModeProgress";
 
 // ─── 블록 상수 ─────────────────────────────────────────────────────────────────
 const BLOCK_COLORS = [
   null,
-  "#4a90d9",
-  "#f2bf5a",
-  "#8f88e6",
-  "#ef8a86",
-  "#63b97a",
-  "#ef9a5a",
-  "#63bfb5",
-  "#94a3b8",
+  "#22d3ee", // 네온 시안
+  "#fbbf24", // 비비드 앰버
+  "#a78bfa", // 바이올렛
+  "#f472b6", // 핫핑크
+  "#4ade80", // 네온 그린
+  "#fb923c", // 비비드 오렌지
+  "#38bdf8", // 스카이 블루
+  "#64748b", // 가비지(슬레이트)
 ];
 
 const GARBAGE_BLOCK_COLOR = BLOCK_COLORS.length - 1;
@@ -76,7 +78,7 @@ const HANGUL_SHAPES = [
 const ROWS = 20;
 const COLS = 10;
 const BLOCK_SIZE = 24;
-const MATCH_COOLDOWN_MS = 900;
+const MATCH_COOLDOWN_MS = 450;
 
 // ─── 코스튬 티어 ───────────────────────────────────────────────────────────────
 const COSTUME_TIERS = [
@@ -129,6 +131,10 @@ type PieceLike = {
   matrix: PieceMatrix;
 };
 type WordChipState = "pending" | "success" | "fail";
+type WordFlowEntry = {
+  word: string;
+  status: WordChipState;
+};
 type ActionFeedback = {
   id: number;
   type: "success" | "fail";
@@ -215,17 +221,25 @@ function drawBlockCell(
   y: number,
   color: string,
 ) {
+  // 블록 바디
   ctx.fillStyle = color;
   ctx.fillRect(x, y, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
 
-  ctx.fillStyle = tintColor(color, 22);
+  // 상단 하이라이트 (밝게)
+  ctx.fillStyle = tintColor(color, 38);
   ctx.fillRect(x, y, BLOCK_SIZE - 1, 4);
 
-  ctx.fillStyle = tintColor(color, -18);
+  // 하단 셰도우 (어둡게)
+  ctx.fillStyle = tintColor(color, -32);
   ctx.fillRect(x, y + BLOCK_SIZE - 6, BLOCK_SIZE - 1, 5);
 
-  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  // 네온 테두리 글로우 (흰색 반투명)
+  ctx.strokeStyle = "rgba(255,255,255,0.32)";
   ctx.strokeRect(x + 0.5, y + 0.5, BLOCK_SIZE - 2, BLOCK_SIZE - 2);
+
+  // 내부 광택 선
+  ctx.strokeStyle = "rgba(255,255,255,0.08)";
+  ctx.strokeRect(x + 2.5, y + 2.5, BLOCK_SIZE - 6, BLOCK_SIZE - 6);
 }
 
 function ensureGlobalScriptLoaded(
@@ -801,6 +815,44 @@ function levenshteinDistance(a: string, b: string) {
   return matrix[b.length][a.length];
 }
 
+function getLooseSpeechMatchScore(candidate: string, target: string) {
+  const candidateChars = [...candidate];
+  const targetChars = [...target];
+
+  if (!candidateChars.length || !targetChars.length) return 0;
+
+  const samePositionCount = targetChars.reduce(
+    (count, char, index) => count + (candidateChars[index] === char ? 1 : 0),
+    0,
+  );
+  const sharedCharCount = targetChars.filter((char) =>
+    candidateChars.includes(char),
+  ).length;
+  const startsWithSameChar = candidateChars[0] === targetChars[0];
+  const endsWithSameChar =
+    candidateChars[candidateChars.length - 1] ===
+    targetChars[targetChars.length - 1];
+  const lengthGap = Math.abs(candidateChars.length - targetChars.length);
+
+  if (targetChars.length <= 2) {
+    if (sharedCharCount >= 2 && lengthGap <= 1) return 92;
+    if (startsWithSameChar && endsWithSameChar) return 88;
+    if (startsWithSameChar && lengthGap <= 1) return 82;
+    if (sharedCharCount >= 1) return 68;
+  }
+
+  if (targetChars.length <= 4) {
+    if (sharedCharCount >= targetChars.length - 1 && startsWithSameChar) {
+      return 88;
+    }
+    if (samePositionCount >= targetChars.length - 1) return 84;
+    if (startsWithSameChar && endsWithSameChar) return 80;
+    if (sharedCharCount >= Math.max(2, targetChars.length - 1)) return 74;
+  }
+
+  return 0;
+}
+
 function getSpeechScore(transcript: string, targetWord: string) {
   const normalizedTarget = normalizeText(targetWord);
   const normalizedTranscript = normalizeText(transcript);
@@ -837,7 +889,8 @@ function getSpeechScore(transcript: string, targetWord: string) {
       const distance = levenshteinDistance(candidate, variant);
       const maxLength = Math.max(candidate.length, variant.length) || 1;
       const score = Math.round((1 - distance / maxLength) * 100);
-      best = Math.max(best, score);
+      const looseScore = getLooseSpeechMatchScore(candidate, variant);
+      best = Math.max(best, score, looseScore);
     });
   });
 
@@ -862,16 +915,16 @@ function shouldHideTranscriptDisplay(transcript: string) {
 
 function getPassThreshold(targetWord: string) {
   const length = normalizeText(targetWord).length;
-  if (length <= 2) return 80;
-  if (length <= 4) return 76;
-  if (length <= 7) return 72;
+  if (length <= 2) return 70;
+  if (length <= 4) return 72;
+  if (length <= 7) return 70;
   return 68;
 }
 
 function getSpeechGradeLabel(score: number, threshold: number) {
   if (score < threshold) return "Fail";
-  if (score >= 98) return "Perfect";
-  if (score >= Math.max(threshold + 8, 90)) return "Excellent";
+  if (score >= 95) return "Perfect";
+  if (score >= Math.max(threshold + 6, 84)) return "Excellent";
   return "Good";
 }
 
@@ -896,12 +949,14 @@ function LevelSelectionModal({
   const previewWord = levelWords[0] ?? "";
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-900/80 p-4 [@media(min-height:901px)]:p-6 backdrop-blur-md">
-      <div className="relative my-auto flex w-full max-w-[560px] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-[40px] [@media(min-height:901px)]:rounded-[56px] border-[6px] border-white bg-white shadow-[0_32px_80px_rgba(0,0,0,0.4)] ring-1 ring-slate-200">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-[#05050c]/90 p-4 [@media(min-height:901px)]:p-6 backdrop-blur-xl">
+      <div className="relative my-auto flex w-full max-w-[560px] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-[40px] border border-[#2a2a5a] bg-[#111120] text-white shadow-[0_32px_80px_rgba(0,0,0,0.55)] [@media(min-height:901px)]:rounded-[56px]">
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(42,42,90,0.18)_1px,transparent_1px),linear-gradient(90deg,rgba(42,42,90,0.18)_1px,transparent_1px)] bg-[size:28px_28px] opacity-60" />
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#74b9ff] via-[#a29bfe] to-[#55efc4]" />
         <button
           type="button"
           onClick={onHome}
-          className="absolute right-5 top-5 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-violet-200 hover:text-violet-600"
+          className="absolute right-5 top-5 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/12 bg-white/6 text-slate-200 shadow-sm transition-colors hover:bg-white/10"
           aria-label="홈으로 이동"
           title="홈"
         >
@@ -921,19 +976,19 @@ function LevelSelectionModal({
             <path d="M10 21v-5h4v5" />
           </svg>
         </button>
-        <div className="border-b-2 border-slate-100 bg-slate-50/80 px-5 pb-5 pt-7 [@media(min-height:901px)]:px-8 [@media(min-height:901px)]:pb-8 [@media(min-height:901px)]:pt-12 text-center">
-          <div className="mx-auto mb-3 [@media(min-height:901px)]:mb-6 flex h-14 w-14 [@media(min-height:901px)]:h-20 [@media(min-height:901px)]:w-20 items-center justify-center rounded-[24px] [@media(min-height:901px)]:rounded-[32px] bg-violet-600 text-white shadow-xl ring-4 ring-violet-50">
+        <div className="relative border-b border-[#2a2a5a] bg-white/[0.03] px-5 pb-5 pt-7 text-center [@media(min-height:901px)]:px-8 [@media(min-height:901px)]:pb-8 [@media(min-height:901px)]:pt-12">
+          <div className="mx-auto mb-3 [@media(min-height:901px)]:mb-6 flex h-14 w-14 [@media(min-height:901px)]:h-20 [@media(min-height:901px)]:w-20 items-center justify-center rounded-[24px] [@media(min-height:901px)]:rounded-[32px] border border-white/10 bg-gradient-to-br from-[#74b9ff] to-[#4ecdc4] text-white shadow-xl">
             <span className="text-2xl [@media(min-height:901px)]:text-4xl">🎙️</span>
           </div>
-          <span className="mb-2 block text-[12px] font-black uppercase tracking-[0.4em] text-violet-500">
-            Voice Puzzle Protocol
+          <span className="mb-2 block text-[12px] font-black uppercase tracking-[0.4em] text-violet-300">
+            Puzzle Roadmap Protocol
           </span>
-          <h3 className="text-2xl [@media(min-height:901px)]:text-4xl font-black tracking-tighter text-slate-900">
+          <h3 className="text-2xl [@media(min-height:901px)]:text-4xl font-black tracking-tighter text-white">
             훈련 단계 선택
           </h3>
         </div>
 
-        <div className="overflow-y-auto bg-white p-5 [@media(min-height:901px)]:p-8">
+        <div className="relative overflow-y-auto p-5 [@media(min-height:901px)]:p-8">
           <div className="mb-5 [@media(min-height:901px)]:mb-10 grid grid-cols-3 gap-3 [@media(min-height:901px)]:gap-4">
             {Array.from({ length: 9 }, (_, i) => i + 1).map((lv) => (
               <button
@@ -941,8 +996,8 @@ function LevelSelectionModal({
                 onClick={() => onSelect(lv)}
                 className={`group relative flex h-16 [@media(min-height:901px)]:h-24 flex-col items-center justify-center gap-1 rounded-[20px] [@media(min-height:901px)]:rounded-[32px] border-2 transition-all ${
                   selectedLevel === lv
-                    ? "scale-105 border-violet-600 bg-violet-600 text-white shadow-lg"
-                    : "border-slate-300 bg-slate-50 text-slate-500 hover:border-violet-300 hover:bg-white"
+                    ? "scale-105 border-violet-400 bg-violet-500/18 text-white shadow-lg"
+                    : "border-white/10 bg-white/5 text-slate-300 hover:border-violet-300 hover:bg-white/10"
                 }`}
               >
                 <span className="text-[10px] font-black uppercase opacity-60">
@@ -987,11 +1042,9 @@ function LevelSelectionModal({
 
 function GameResultModal({
   result,
-  onRestart,
   onHome,
 }: {
   result: GameResult;
-  onRestart: () => void;
   onHome: () => void;
 }) {
   const successRate = Math.round((result.successCount / 10) * 100);
@@ -1002,13 +1055,12 @@ function GameResultModal({
       badgeText="Training Complete"
       title="훈련 완료 리포트"
       subtitle="안면 신경과 언어 기능을 성공적으로 자극했습니다!"
-      headerToneClass="bg-violet-50"
-      iconToneClass="bg-gradient-to-br from-violet-500 to-indigo-600"
-      badgeToneClass="text-violet-600"
-      primaryLabel="단계 다시 선택하기"
-      onPrimary={onRestart}
-      secondaryLabel="메인으로 돌아가기"
-      onSecondary={onHome}
+      headerToneClass="bg-transparent"
+      iconToneClass="bg-gradient-to-br from-[#74b9ff] to-[#4ecdc4]"
+      badgeToneClass="text-violet-300"
+      primaryLabel="단계 선택으로"
+      onPrimary={onHome}
+      primaryButtonClass="bg-gradient-to-r from-[#111d42] to-[#74b9ff]"
     >
         <div className="mb-8 grid grid-cols-2 gap-4">
           <div className="rounded-[32px] border border-slate-100 bg-slate-50 p-6 text-center">
@@ -1045,7 +1097,14 @@ function GameResultModal({
 
 // ─── 컴포넌트 ──────────────────────────────────────────────────────────────────
 export default function TetrisGame({ onBack }: { onBack?: () => void }) {
+  const searchParams = useSearchParams();
   const router = useRouter();
+  const roadmapStageId = Number(searchParams.get("roadmapStage") || "0");
+  const roadmapNodeId =
+    searchParams.get("roadmapNode") || searchParams.get("roadmapSection") || "";
+  const roadmapNodePayload = getGameModeNodePayload(roadmapStageId, roadmapNodeId);
+  const customTetrisWordPool =
+    roadmapNodePayload?.gameType === "tetris" ? roadmapNodePayload.payload.wordPool : null;
   const isLocalDebug =
     process.env.NODE_ENV !== "production" ||
     process.env.NEXT_PUBLIC_DEV_MODE === "true";
@@ -1100,7 +1159,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   const [gameStarted, setGameStarted] = useState(false);
   const [level, setLevel] = useState(1);
   const [selectedLevel, setSelectedLevel] = useState(1);
-  const [showLevelModal, setShowLevelModal] = useState(true);
+  const [showLevelModal, setShowLevelModal] = useState(false);
   const [wordsCleared, setWordsCleared] = useState(0);
   const [currentWord, setCurrentWord] = useState("");
   const [currentSegment, setCurrentSegment] = useState("");
@@ -1113,11 +1172,14 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   const [failCount, setFailCount] = useState(0);
   const [failStreak, setFailStreak] = useState(0);
   const [successStreak, setSuccessStreak] = useState(0);
-  const [wordChips, setWordChips] = useState<WordChipState[]>(Array(10).fill("pending"));
+  const [wordFlowEntries, setWordFlowEntries] = useState<Array<WordFlowEntry | null>>(
+    Array(10).fill(null),
+  );
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
+  const autoStartedRef = useRef(false);
   const [heardText, setHeardText] = useState("");
   const [passThreshold, setPassThreshold] = useState(
-    getPassThreshold(getWord(1, 0)),
+    getPassThreshold(customTetrisWordPool?.[0] ?? getWord(1, 0)),
   );
   const [audioBars, setAudioBars] = useState(Array(16).fill(10));
   const [cameraReady, setCameraReady] = useState(false);
@@ -1133,7 +1195,6 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   const [speechMode, setSpeechMode] = useState<"none" | "browser">(
     "none",
   );
-  const [showSpeechDetails, setShowSpeechDetails] = useState(false);
   const [costumeUnlockToast, setCostumeUnlockToast] = useState<{
     id: number;
     icon: string;
@@ -1142,10 +1203,41 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   const [pendingCostumeTier, setPendingCostumeTier] = useState<number | null>(
     null,
   );
-  const handleHome = onBack ?? (() => router.push("/select-page/game-mode"));
-  const currentSpeechGrade = gameStarted
-    ? getSpeechGradeLabel(totalAccuracy, passThreshold)
-    : null;
+  const stageMapHref =
+    roadmapStageId >= 1
+      ? `/select-page/game-mode/stage/${roadmapStageId}`
+      : "/select-page/game-mode";
+  const stageMapReturnHref =
+    roadmapStageId >= 1
+      ? `/select-page/game-mode/stage/${roadmapStageId}?opened=1&focusNode=${encodeURIComponent(roadmapNodeId)}`
+      : "/select-page/game-mode";
+  const roadmapClearMarkedRef = useRef(false);
+  const getRoadmapAwareWord = useCallback(
+    (levelValue: number, idx: number) => {
+      if (customTetrisWordPool?.length) {
+        return customTetrisWordPool[idx % customTetrisWordPool.length] ?? "";
+      }
+      return getWord(levelValue, idx);
+    },
+    [customTetrisWordPool],
+  );
+  const handleHome = onBack ?? (() => router.push(stageMapHref));
+  const handleStageReturn = () => router.push(stageMapReturnHref);
+  const hasRecognizedSpeech =
+    Boolean(heardText && heardText !== "...") && totalAccuracy > 0;
+  const currentSpeechGrade =
+    gameStarted && hasRecognizedSpeech
+      ? getSpeechGradeLabel(totalAccuracy, passThreshold)
+      : null;
+
+  useEffect(() => {
+    if (!gameResult || roadmapClearMarkedRef.current) return;
+    if (roadmapStageId < 1 || !roadmapNodeId) return;
+    if (gameResult.successCount < 6) return;
+
+    markGameModeStageCleared(roadmapStageId, roadmapNodeId, "tetris");
+    roadmapClearMarkedRef.current = true;
+  }, [gameResult, roadmapNodeId, roadmapStageId]);
 
   const refreshAudioInputDevices = useCallback(async () => {
     try {
@@ -1461,8 +1553,8 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
 
   const goToNextWord = useCallback(() => {
     wordIdxRef.current = (wordIdxRef.current + 1) % 10;
-    setActiveWord(getWord(levelRef.current, wordIdxRef.current));
-  }, [setActiveWord]);
+    setActiveWord(getRoadmapAwareWord(levelRef.current, wordIdxRef.current));
+  }, [getRoadmapAwareWord, setActiveWord]);
 
   const applyDangerPenalty = useCallback(() => {
     const failedIndex = wordIdxRef.current % 10;
@@ -1478,9 +1570,12 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     prevCostumeTierRef.current = 0;
     setPendingCostumeTier(null);
 
-    setWordChips((prev) => {
+    setWordFlowEntries((prev) => {
       const updated = [...prev];
-      updated[failedIndex] = "fail";
+      updated[failedIndex] = {
+        word: currentWordRef.current || currentSegmentRef.current || `단어 ${failedIndex + 1}`,
+        status: "fail",
+      };
       return updated;
     });
 
@@ -1657,9 +1752,12 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     setFailStreak(0);
     successStreakRef.current = nextStreak;
     setSuccessStreak(nextStreak);
-    setWordChips((prev) => {
+    setWordFlowEntries((prev) => {
       const updated = [...prev];
-      updated[successIndex] = "success";
+      updated[successIndex] = {
+        word: currentWordRef.current || currentSegmentRef.current || `단어 ${successIndex + 1}`,
+        status: "success",
+      };
       return updated;
     });
 
@@ -1723,7 +1821,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
         syncDropTiming();
         setTimeout(() => {
           setActionFeedback(null);
-        }, 900);
+        }, 450);
         return;
       }
 
@@ -1736,7 +1834,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
       advanceAfterMatch();
       setTimeout(() => {
         setActionFeedback(null);
-      }, 1800);
+      }, 800);
     },
     [advanceAfterMatch, autoPlaceAndClear, syncDropTiming],
   );
@@ -1835,6 +1933,20 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     setSelectedLevel(lv);
   }
 
+  function resolveLevelFromParams() {
+    const roadmapStage = Number(searchParams.get("roadmapStage") || "1");
+    const safeStage = Math.max(1, Math.min(9, roadmapStage || 1));
+    const difficultyParam = String(searchParams.get("difficulty") || "Easy");
+
+    if (difficultyParam === "Hard" || difficultyParam === "Expert") {
+      return Math.max(7, safeStage);
+    }
+    if (difficultyParam === "Normal") {
+      return Math.max(4, safeStage);
+    }
+    return Math.min(3, safeStage);
+  }
+
   const startCamera = useCallback(async () => {
     if (
       typeof navigator === "undefined" ||
@@ -1889,7 +2001,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     wordIdxRef.current = 0;
     wordsClearedRef.current = 0;
     setWordsCleared(0);
-    setWordChips(Array(10).fill("pending"));
+    setWordFlowEntries(Array(10).fill(null));
     failCountRef.current = 0;
     setFailCount(0);
     failStreakRef.current = 0;
@@ -1900,12 +2012,13 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     setPendingCostumeTier(null);
     setCostumeUnlockToast(null);
     setGameResult(null);
+    roadmapClearMarkedRef.current = false;
     setActionFeedback(null);
     boardRef.current = fillDebris(startLevel);
     pieceRef.current = createPiece(startLevel);
     lastTimeRef.current = 0;
     dropCounterRef.current = 0;
-    setActiveWord(getWord(startLevel, 0));
+    setActiveWord(getRoadmapAwareWord(startLevel, 0));
     syncDropTiming();
     setShowLevelModal(false);
     window.requestAnimationFrame(() => {
@@ -1914,6 +2027,15 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     });
     animRef.current = requestAnimationFrame(gameLoop);
   }
+
+  useEffect(() => {
+    if (autoStartedRef.current) return;
+
+    const mappedLevel = resolveLevelFromParams();
+    autoStartedRef.current = true;
+    setSelectedLevel(mappedLevel);
+    void startGameForLevel(mappedLevel);
+  }, [searchParams]);
 
   async function handleStartStop() {
     if (gameStarted) {
@@ -1934,11 +2056,13 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
       setFallProgress(0);
       setDropTimeLeftMs(0);
       setDropTimeTotalMs(0);
-      setShowLevelModal(true);
+      autoStartedRef.current = false;
+      void startGameForLevel(levelRef.current);
       return;
     }
 
-    setShowLevelModal(true);
+    autoStartedRef.current = false;
+    void startGameForLevel(levelRef.current);
   }
 
   const handleAudioInputChange = useCallback(
@@ -1973,17 +2097,17 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   }, [attachCameraPreview, cameraReady, initFaceTracking]);
 
   useEffect(() => {
-    if (showLevelModal || !cameraReady) return;
+    if (!cameraReady) return;
     window.requestAnimationFrame(() => {
       void attachCameraPreview();
     });
-  }, [attachCameraPreview, cameraReady, showLevelModal]);
+  }, [attachCameraPreview, cameraReady]);
 
   // ─── 초기 그리기 + 카메라 자동 연결 ──────────────────────────────────────
   useEffect(() => {
     boardRef.current = fillDebris(1);
     pieceRef.current = createPiece(1);
-    setActiveWord(getWord(1, 0));
+    setActiveWord(getRoadmapAwareWord(1, 0));
     draw();
     const savedAudioInputId = loadPreferredAudioInputId();
     preferredAudioInputIdRef.current = savedAudioInputId;
@@ -2038,9 +2162,9 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   }, [error]);
 
   useEffect(() => {
-    if (!gameStarted || showLevelModal || !currentSegment) return;
+    if (!gameStarted || !currentSegment) return;
     void syncSpeechCaptureForWord(currentSegment, preferredAudioInputIdRef.current);
-  }, [currentSegment, gameStarted, showLevelModal, syncSpeechCaptureForWord]);
+  }, [currentSegment, gameStarted, syncSpeechCaptureForWord]);
 
   // ─── 코스튬 티어 감지 ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -2083,8 +2207,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     };
   }, [stopSessionDevices]);
 
-  const showStatusPanel =
-    gameStarted || showLevelModal || cameraReady || Boolean(gameResult);
+  const showStatusPanel = gameStarted || cameraReady || Boolean(gameResult);
 
   // ─── 코스튬 계산 ──────────────────────────────────────────────────────────
   const successCount = successStreak;
@@ -2095,11 +2218,57 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   const currentTier = COSTUME_TIERS[currentTierIdx];
   const isChampion = currentTier.id === "sparkle";
   const micSignalDetected = isMicReady && volume > 4;
+  const roundSeconds = Math.max(0, Math.ceil(dropTimeLeftMs / 1000));
+  const recognitionCooldownMs = Math.max(0, recognitionCooldownRef.current - Date.now());
+  const speechPhase = !gameStarted
+    ? "idle"
+    : !isMicReady
+      ? "waitingMic"
+      : actionFeedback
+        ? "judging"
+        : recognitionCooldownMs > 0
+          ? "prepare"
+          : "speak";
+  const speechPhaseLabel =
+    speechPhase === "speak"
+      ? "지금 말하세요"
+      : speechPhase === "judging"
+        ? "판정 중"
+        : speechPhase === "prepare"
+          ? "곧 말하세요"
+          : speechPhase === "waitingMic"
+            ? "마이크 준비 중"
+            : "대기";
+  const speechPhaseDescription =
+    speechPhase === "speak"
+      ? "현재 단어를 또렷하게 말하면 바로 판정합니다."
+      : speechPhase === "judging"
+        ? "방금 말한 단어를 확인하고 있습니다."
+        : speechPhase === "prepare"
+          ? "단어가 막 바뀌었습니다. 잠시 후 말하면 더 안정적으로 인식됩니다."
+          : speechPhase === "waitingMic"
+            ? "마이크 연결이 되면 자동으로 듣기를 시작합니다."
+            : "게임을 시작하면 자동으로 듣기를 시작합니다.";
+  const speechPhaseTone =
+    speechPhase === "speak"
+      ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
+      : speechPhase === "judging"
+        ? "border-amber-400/40 bg-amber-500/10 text-amber-200"
+        : speechPhase === "prepare"
+          ? "border-violet-400/40 bg-violet-500/10 text-violet-200"
+          : "border-slate-500/30 bg-slate-500/10 text-slate-300";
+  const displayWord =
+    currentSegment || currentWord || customTetrisWordPool?.[0] || getWord(selectedLevel, 0);
+  const roadmapClearText =
+    roadmapNodePayload?.gameType === "tetris"
+      ? roadmapNodePayload.payload.clearCondition
+      : "정답을 말하면 자동 배치되고, 실패하면 X로 기록됩니다.";
 
   // ─── 렌더 ─────────────────────────────────────────────────────────────────
   return (
-    <main className="min-h-screen bg-white flex flex-col overflow-hidden">
-      <header className="min-h-16 px-3 sm:px-6 py-2 sm:py-0 border-b border-violet-100 flex flex-wrap sm:flex-nowrap justify-between items-center gap-2 bg-white/90 backdrop-blur-md shrink-0 sticky top-0 z-50">
+    <main className="lingo-game-shell relative flex min-h-screen flex-col overflow-hidden bg-[#090914] text-white">
+      <div className="pointer-events-none absolute inset-0 z-0 bg-[linear-gradient(rgba(26,26,54,0.55)_1px,transparent_1px),linear-gradient(90deg,rgba(26,26,54,0.55)_1px,transparent_1px)] bg-[size:36px_36px]" />
+      <header className="relative z-10 min-h-16 px-3 sm:px-6 py-2 sm:py-0 border-b border-[#1a1a36] flex flex-wrap sm:flex-nowrap justify-between items-center gap-2 bg-[#090914]/90 backdrop-blur-md shrink-0 sticky top-0">
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
           <img
             src="/images/logo/logo.png"
@@ -2107,10 +2276,10 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
             className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover shrink-0"
           />
           <div className="min-w-0">
-            <span className="font-black text-[10px] uppercase tracking-widest leading-none block text-violet-500">
+            <span className="font-black text-[10px] uppercase tracking-[0.28em] leading-none block text-violet-300/80">
               Game Training • Tetris
             </span>
-            <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight truncate">
+            <h2 className="text-base sm:text-lg font-black text-white tracking-tight truncate">
               한글 테트리스
             </h2>
           </div>
@@ -2123,10 +2292,11 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
               runningRef.current = false;
               setGameStarted(false);
               stopSessionDevices();
-              setShowLevelModal(true);
+              autoStartedRef.current = false;
+              void startGameForLevel(levelRef.current);
             }}
           >
-            단계 선택
+            다시 시작
           </button>
           {isLocalDebug ? (
             <>
@@ -2148,14 +2318,14 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
               </button>
             </>
           ) : null}
-          <div className="px-3 py-1.5 rounded-full font-black text-[11px] transition-all border bg-violet-50 border-violet-200 text-violet-700">
+          <div className="px-3 py-1.5 rounded-full font-black text-[11px] transition-all border border-violet-400/35 bg-violet-500/14 text-violet-100">
             {gameStarted
               ? totalAccuracy >= passThreshold
                 ? "MATCH"
                 : "LISTENING..."
               : "READY"}
           </div>
-          <div className="px-4 py-1.5 rounded-full font-black text-xs border bg-violet-50 text-violet-700 border-violet-200">
+          <div className="px-4 py-1.5 rounded-full font-black text-xs border border-sky-400/35 bg-sky-500/12 text-sky-100">
             {gameStarted ? wordsCleared : 0} / 10
           </div>
           <button
@@ -2192,7 +2362,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
         </div>
       </header>
 
-      <section className="flex-1 overflow-y-auto bg-[#f8fafc]">
+        <section className="relative z-10 flex-1 overflow-y-auto bg-transparent">
         <div className="max-w-[1920px] mx-auto px-4 sm:px-6 py-4 sm:py-5">
         <div className="vt-layout vt-layout-playing tetris-layout-no-left">
 
@@ -2203,65 +2373,154 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
                   <div
                     className={`tetris-board-card-layout ${showStatusPanel ? "has-status" : ""}`}
                   >
-                    <div className="tetris-game-panel">
-                      {gameStarted && currentWord ? (
-                        <div className="vt-word-overlay">
-                          <div
-                            className={`vt-word-card ${
-                              actionFeedback?.type === "success"
-                                ? "tetris-word-card-success"
-                                : actionFeedback?.type === "fail"
-                                  ? "tetris-word-card-fail"
-                                  : ""
-                            }`}
-                          >
-                            <div className="vt-word-header">
-                              <span className="vt-word-label">
-                                  한글 음성 퍼즐 · Level {level}
+                    <div className="tetris-game-panel memory-game-panel">
+                      <div className="memory-main-card relative w-full max-w-none overflow-hidden rounded-[44px] border-[3px] border-violet-500/25 bg-[#0c0820]/95 p-6 backdrop-blur-sm shadow-[0_0_40px_rgba(139,92,246,0.10)] sm:rounded-[52px] sm:p-8">
+                        <div className="mb-6 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm font-black text-violet-300/60">
+                              레벨 {level}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="rounded-full bg-[#1a1435] px-4 py-1.5 ring-1 ring-violet-500/25">
+                              <span className="text-[10px] font-black uppercase tracking-tighter text-violet-300/60">
+                                블록 시간
+                              </span>
+                              <strong className="ml-2 text-sm font-black text-violet-300">
+                                {roundSeconds}s
+                              </strong>
+                            </div>
+                            <div className="flex items-center gap-2 rounded-full bg-[#1a1435] px-4 py-1.5 ring-1 ring-violet-500/25">
+                              <div
+                                className={`h-2 w-2 rounded-full ${
+                                  isMicReady
+                                    ? "animate-pulse bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]"
+                                    : "bg-violet-900/60"
+                                }`}
+                              />
+                              <span className="text-[10px] font-black uppercase tracking-tighter text-violet-300/60">
+                                {isMicReady ? "듣기 활성" : "대기"}
                               </span>
                             </div>
-                            <h2 className="vt-word-text">{currentSegment || currentWord}</h2>
                           </div>
                         </div>
-                      ) : null}
 
-                      <div className="tetris-canvas-stage">
-                        <canvas
-                          ref={canvasRef}
-                          width={COLS * BLOCK_SIZE}
-                          height={ROWS * BLOCK_SIZE}
-                          className="vt-canvas"
-                        />
-                        {actionFeedback ? (
-                          <div
-                            key={actionFeedback.id}
-                            className={`vt-action-overlay vt-action-overlay-${actionFeedback.type}`}
-                          >
-                            <strong>{actionFeedback.label}</strong>
+                        <div className="grid items-stretch gap-6">
+                          <div className="flex min-w-0 flex-col">
+                            <div className="mx-auto grid w-full max-w-[780px] flex-1 items-center justify-center gap-6 lg:grid-cols-[320px_420px] lg:gap-10">
+                              <div className="rounded-[28px] border border-violet-500/20 bg-[#0a0818]/80 px-5 py-5 sm:px-6 sm:py-6">
+                                <div className="text-left">
+                                  <div className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-black tracking-[0.18em] ${speechPhaseTone}`}>
+                                    {speechPhaseLabel}
+                                  </div>
+                                  <h3 className="mb-2 mt-4 text-2xl font-black tracking-tighter text-slate-100">
+                                    알맞은 단어를 말해보세요
+                                  </h3>
+                                  <p className="text-sm font-bold text-slate-400">
+                                    {speechPhaseDescription}
+                                  </p>
+                                  <p className="mt-2 text-sm font-bold text-slate-500">
+                                    {roadmapClearText}
+                                  </p>
+                                </div>
+                                <div className="mt-5 text-sm font-black uppercase tracking-[0.24em] text-violet-300/60 sm:text-[15px]">
+                                  말해야 하는 단어
+                                </div>
+                                <div className="mt-4 flex items-center justify-center">
+                                  <div className="flex min-h-[96px] w-full items-center justify-center rounded-[24px] border-2 border-violet-500/40 bg-violet-900/30 px-6 py-4 text-center text-4xl font-black tracking-tight text-white [text-shadow:0_0_18px_rgba(255,255,255,0.35)] sm:text-5xl">
+                                    {displayWord}
+                                  </div>
+                                </div>
+                                <div
+                                  className={`mt-5 rounded-[24px] px-5 py-4 text-left shadow-xl transition-all sm:px-6 sm:py-5 ${
+                                    isMicReady
+                                      ? "bg-slate-900 ring-2 ring-violet-400/30"
+                                      : "bg-slate-800"
+                                  }`}
+                                >
+                                  <div className="mb-1 text-[10px] font-black uppercase tracking-widest text-violet-400">
+                                    인식된 말
+                                  </div>
+                                  <p className="truncate text-lg font-black text-white sm:text-xl">
+                                    {heardText ||
+                                      (isMicReady ? "지금 단어를 말해 주세요..." : "마이크 대기 중")}
+                                  </p>
+                                  <p className="mt-2 text-xs font-bold text-slate-300">
+                                    {isMicReady
+                                      ? "정답을 말하면 블록이 바로 정리됩니다."
+                                      : "세션이 시작되면 자동으로 음성을 듣습니다."}
+                                  </p>
+                                  {hasRecognizedSpeech ? (
+                                    <div className="mt-3 flex items-center gap-2">
+                                      <span className="rounded-full border border-violet-400/30 bg-violet-500/10 px-3 py-1 text-[11px] font-black text-violet-100">
+                                        점수 {totalAccuracy}점
+                                      </span>
+                                      <span
+                                        className={`rounded-full border px-3 py-1 text-[11px] font-black ${
+                                          currentSpeechGrade === "Perfect"
+                                            ? "border-cyan-400/40 bg-cyan-500/10 text-cyan-200"
+                                            : currentSpeechGrade === "Excellent"
+                                              ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
+                                              : currentSpeechGrade === "Good"
+                                                ? "border-amber-400/40 bg-amber-500/10 text-amber-200"
+                                                : "border-rose-400/40 bg-rose-500/10 text-rose-200"
+                                        }`}
+                                      >
+                                        {currentSpeechGrade}
+                                      </span>
+                                    </div>
+                                  ) : null}
+                                </div>
+                                <div className="vt-audio-card mt-5">
+                                  <span className="vt-audio-label">음성 활성도</span>
+                                  <div className="vt-audio-bars">
+                                    {audioBars.map((bar, index) => (
+                                      <span
+                                        key={index}
+                                        className="vt-audio-bar"
+                                        style={{ height: `${bar}%` }}
+                                      />
+                                    ))}
+                                  </div>
+                                  <div
+                                    style={{
+                                      marginTop: "0.55rem",
+                                      fontSize: "0.78rem",
+                                      fontWeight: 800,
+                                      color: micSignalDetected ? "#7c3aed" : "#94a3b8",
+                                    }}
+                                  >
+                                    {isMicReady
+                                      ? micSignalDetected
+                                        ? "마이크 입력 감지됨"
+                                        : "마이크 입력 대기 중"
+                                      : "마이크 입력 없음"}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-center justify-self-center">
+                                <div className="tetris-canvas-stage scale-[1.04] origin-center lg:scale-[1.08]">
+                                  <canvas
+                                    ref={canvasRef}
+                                    width={COLS * BLOCK_SIZE}
+                                    height={ROWS * BLOCK_SIZE}
+                                    className="vt-canvas"
+                                  />
+                                  {actionFeedback ? (
+                                    <div
+                                      key={actionFeedback.id}
+                                      className={`vt-action-overlay vt-action-overlay-${actionFeedback.type}`}
+                                    >
+                                      <strong>{actionFeedback.label}</strong>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                        ) : null}
-                      </div>
 
-                      <div
-                        style={{
-                          marginTop: "0.9rem",
-                          textAlign: "center",
-                          fontSize: "0.9rem",
-                          fontWeight: 700,
-                          color: "#64748b",
-                          minHeight: "1.5rem",
-                        }}
-                      >
-                        {heardText && heardText !== "..." ? (
-                          <>
-                            <span style={{ color: "#94a3b8", marginRight: "0.45rem" }}>
-                              인식:
-                            </span>
-                            <span>{heardText}</span>
-                          </>
-                        ) : gameStarted ? (
-                          "..."
-                        ) : null}
+                        </div>
                       </div>
                     </div>
 
@@ -2310,11 +2569,11 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
                                   </div>
                                 )}
 
-                                <div className="tetris-camera-chip">
-                                  <span className="tetris-camera-chip-label">안면 상태</span>
-                                  <strong className="tetris-camera-chip-value">
-                                    {cameraReady
-                                      ? faceTracked
+                              <div className="tetris-camera-chip">
+                                <span className="tetris-camera-chip-label">안면 상태</span>
+                                <strong className="tetris-camera-chip-value">
+                                  {cameraReady
+                                    ? faceTracked
                                         ? "인식 중"
                                         : "준비"
                                       : "대기"}
@@ -2322,181 +2581,34 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
                                 </div>
                               </div>
 
-                              <div className="vt-audio-card">
-                                <span className="vt-audio-label">음성 활성도</span>
-                                <div className="vt-audio-bars">
-                                  {audioBars.map((bar, index) => (
-                                    <span
-                                      key={index}
-                                      className="vt-audio-bar"
-                                      style={{ height: `${bar}%` }}
-                                    />
-                                  ))}
-                                </div>
-                                <div
-                                  style={{
-                                    marginTop: "0.55rem",
-                                    fontSize: "0.78rem",
-                                    fontWeight: 800,
-                                    color: micSignalDetected ? "#7c3aed" : "#94a3b8",
-                                  }}
-                                >
-                                  {isMicReady
-                                    ? micSignalDetected
-                                      ? "마이크 입력 감지됨"
-                                      : "마이크 입력 대기 중"
-                                    : "마이크 입력 없음"}
-                                </div>
-                              </div>
-
-                              <div className="tetris-status-card">
-                                <span className="tetris-accuracy-label">마이크 선택</span>
-                                <select
-                                  value={preferredAudioInputId}
-                                  onChange={(event) =>
-                                    void handleAudioInputChange(event.target.value)
-                                  }
-                                  style={{
-                                    width: "100%",
-                                    marginTop: "0.55rem",
-                                    borderRadius: "14px",
-                                    border: "1px solid #dbe4f0",
-                                    background: "#fff",
-                                    padding: "0.7rem 0.9rem",
-                                    color: "#0f172a",
-                                    fontSize: "0.85rem",
-                                    fontWeight: 700,
-                                  }}
-                                >
-                                  <option value="">기본 마이크</option>
-                                  {audioInputDevices.map((device) => (
-                                    <option key={device.deviceId} value={device.deviceId}>
-                                      {device.label || `마이크 ${device.deviceId.slice(0, 6)}`}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-
-                              <div className="tetris-status-card tetris-accuracy-card">
-                                <div className="tetris-accuracy-copy">
-                                  <span className="tetris-accuracy-label">음성 정확도</span>
-                                  {currentSpeechGrade && (
-                                    <span
-                                      className={`tetris-grade-badge tetris-grade-${currentSpeechGrade.toLowerCase()}`}
-                                    >
-                                      {currentSpeechGrade}
-                                    </span>
-                                  )}
-                                </div>
-                                <strong className="tetris-accuracy-value">
-                                  {gameStarted ? totalAccuracy : 0}
-                                  <em>점</em>
-                                </strong>
-                              </div>
-
                                 <div className="vt-progress-block tetris-status-card">
                                   <div className="vt-chips-label">문제 흐름</div>
-                                  <div className="vt-chips-row">
-                                    {wordChips.map((cleared, i) => (
+                                  <div className="mt-3 grid gap-2">
+                                    {wordFlowEntries.map((entry, i) => (
                                       <div
                                         key={i}
-                                        className={`vt-chip vt-chip-pill ${cleared === "success" ? "vt-chip-done" : ""} ${cleared === "fail" ? "vt-chip-fail" : ""}`}
+                                        className={`flex items-center gap-2 rounded-[12px] border px-3 py-2 text-left text-xs font-black ${
+                                          entry?.status === "success"
+                                            ? "border-cyan-400/40 bg-cyan-500/10 text-cyan-200"
+                                            : entry?.status === "fail"
+                                              ? "border-rose-400/40 bg-rose-500/10 text-rose-200"
+                                              : "border-violet-500/20 bg-[#120b2a] text-violet-200/70"
+                                        }`}
                                       >
-                                        <span className="vt-chip-dot" />
-                                        <span className="vt-chip-text">
-                                          {cleared === "success"
-                                            ? `${i + 1}번 성공`
-                                            : cleared === "fail"
-                                              ? `${i + 1}번 실패`
-                                              : `${i + 1}번 대기`}
+                                        <span className="shrink-0">
+                                          {entry?.status === "success"
+                                            ? "O"
+                                            : entry?.status === "fail"
+                                              ? "X"
+                                              : "·"}
+                                        </span>
+                                        <span className="truncate">
+                                          {entry ? `${i + 1}. ${entry.word}` : `${i + 1}. 대기`}
                                         </span>
                                       </div>
                                     ))}
                                   </div>
                                 </div>
-
-                              <div className="tetris-status-card">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setShowSpeechDetails((previous) => !previous)
-                                  }
-                                  style={{
-                                    width: "100%",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "space-between",
-                                    border: "1px solid #dbe4f0",
-                                    background: "#fff",
-                                    borderRadius: "14px",
-                                    padding: "0.85rem 0.95rem",
-                                    color: "#334155",
-                                    fontSize: "0.82rem",
-                                    fontWeight: 800,
-                                  }}
-                                >
-                                  <span>기술 상태</span>
-                                  <span>{showSpeechDetails ? "접기" : "보기"}</span>
-                                </button>
-
-                                {showSpeechDetails ? (
-                                  <div
-                                    style={{
-                                      display: "grid",
-                                      gap: "0.7rem",
-                                      marginTop: "0.8rem",
-                                    }}
-                                  >
-                                    <div
-                                      style={{
-                                        border: "1px solid #e2e8f0",
-                                        borderRadius: "14px",
-                                        background: "#f8fafc",
-                                        padding: "0.8rem 0.9rem",
-                                      }}
-                                    >
-                                      <div className="tetris-accuracy-label">인식 방식</div>
-                                      <strong
-                                        className="tetris-accuracy-value"
-                                        style={{
-                                          fontSize: "0.92rem",
-                                          textAlign: "left",
-                                          marginTop: "0.35rem",
-                                        }}
-                                      >
-                                        {speechMode === "browser"
-                                          ? "브라우저 음성 인식"
-                                          : "대기 중"}
-                                      </strong>
-                                    </div>
-
-                                    <div
-                                      style={{
-                                        border: "1px solid #e2e8f0",
-                                        borderRadius: "14px",
-                                        background: "#f8fafc",
-                                        padding: "0.8rem 0.9rem",
-                                      }}
-                                    >
-                                      <div className="tetris-accuracy-label">음성 상태</div>
-                                      <strong
-                                        className="tetris-accuracy-value"
-                                        style={{
-                                          fontSize: "0.92rem",
-                                          lineHeight: 1.5,
-                                          textAlign: "left",
-                                          marginTop: "0.35rem",
-                                        }}
-                                      >
-                                        {speechError ||
-                                          (speechMode === "browser"
-                                            ? "브라우저 음성 인식 준비됨"
-                                            : "음성 인식 대기 중")}
-                                      </strong>
-                                    </div>
-                                  </div>
-                                ) : null}
-                              </div>
                             </div>
                         </MonitoringPanelShell>
                       </aside>
@@ -2514,22 +2626,10 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
                       </p>
                     </div>
                   ) : null}
-                  {showLevelModal && !gameStarted ? (
-                    <LevelSelectionModal
-                      selectedLevel={selectedLevel}
-                      onSelect={handleLevelSelect}
-                      onStart={() => void startGameForLevel()}
-                      onHome={handleHome}
-                    />
-                  ) : null}
                   {gameResult && !gameStarted ? (
                     <GameResultModal
                       result={gameResult}
-                      onRestart={() => {
-                        setGameResult(null);
-                        setShowLevelModal(true);
-                      }}
-                      onHome={handleHome}
+                      onHome={handleStageReturn}
                     />
                   ) : null}
                 </div>

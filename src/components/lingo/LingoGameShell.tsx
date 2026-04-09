@@ -45,6 +45,7 @@ type LingoGameShellProps = {
   statusLabel?: string;
   progressLabel?: string;
   headerActions?: ReactNode;
+  variant?: "default" | "gameMode";
 };
 
 export default function LingoGameShell({
@@ -53,17 +54,19 @@ export default function LingoGameShell({
   children,
   onRestart,
   onBack,
-  restartLabel = "단계 선택",
+  restartLabel = "다시 시작",
   statusLabel,
   progressLabel,
   headerActions,
+  variant = "default",
 }: LingoGameShellProps) {
   const router = useRouter();
   const handleHome = onBack ?? (() => router.push("/select-page/game-mode"));
 
   return (
-    <main className="min-h-screen bg-white flex flex-col overflow-hidden">
-      <header className="min-h-16 px-3 sm:px-6 py-2 sm:py-0 border-b border-violet-100 flex flex-wrap sm:flex-nowrap justify-between items-center gap-2 bg-white/90 backdrop-blur-md shrink-0 sticky top-0 z-50">
+    <main className="lingo-game-shell relative flex min-h-screen flex-col overflow-hidden bg-[#090914] text-white">
+      <div className="pointer-events-none absolute inset-0 z-0 bg-[linear-gradient(rgba(26,26,54,0.55)_1px,transparent_1px),linear-gradient(90deg,rgba(26,26,54,0.55)_1px,transparent_1px)] bg-[size:36px_36px]" />
+      <header className="relative z-10 min-h-16 shrink-0 sticky top-0 flex flex-wrap items-center justify-between gap-2 border-b border-[#1a1a36] bg-[#090914]/90 px-3 py-2 backdrop-blur-md sm:flex-nowrap sm:px-6 sm:py-0">
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
           <img
             src="/images/logo/logo.png"
@@ -71,10 +74,10 @@ export default function LingoGameShell({
             className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover shrink-0"
           />
           <div className="min-w-0">
-            <span className="font-black text-[10px] uppercase tracking-widest leading-none block text-violet-500">
+            <span className="block font-black text-[10px] uppercase tracking-[0.28em] leading-none text-violet-300/80">
               {badge}
             </span>
-            <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight truncate">
+            <h2 className="truncate text-base font-black tracking-tight text-white sm:text-lg">
               {title}
             </h2>
           </div>
@@ -89,12 +92,12 @@ export default function LingoGameShell({
           </button>
           {headerActions}
           {statusLabel ? (
-            <div className="px-3 py-1.5 rounded-full font-black text-[11px] transition-all border bg-violet-50 border-violet-200 text-violet-700">
+            <div className="rounded-full border border-violet-400/35 bg-violet-500/14 px-3 py-1.5 text-[11px] font-black text-violet-100 transition-all">
               {statusLabel}
             </div>
           ) : null}
           {progressLabel ? (
-            <div className="px-4 py-1.5 rounded-full font-black text-xs border bg-violet-50 text-violet-700 border-violet-200">
+            <div className="rounded-full border border-sky-400/35 bg-sky-500/12 px-4 py-1.5 text-xs font-black text-sky-100">
               {progressLabel}
             </div>
           ) : null}
@@ -110,8 +113,8 @@ export default function LingoGameShell({
         </div>
       </header>
 
-      <section className="flex-1 overflow-y-auto bg-[#f8fafc]">
-        <div className="w-full max-w-[1920px] mx-auto px-4 sm:px-6 py-4 sm:py-5">
+      <section className="relative z-10 flex-1 overflow-y-auto bg-transparent">
+        <div className="mx-auto w-full max-w-[1920px] px-4 py-4 sm:px-6 sm:py-5">
           {children}
         </div>
       </section>

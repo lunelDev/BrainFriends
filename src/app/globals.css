@@ -6039,7 +6039,10 @@ body {
 }
 
 .tetris-word-card-fail {
-  border: 3px solid #ef4444 !important;
+  border: 2px solid rgba(248, 113, 113, 0.85) !important;
+  box-shadow:
+    0 0 18px rgba(248, 113, 113, 0.35),
+    0 0 50px rgba(248, 113, 113, 0.12) !important;
   animation: vtShake 220ms ease 2;
 }
 
@@ -6064,8 +6067,335 @@ body {
   box-shadow: 0 14px 28px rgba(76, 124, 150, 0.16);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   TetrisGame — 네온 사이버펑크 오버라이드
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* 캔버스 래퍼 — 어두운 배경 + 보라 방사형 글로우 */
+.tetris-board-shell .vt-canvas-wrap {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(139, 92, 246, 0.20) 0%, transparent 55%),
+    radial-gradient(circle at 50% 100%, rgba(34, 211, 238, 0.10) 0%, transparent 50%),
+    rgba(9, 9, 20, 0.97) !important;
+  border-color: rgba(139, 92, 246, 0.30) !important;
+  box-shadow:
+    0 0 0 1px rgba(139, 92, 246, 0.14),
+    inset 0 1px 0 rgba(139, 92, 246, 0.10),
+    0 0 90px rgba(139, 92, 246, 0.08) !important;
+}
+
+/* 테트리스 캔버스 — 네온 퍼플 글로우 */
+.tetris-game-panel .vt-canvas {
+  border: 2px solid rgba(139, 92, 246, 0.60) !important;
+  border-radius: 12px !important;
+  box-shadow:
+    0 0 0 1px rgba(34, 211, 238, 0.10),
+    0 0 28px rgba(139, 92, 246, 0.40),
+    0 0 70px rgba(139, 92, 246, 0.16),
+    inset 0 0 0 1px rgba(139, 92, 246, 0.08) !important;
+}
+
+/* 단어 카드 — 다크 글라스 + 네온 퍼플 테두리 */
+.tetris-game-panel .vt-word-card {
+  background: linear-gradient(
+    135deg,
+    rgba(15, 10, 32, 0.96),
+    rgba(22, 14, 45, 0.92)
+  ) !important;
+  border: 2px solid rgba(139, 92, 246, 0.65) !important;
+  box-shadow:
+    0 0 22px rgba(139, 92, 246, 0.22),
+    0 0 60px rgba(139, 92, 246, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+/* 단어 텍스트 — 네온 화이트 글로우 */
+.tetris-game-panel .vt-word-text {
+  color: #ffffff !important;
+  text-shadow:
+    0 0 18px rgba(167, 139, 250, 0.85),
+    0 0 40px rgba(139, 92, 246, 0.45) !important;
+}
+
+/* 단어 헤더 라벨 */
+.tetris-game-panel .vt-word-label {
+  color: #a78bfa !important;
+}
+
+/* 타이머 트랙 */
+.tetris-game-panel .vt-timer-track {
+  background: rgba(139, 92, 246, 0.18) !important;
+}
+
+/* 타이머 채움 — 네온 그라디언트 */
+.tetris-game-panel .vt-timer-fill {
+  background: linear-gradient(90deg, #c084fc, #7c3aed, #38bdf8) !important;
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.55) !important;
+}
+
+/* 성공 단어 카드 — 네온 그린 */
+.tetris-word-card-success {
+  border: 2px solid rgba(74, 222, 128, 0.85) !important;
+  box-shadow:
+    0 0 18px rgba(74, 222, 128, 0.35),
+    0 0 50px rgba(74, 222, 128, 0.12) !important;
+}
+
+/* 상태 카드 전체 — 다크 글라스 */
+.tetris-status-card {
+  background: rgba(12, 8, 30, 0.88) !important;
+  border: 1px solid rgba(139, 92, 246, 0.24) !important;
+  backdrop-filter: blur(14px) !important;
+  -webkit-backdrop-filter: blur(14px) !important;
+}
+
+/* 정확도 라벨 — 서브 컬러 */
+.tetris-accuracy-label {
+  color: #7c8db5 !important;
+}
+
+/* 정확도 숫자 — 밝은 흰색 */
+.tetris-accuracy-value {
+  color: #e2e8f0 !important;
+}
+
+/* 정확도 em 단위 */
+.tetris-accuracy-value em {
+  color: #7c3aed !important;
+}
+
+/* 카메라 칩 — 다크 글라스 */
+.tetris-camera-chip {
+  background: rgba(12, 8, 30, 0.92) !important;
+  border: 1px solid rgba(139, 92, 246, 0.38) !important;
+  backdrop-filter: blur(14px) !important;
+  -webkit-backdrop-filter: blur(14px) !important;
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.14) !important;
+}
+
+.tetris-camera-chip-label {
+  color: #7c3aed !important;
+}
+
+.tetris-camera-chip-value {
+  color: #c4b5fd !important;
+}
+
+/* 오디오 카드 — 다크 글라스 */
+.tetris-status-panel .vt-audio-card {
+  background: rgba(12, 8, 30, 0.88) !important;
+  border: 1px solid rgba(139, 92, 246, 0.24) !important;
+}
+
+/* 오디오 라벨 */
+.tetris-status-panel .vt-audio-label {
+  color: #7c8db5 !important;
+}
+
+/* 오디오 바 — 네온 퍼플/시안 그라디언트 */
+.tetris-status-panel .vt-audio-bar {
+  background: linear-gradient(180deg, #c084fc, #7c3aed) !important;
+  box-shadow: 0 0 6px rgba(192, 132, 252, 0.5) !important;
+  opacity: 0.92 !important;
+}
+
+/* 등급 배지 — 네온 스타일 */
+.tetris-grade-perfect {
+  color: #c084fc !important;
+  background: rgba(139, 92, 246, 0.14) !important;
+  border-color: rgba(139, 92, 246, 0.48) !important;
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.22) !important;
+}
+
+.tetris-grade-excellent {
+  color: #38bdf8 !important;
+  background: rgba(34, 211, 238, 0.10) !important;
+  border-color: rgba(34, 211, 238, 0.40) !important;
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.18) !important;
+}
+
+.tetris-grade-good {
+  color: #4ade80 !important;
+  background: rgba(74, 222, 128, 0.10) !important;
+  border-color: rgba(74, 222, 128, 0.38) !important;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.16) !important;
+}
+
+.tetris-grade-fail {
+  color: #f87171 !important;
+  background: rgba(248, 113, 113, 0.10) !important;
+  border-color: rgba(248, 113, 113, 0.38) !important;
+  box-shadow: 0 0 8px rgba(248, 113, 113, 0.16) !important;
+}
+
+/* 문제 흐름 칩 — 다크 네온 */
+.tetris-status-card .vt-chip-pill {
+  background: rgba(12, 8, 30, 0.85) !important;
+  border-color: rgba(139, 92, 246, 0.22) !important;
+  color: #7c8db5 !important;
+}
+
+.tetris-status-card .vt-chip-dot {
+  background: rgba(139, 92, 246, 0.45) !important;
+}
+
+.tetris-status-card .vt-chip-pill.vt-chip-done {
+  background: rgba(34, 211, 238, 0.10) !important;
+  border-color: rgba(34, 211, 238, 0.38) !important;
+  color: #38bdf8 !important;
+}
+
+.tetris-status-card .vt-chip-pill.vt-chip-done .vt-chip-dot {
+  background: #22d3ee !important;
+  box-shadow: 0 0 6px rgba(34, 211, 238, 0.6) !important;
+}
+
+.tetris-status-card .vt-chip-pill.vt-chip-fail {
+  background: rgba(248, 113, 113, 0.10) !important;
+  border-color: rgba(248, 113, 113, 0.32) !important;
+  color: #f87171 !important;
+}
+
+.tetris-status-card .vt-chip-pill.vt-chip-fail .vt-chip-dot {
+  background: #f87171 !important;
+  box-shadow: 0 0 6px rgba(248, 113, 113, 0.6) !important;
+}
+
+.tetris-status-card .vt-chip-pill:not(.vt-chip-done):not(.vt-chip-fail) .vt-chip-dot {
+  background: rgba(139, 92, 246, 0.45) !important;
+}
+
+/* 문제 흐름 라벨 */
+.tetris-status-card .vt-chips-label {
+  color: #7c8db5 !important;
+}
+
+/* select 박스 — 다크 스타일 */
+.tetris-status-card select {
+  background: rgba(12, 8, 30, 0.92) !important;
+  border-color: rgba(139, 92, 246, 0.32) !important;
+  color: #e2e8f0 !important;
+}
+
+/* 기술 상태 버튼 */
+.tetris-status-panel .tetris-status-card > button {
+  background: rgba(12, 8, 30, 0.92) !important;
+  border-color: rgba(139, 92, 246, 0.32) !important;
+  color: #c4b5fd !important;
+}
+
+/* 기술 상태 하위 카드 */
+.tetris-status-panel .tetris-status-card > div > div {
+  border-color: rgba(139, 92, 246, 0.18) !important;
+  background: rgba(15, 10, 32, 0.75) !important;
+}
+
+/* 패널 타이틀 — 다크 테트리스 */
+.tetris-status-panel .vt-panel-title strong {
+  color: #e2e8f0 !important;
+}
+
+.tetris-status-panel .monitoring-panel-shell-game .vt-panel-icon {
+  background: rgba(139, 92, 246, 0.20) !important;
+  color: #a78bfa !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(139, 92, 246, 0.25),
+    0 0 14px rgba(139, 92, 246, 0.18) !important;
+}
+
+/* 일시정지 화면 */
+.tetris-board-shell .vt-pause-screen {
+  background: rgba(9, 9, 20, 0.78) !important;
+  backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(139, 92, 246, 0.2) !important;
+}
+
 .vt-pause-screen {
   background: rgba(18, 48, 71, 0.54);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   .lingo-game-shell 전용 — 링고 게임(린고/테트리스 등)에서만 적용
+   언어재활 · 자가진단 · 노래방 등 다른 페이지에는 영향 없음
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 카메라 프레임 ── */
+.lingo-game-shell .vt-camera-frame {
+  border: 1px solid rgba(139, 92, 246, 0.22) !important;
+  background: rgba(10, 8, 22, 0.97) !important;
+}
+
+.lingo-game-shell .vt-camera-placeholder {
+  color: #7c8db5 !important;
+  background: rgba(10, 8, 22, 0.97) !important;
+}
+
+.lingo-game-shell .vt-camera-placeholder span {
+  color: #c4b5fd !important;
+}
+
+.lingo-game-shell .vt-camera-placeholder p {
+  color: #64748b !important;
+}
+
+.lingo-game-shell .vt-camera-status {
+  background: rgba(12, 8, 30, 0.88) !important;
+  border: 1px solid rgba(139, 92, 246, 0.22) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+.lingo-game-shell .vt-camera-row {
+  color: #7c8db5 !important;
+}
+
+.lingo-game-shell .vt-camera-row strong {
+  color: #c4b5fd !important;
+}
+
+.lingo-game-shell .vt-face-track {
+  background: rgba(139, 92, 246, 0.18) !important;
+}
+
+.lingo-game-shell .vt-face-guide {
+  border-color: rgba(139, 92, 246, 0.45) !important;
+}
+
+/* ── vt-glass ── */
+.lingo-game-shell .vt-glass {
+  background: rgba(12, 8, 30, 0.88) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(139, 92, 246, 0.22) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* ── 오디오 바 ── */
+.lingo-game-shell .vt-audio-card {
+  background: rgba(12, 8, 30, 0.88) !important;
+  border: 1px solid rgba(139, 92, 246, 0.22) !important;
+}
+
+.lingo-game-shell .vt-audio-label {
+  color: #7c8db5 !important;
+}
+
+.lingo-game-shell .vt-audio-bar {
+  background: linear-gradient(180deg, #c084fc, #7c3aed) !important;
+  box-shadow: 0 0 6px rgba(192, 132, 252, 0.5) !important;
+}
+
+/* ── 패널 타이틀 ── */
+.lingo-game-shell .vt-panel-title strong {
+  color: #e2e8f0 !important;
+}
+
+.lingo-game-shell .monitoring-panel-shell-game .vt-panel-icon {
+  background: rgba(139, 92, 246, 0.20) !important;
+  color: #a78bfa !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(139, 92, 246, 0.25),
+    0 0 14px rgba(139, 92, 246, 0.18) !important;
 }
 
 .vt-report-card {

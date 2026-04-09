@@ -8,15 +8,10 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import LingoGameShell from "@/components/lingo/LingoGameShell";
-import {
-  MEMORY_CARD_WORDS,
-  MEMORY_CATEGORIES,
-  MEMORY_DIFFICULTIES,
-  type MemoryDifficultyId,
-} from "@/data/memoryGameData";
+import { getGameModeNodePayload } from "@/constants/gameModeStagePayloads";
 import { useAudioAnalyzer } from "@/lib/audio/useAudioAnalyzer";
 import {
   registerMediaStream,
@@ -25,6 +20,7 @@ import {
 import { createPreferredCameraStream } from "@/lib/media/cameraPreferences";
 import MonitoringPanelShell from "@/components/training/MonitoringPanelShell";
 import LingoResultModalShell from "@/components/lingo/LingoResultModalShell";
+import { markGameModeStageCleared } from "@/lib/gameModeProgress";
 
 const COSTUME_TIERS = [
   { minStreak: 0, id: "none" },
@@ -288,53 +284,17 @@ function levenshtein(a: string, b: string) {
   return dp[a.length][b.length];
 }
 
-const CATEGORY_VARIANTS = {
-  fruit: [
-    "과일",
-    "과일이",
-    "과일을",
-    "과일로",
-    "과일은",
-    "과일이요",
-    "과일이에요",
-    "과일입니다",
-    "과일이야",
-    "과일요",
-    "과이",
-    "과릴",
-  ],
-  animal: [
-    "동물",
-    "동물이",
-    "동물을",
-    "동물로",
-    "동물은",
-    "동물이요",
-    "동물이에요",
-    "동물입니다",
-    "동물이야",
-    "동물요",
-    "동무",
-    "동믈",
-  ],
-  vehicle: [
-    "탈것",
-    "탈것이",
-    "탈것을",
-    "탈것은",
-    "탈것이요",
-    "탈것이에요",
-    "탈것입니다",
-    "탈것이야",
-    "탈것요",
-    "탈거",
-    "탈거요",
-    "탈거에요",
-    "탈껏",
-    "탈것중",
-    "탈 것",
-  ],
-} as const;
+type MemoryDifficultyId = "easy" | "normal" | "hard";
+type MemoryCard = {
+  word: string;
+  category: string;
+  visual: string;
+  displayIndex: number;
+  revealed: boolean;
+  solved: boolean;
+  completed: boolean;
+  result: "pending" | "success" | "fail";
+};
 
 function normalizeCategoryText(text: string) {
   return text
@@ -343,59 +303,6 @@ function normalizeCategoryText(text: string) {
     .replace(/[^가-힣a-zA-Z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function parseCategory(text: string) {
-  const normalized = normalizeCategoryText(text);
-  const compact = normalized.replace(/\s+/g, "");
-  const tokens = normalized
-    .split(" ")
-    .filter(Boolean)
-    .flatMap((token) => {
-      const compactToken = token.replace(/\s+/g, "");
-      return [compactToken, compactToken.slice(0, 2), compactToken.slice(0, 3)];
-    })
-    .filter(Boolean);
-
-  const entries = Object.entries(CATEGORY_VARIANTS) as Array<
-    [keyof typeof CATEGORY_VARIANTS, readonly string[]]
-  >;
-
-  for (const [category, variants] of entries) {
-    if (
-      variants.some((variant) => {
-        const normalizedVariant = normalizeCategoryText(variant).replace(
-          /\s+/g,
-          "",
-        );
-        return compact === normalizedVariant || compact.includes(normalizedVariant);
-      })
-    ) {
-      return category;
-    }
-  }
-
-  for (const [category, variants] of entries) {
-    if (
-      tokens.some((token) =>
-        variants.some((variant) => {
-          const normalizedVariant = normalizeCategoryText(variant).replace(
-            /\s+/g,
-            "",
-          );
-          return (
-            token.length > 0 &&
-            Math.abs(token.length - normalizedVariant.length) <= 1 &&
-            levenshtein(token, normalizedVariant) <= 1
-          );
-        }),
-      )
-    ) {
-      return category;
-    }
-  }
-
-  return null;
 }
 
 function matchesCardWord(text: string, word: string) {
@@ -437,28 +344,27 @@ function buildRecognition() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
 
-function buildDeck(difficulty: MemoryDifficultyId) {
-  const config =
-    MEMORY_DIFFICULTIES.find((item) => item.id === difficulty) ??
-    MEMORY_DIFFICULTIES[1];
-  const nextCards = MEMORY_CATEGORIES.flatMap((category) =>
-    shuffle(
-      MEMORY_CARD_WORDS.filter((card) => card.category === category.id),
-    ).slice(0, config.cardsPerCategory),
-  );
+const ROADMAP_MEMORY_CATEGORY = {
+  id: "roadmap",
+  label: "핵심어",
+  color: "#a78bfa",
+};
 
-  const randomizedCards = shuffle(nextCards);
+function buildRoadmapDeck(words: string[]): MemoryCard[] {
+  const uniqueWords = [...new Set(words)].filter(Boolean).slice(0, 8);
   const randomizedDisplayOrder = shuffle(
-    Array.from({ length: randomizedCards.length }, (_, index) => index),
+    Array.from({ length: uniqueWords.length }, (_, index) => index),
   );
 
-  return randomizedCards.map((card, index) => ({
-    ...card,
+  return uniqueWords.map((word, index) => ({
+    word,
+    category: ROADMAP_MEMORY_CATEGORY.id,
+    visual: "📍",
     displayIndex: randomizedDisplayOrder[index],
     revealed: false,
     solved: false,
     completed: false,
-    result: "pending" as "pending" | "success" | "fail",
+    result: "pending" as const,
   }));
 }
 
@@ -522,95 +428,17 @@ function getRoundTimeLimit(difficulty: MemoryDifficultyId) {
   }
 }
 
-function SelectionModal({
-  difficulty,
-  onSelect,
-  onStart,
-}: {
-  difficulty: MemoryDifficultyId;
-  onSelect: (id: MemoryDifficultyId) => void;
-  onStart: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-900/80 p-4 [@media(min-height:901px)]:p-6 backdrop-blur-md">
-      <div className="relative my-auto w-full max-w-[540px] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[40px] [@media(min-height:901px)]:rounded-[56px] border-[6px] border-white bg-white shadow-[0_32px_80px_rgba(0,0,0,0.4)] ring-1 ring-slate-200">
-        <div className="border-b-2 border-slate-100 bg-slate-50/80 px-5 pb-5 pt-7 [@media(min-height:901px)]:px-8 [@media(min-height:901px)]:pb-8 [@media(min-height:901px)]:pt-12 text-center">
-          <div className="mx-auto mb-3 [@media(min-height:901px)]:mb-6 flex h-14 w-14 [@media(min-height:901px)]:h-20 [@media(min-height:901px)]:w-20 items-center justify-center rounded-[24px] [@media(min-height:901px)]:rounded-[32px] bg-violet-600 text-white shadow-xl ring-4 ring-violet-50">
-            <span className="text-2xl [@media(min-height:901px)]:text-4xl">🧠</span>
-          </div>
-          <span className="mb-2 block text-[12px] font-black uppercase tracking-[0.4em] text-violet-500">
-            Cognitive Logic Protocol
-          </span>
-          <h3 className="text-2xl [@media(min-height:901px)]:text-4xl font-black tracking-tighter text-slate-900">
-            말로 분류하기
-          </h3>
-          <p className="mt-3 break-keep text-sm font-bold text-slate-400">
-            제시된 그림을 보고 알맞은 분류(과일, 동물, 탈것)를 말해 보세요.
-          </p>
-        </div>
-
-        <div className="bg-white p-5 [@media(min-height:901px)]:p-8">
-          <div className="mb-5 [@media(min-height:901px)]:mb-10 grid grid-cols-3 gap-3 [@media(min-height:901px)]:gap-4">
-            {MEMORY_DIFFICULTIES.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => onSelect(item.id)}
-                className={`group relative flex h-20 [@media(min-height:901px)]:h-28 flex-col items-center justify-center gap-1 rounded-[24px] [@media(min-height:901px)]:rounded-[32px] border-2 transition-all ${
-                  difficulty === item.id
-                    ? "scale-105 border-violet-600 bg-violet-600 text-white shadow-lg"
-                    : "border-slate-300 bg-slate-50 text-slate-500 hover:border-violet-300 hover:bg-white"
-                }`}
-              >
-                <span className="text-[10px] font-black uppercase tracking-widest opacity-60">
-                  Level
-                </span>
-                <strong className="text-2xl font-black">{item.label}</strong>
-                <span className="text-[11px] font-bold opacity-70">
-                  {item.cardsPerCategory * 3}장
-                </span>
-                <span className="text-[10px] font-black opacity-70">
-                  {getRoundTimeLimit(item.id)}초
-                </span>
-              </button>
-            ))}
-          </div>
-
-          <button
-            onClick={onStart}
-            className="flex h-14 [@media(min-height:901px)]:h-20 w-full items-center justify-center gap-3 rounded-[24px] [@media(min-height:901px)]:rounded-[28px] bg-slate-900 text-base [@media(min-height:901px)]:text-xl font-black text-white shadow-2xl shadow-slate-200 transition-transform active:scale-95"
-          >
-            훈련 시작하기
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-              aria-hidden="true"
-            >
-              <path d="M5 12h14M12 5l7 7-7 7" />
-            </svg>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ResultModal({
   elapsedTime,
   accuracy,
   solvedCount,
   totalCount,
-  onRestart,
   onHome,
 }: {
   elapsedTime: string;
   accuracy: number;
   solvedCount: number;
   totalCount: number;
-  onRestart: () => void;
   onHome?: () => void;
 }) {
   const router = useRouter();
@@ -624,51 +452,50 @@ function ResultModal({
       badgeText="훈련 완료"
       title="훈련 완료 리포트"
       subtitle="분류 훈련을 성공적으로 마쳤습니다."
-      headerToneClass="bg-violet-50"
-      iconToneClass="bg-gradient-to-br from-violet-500 to-indigo-600"
-      badgeToneClass="text-violet-600"
-      primaryLabel="단계 다시 선택하기"
-      onPrimary={onRestart}
-      secondaryLabel="메인 화면으로 돌아가기"
-      onSecondary={handleHome}
+      headerToneClass="bg-transparent"
+      iconToneClass="bg-gradient-to-br from-[#00cec9] to-[#6c5ce7]"
+      badgeToneClass="text-violet-300"
+      primaryButtonClass="bg-gradient-to-r from-[#111d42] to-[#6c5ce7]"
+      primaryLabel="단계 선택으로"
+      onPrimary={handleHome}
     >
       <div className="mb-6 grid grid-cols-2 gap-3">
-        <div className="rounded-[28px] border border-slate-100 bg-slate-50 p-5 text-center">
-          <span className="mb-2 block text-[11px] font-black text-slate-400">
+        <div className="rounded-[28px] border border-violet-500/22 bg-[#0c0820]/85 p-5 text-center">
+          <span className="mb-2 block text-[11px] font-black text-violet-300/60">
             성공률
           </span>
-          <strong className="text-4xl font-black text-violet-600">
+          <strong className="text-4xl font-black text-violet-400">
             {successRate}%
           </strong>
         </div>
-        <div className="rounded-[28px] border border-slate-100 bg-slate-50 p-5 text-center">
-          <span className="mb-2 block text-[11px] font-black text-slate-400">
+        <div className="rounded-[28px] border border-violet-500/22 bg-[#0c0820]/85 p-5 text-center">
+          <span className="mb-2 block text-[11px] font-black text-violet-300/60">
             정확도
           </span>
-          <strong className="text-4xl font-black text-slate-900">
+          <strong className="text-4xl font-black text-white">
             {accuracy}%
           </strong>
         </div>
       </div>
 
-      <div className="mb-6 rounded-[28px] border border-slate-100 bg-slate-50 p-5 text-center">
-        <span className="mb-2 block text-[11px] font-black text-slate-400">
+      <div className="mb-6 rounded-[28px] border border-violet-500/22 bg-[#0c0820]/85 p-5 text-center">
+        <span className="mb-2 block text-[11px] font-black text-violet-300/60">
           걸린 시간
         </span>
-        <strong className="text-3xl font-black text-slate-900">
+        <strong className="text-3xl font-black text-white">
           {elapsedTime}
         </strong>
       </div>
 
-      <div className="mb-6 flex h-12 w-full overflow-hidden rounded-2xl border-4 border-slate-50">
+      <div className="mb-6 flex h-12 w-full overflow-hidden rounded-2xl border border-violet-500/20">
         <div
-          className="flex items-center justify-center bg-violet-500 text-xs font-black text-white"
+          className="flex items-center justify-center bg-violet-600 text-xs font-black text-white"
           style={{ width: `${successRate}%` }}
         >
           성공 {solvedCount}
         </div>
         <div
-          className="flex items-center justify-center bg-slate-200 text-xs font-black text-slate-500"
+          className="flex items-center justify-center bg-[#1a1435] text-xs font-black text-violet-300/60"
           style={{ width: `${100 - successRate}%` }}
         >
           남음 {Math.max(totalCount - solvedCount, 0)}
@@ -679,6 +506,19 @@ function ResultModal({
 }
 
 export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const roadmapStageId = Number(searchParams.get("roadmapStage") || "0");
+  const roadmapNodeId =
+    searchParams.get("roadmapNode") || searchParams.get("roadmapSection") || "";
+  const roadmapNodePayload = getGameModeNodePayload(roadmapStageId, roadmapNodeId);
+  const roadmapMemoryPayload =
+    roadmapNodePayload?.gameType === "memory" ? roadmapNodePayload.payload : null;
+  const activeMemoryPayload = roadmapMemoryPayload ?? {
+    previewAnswers: ["핵심어"],
+    hintPool: ["로드맵 노드 데이터가 없습니다. 스테이지에서 다시 진입해 주세요."],
+    answerPool: ["핵심어"],
+  };
   const {
     volume,
     isMicReady,
@@ -688,11 +528,13 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   } = useAudioAnalyzer();
 
   const [difficulty, setDifficulty] = useState<MemoryDifficultyId>("normal");
-  const [cards, setCards] = useState(() => buildDeck("normal"));
+  const [cards, setCards] = useState<MemoryCard[]>(() =>
+    buildRoadmapDeck(activeMemoryPayload.answerPool),
+  );
   const [targetWord, setTargetWord] = useState<string | null>(null);
   const [heardText, setHeardText] = useState("");
   const [message, setMessage] = useState(
-    "한 번 마이크를 켜면 계속 듣습니다. 그림을 보고 정답 분류를 말해 보세요.",
+    "한 번 마이크를 켜면 계속 듣습니다. 카드에 맞는 핵심어를 또렷하게 말해 보세요.",
   );
   const [score, setScore] = useState(0);
   const [solvedCount, setSolvedCount] = useState(0);
@@ -706,11 +548,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   );
   const [wrongByCategory, setWrongByCategory] = useState<
     Record<string, number>
-  >({
-    fruit: 0,
-    animal: 0,
-    vehicle: 0,
-  });
+  >({ [ROADMAP_MEMORY_CATEGORY.id]: 0 });
   const [isListening, setIsListening] = useState(false);
   const [micEnabled, setMicEnabled] = useState(false);
   const [supported, setSupported] = useState(true);
@@ -719,7 +557,6 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   const [cameraError, setCameraError] = useState("");
   const [faceTracked, setFaceTracked] = useState(false);
   const [faceGuideScore, setFaceGuideScore] = useState(0);
-  const [showDifficultyModal, setShowDifficultyModal] = useState(true);
   const [feedbackState, setFeedbackState] = useState<
     "idle" | "success" | "fail"
   >("idle");
@@ -744,6 +581,16 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   const volumeRef = useRef(0);
   const successStreakRef = useRef(0);
   const failStreakRef = useRef(0);
+  const autoStartedRef = useRef(false);
+  const stageMapHref =
+    roadmapStageId >= 1
+      ? `/select-page/game-mode/stage/${roadmapStageId}`
+      : "/select-page/game-mode";
+  const stageMapReturnHref =
+    roadmapStageId >= 1
+      ? `/select-page/game-mode/stage/${roadmapStageId}?opened=1&focusNode=${encodeURIComponent(roadmapNodeId)}`
+      : "/select-page/game-mode";
+  const handleStageReturn = () => router.push(stageMapReturnHref);
 
   useEffect(() => {
     successStreakRef.current = successStreak;
@@ -913,19 +760,17 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   }, [cards]);
 
   useEffect(() => {
-    if (showDifficultyModal) return;
     if (currentCard) return;
     setTargetWord(null);
-  }, [currentCard, showDifficultyModal]);
+  }, [currentCard]);
 
   useEffect(() => {
-    if (showDifficultyModal) return;
     if (targetWord) return;
     const firstRemaining = cards.find((card) => !card.completed);
     if (firstRemaining) {
       setTargetWord(firstRemaining.word);
     }
-  }, [cards, showDifficultyModal, targetWord]);
+  }, [cards, targetWord]);
 
   useEffect(() => {
     if (!currentCard) {
@@ -943,24 +788,24 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   }, [currentCard]);
 
   useEffect(() => {
-    if (showDifficultyModal || !currentCard) return;
+    if (!currentCard) return;
     setTimeLeft(getRoundTimeLimit(difficulty));
-  }, [currentCard, difficulty, showDifficultyModal]);
+  }, [currentCard, difficulty]);
 
   useEffect(() => {
     timeLeftRef.current = timeLeft;
   }, [timeLeft]);
 
   useEffect(() => {
-    if (showDifficultyModal || !currentCard) return;
+    if (!currentCard) return;
     setHeardText("");
-    setMessage("지금 과일, 동물, 탈것 중 하나를 말하세요.");
+    setMessage("지금 카드와 맞는 핵심어를 말하세요.");
     ignoreSpeechUntilRef.current = Date.now() + 1200;
     const unlockTimer = window.setTimeout(() => {
       transitionLockRef.current = false;
     }, 220);
     return () => window.clearTimeout(unlockTimer);
-  }, [currentCard?.word, showDifficultyModal]);
+  }, [currentCard?.word]);
 
   const stopCamera = useCallback(() => {
     if (faceLoopRef.current !== null) {
@@ -1119,20 +964,10 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
       return;
     setHeardText(transcript);
 
-    const parsedCategory = parseCategory(transcript);
     const matchedByWord = matchesCardWord(transcript, activeCard.word);
-    const recognizedCategory = matchedByWord
-      ? activeCard.category
-      : parsedCategory;
-
-    if (!recognizedCategory) {
-      setMessage("과일, 동물, 탈것 중 하나를 말해 주세요.");
-      return;
-    }
-
     setAttemptCount((value) => value + 1);
 
-    if (recognizedCategory === activeCard.category) {
+    if (matchedByWord) {
       transitionLockRef.current = true;
       ignoreSpeechUntilRef.current = Date.now() + 900;
       handledTargetRef.current = `done-${activeCard.word}`;
@@ -1143,11 +978,10 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
       setSolvedCount((value) => value + 1);
       setSuccessStreak((value) => value + 1);
       setFailStreak(0);
-      setMessage(`정답이에요. ${activeCard.word} 카드가 열렸습니다.`);
+      setMessage(`정답이에요. "${activeCard.word}" 인식 성공`);
       return;
     }
 
-    triggerFeedback("fail");
     setScore((value) => Math.max(0, value - 2));
     setWrongCount((value) => value + 1);
     setWrongByCategory((value) => ({
@@ -1161,17 +995,58 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     handledTargetRef.current = `done-${activeCard.word}`;
     setHeardText("");
     revealCategory(activeCard.word, false);
-    setMessage("오답이에요. 실패로 표시하고 다음 그림으로 넘어갑니다.");
+    setMessage(`오답이에요. "${activeCard.word}" 를 다시 떠올려 보세요.`);
     triggerFeedback("fail");
   }
 
   function runSpeechTestInput(transcript: string) {
-    if (!currentCard || showDifficultyModal) return;
+    if (!currentCard) return;
     handleSpeechResult(transcript);
   }
 
+  function runRoadmapJudge(result: "success" | "fail") {
+      const activeCard = currentCardRef.current;
+      if (
+        !activeCard ||
+        transitionLockRef.current ||
+        handledTargetRef.current === `done-${activeCard.word}`
+      ) {
+      return;
+    }
+
+    transitionLockRef.current = true;
+    ignoreSpeechUntilRef.current = Date.now() + 900;
+    handledTargetRef.current = `done-${activeCard.word}`;
+    setAttemptCount((value) => value + 1);
+    setHeardText("");
+
+    if (result === "success") {
+      revealCategory(activeCard.word, true);
+      triggerFeedback("success");
+      setScore((value) => value + 15);
+      setSolvedCount((value) => value + 1);
+      setSuccessStreak((value) => value + 1);
+      setFailStreak(0);
+      setMessage(`정답이에요. "${activeCard.word}" 카드가 열렸습니다.`);
+      return;
+    }
+
+    setScore((value) => Math.max(0, value - 2));
+    setWrongCount((value) => value + 1);
+    setWrongByCategory((value) => ({
+      ...value,
+      [ROADMAP_MEMORY_CATEGORY.id]:
+        (value[ROADMAP_MEMORY_CATEGORY.id] ?? 0) + 1,
+    }));
+    setSuccessStreak(0);
+    setFailStreak((value) => Math.min(6, value + 1));
+    revealCategory(activeCard.word, false);
+    triggerFeedback("fail");
+    setMessage(`오답이에요. "${activeCard.word}" 를 다시 떠올려 보세요.`);
+  }
+
   useEffect(() => {
-    if (showDifficultyModal || !currentCard) return;
+    if (!currentCard) return;
 
     const timer = window.setInterval(() => {
       setTimeLeft((prev) => {
@@ -1186,7 +1061,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [currentCard, handleRoundTimeout, showDifficultyModal]);
+  }, [currentCard, handleRoundTimeout]);
 
   const beginContinuousListening = useCallback(() => {
     if (!supported || recognitionRef.current || !currentCardRef.current) return;
@@ -1206,7 +1081,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     recognition.onstart = () => {
       setIsListening(true);
       setMicEnabled(true);
-      setMessage("듣는 중이에요. 그림을 보고 정답 분류를 말해 보세요.");
+      setMessage("듣는 중이에요. 카드에 맞는 핵심어를 말해 보세요.");
     };
 
     recognition.onresult = (event: any) => {
@@ -1219,16 +1094,15 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
         setHeardText(transcript);
 
         if (
-          parseCategory(transcript) ||
-          (currentCardRef.current &&
-            matchesCardWord(transcript, currentCardRef.current.word))
+          currentCardRef.current &&
+          matchesCardWord(transcript, currentCardRef.current.word)
         ) {
           handleSpeechResult(transcript);
           return;
         }
 
         if (result?.isFinal) {
-          setMessage("과일, 동물, 탈것 중 하나를 또박또박 말해 주세요.");
+          setMessage("카드의 핵심어를 또박또박 말해 주세요.");
         }
       }
     };
@@ -1256,7 +1130,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   }, [supported]);
 
   useEffect(() => {
-    if (showDifficultyModal || !currentCard || !keepListeningRef.current) return;
+    if (!currentCard || !keepListeningRef.current) return;
 
     const restartTimer = window.setTimeout(() => {
       if (recognitionRef.current) {
@@ -1283,7 +1157,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     }, 180);
 
     return () => window.clearTimeout(restartTimer);
-  }, [beginContinuousListening, currentCard?.word, currentCard, showDifficultyModal]);
+  }, [beginContinuousListening, currentCard?.word, currentCard]);
 
   async function startListening() {
     if (micEnabled || !currentCard) return;
@@ -1313,37 +1187,28 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
 
   function restart() {
     stopListening();
-    setShowDifficultyModal(true);
+    autoStartedRef.current = false;
+    void startGameForDifficulty(difficulty);
   }
 
-  function changeDifficulty(nextDifficulty: MemoryDifficultyId) {
-    stopListening();
-    setDifficulty(nextDifficulty);
-    setCards(buildDeck(nextDifficulty));
-    setTargetWord(null);
-    setHeardText("");
-    setMessage("난이도를 바꿨어요. 그림을 보고 정답 분류를 말해 보세요.");
-    setScore(0);
-    setSolvedCount(0);
-    setAttemptCount(0);
-    setWrongCount(0);
-    setSuccessStreak(0);
-    setFailStreak(0);
-    setSessionStartedAt(null);
-    setSessionFinishedAt(null);
-    setWrongByCategory({ fruit: 0, animal: 0, vehicle: 0 });
-    setFeedbackState("idle");
-    setTimeLeft(getRoundTimeLimit(nextDifficulty));
+  function resolveDifficultyFromParams() {
+    const difficultyParam = String(searchParams.get("difficulty") || "Easy");
+    if (difficultyParam === "Hard" || difficultyParam === "Expert") {
+      return "hard" as MemoryDifficultyId;
+    }
+    if (difficultyParam === "Normal") {
+      return "normal" as MemoryDifficultyId;
+    }
+    return "easy" as MemoryDifficultyId;
   }
 
-  async function startGameForDifficulty() {
-    const nextCards = buildDeck(difficulty);
+  async function startGameForDifficulty(startDifficulty = difficulty) {
+    roadmapClearMarkedRef.current = false;
+    const nextCards = buildRoadmapDeck(activeMemoryPayload.answerPool);
     setCards(nextCards);
     setTargetWord(nextCards.find((card) => !card.completed)?.word ?? null);
     setHeardText("");
-    setMessage(
-      "한 번 마이크를 켜면 계속 듣습니다. 그림을 보고 정답 분류를 말해 보세요.",
-    );
+    setMessage("한 번 마이크를 켜면 계속 듣습니다. 카드에 맞는 핵심어를 말해 보세요.");
     setScore(0);
     setSolvedCount(0);
     setAttemptCount(0);
@@ -1352,10 +1217,9 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     setFailStreak(0);
     setSessionStartedAt(Date.now());
     setSessionFinishedAt(null);
-    setWrongByCategory({ fruit: 0, animal: 0, vehicle: 0 });
+    setWrongByCategory({ [ROADMAP_MEMORY_CATEGORY.id]: 0 });
     setFeedbackState("idle");
-    setTimeLeft(getRoundTimeLimit(difficulty));
-    setShowDifficultyModal(false);
+    setTimeLeft(getRoundTimeLimit(startDifficulty));
     keepListeningRef.current = true;
     const micStarted = await startAudioMonitor();
     if (!micStarted) {
@@ -1366,6 +1230,15 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     await startCamera();
     beginContinuousListening();
   }
+
+  useEffect(() => {
+    if (autoStartedRef.current) return;
+
+    const nextDifficulty = resolveDifficultyFromParams();
+    autoStartedRef.current = true;
+    setDifficulty(nextDifficulty);
+    void startGameForDifficulty(nextDifficulty);
+  }, [searchParams]);
 
   useEffect(() => () => stopListening(), [stopListening]);
 
@@ -1419,7 +1292,8 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   );
   const accuracy =
     attemptCount > 0 ? Math.round((solvedCount / attemptCount) * 100) : 0;
-  const showReport = !showDifficultyModal && !currentCard;
+  const showReport = !currentCard;
+  const roadmapClearMarkedRef = useRef(false);
   const elapsedTime =
     sessionStartedAt && sessionFinishedAt
       ? formatDuration(sessionFinishedAt - sessionStartedAt)
@@ -1429,8 +1303,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   )[0];
   const mostConfusedLabel =
     mostConfusedCategory && mostConfusedCategory[1] > 0
-      ? (MEMORY_CATEGORIES.find((item) => item.id === mostConfusedCategory[0])
-          ?.label ?? "-")
+      ? ROADMAP_MEMORY_CATEGORY.label
       : "없음";
   const cardGridLayout = (() => {
     if (cards.length === 6) return { rows: 2, columns: 3 };
@@ -1444,34 +1317,47 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
         window.location.hostname === "127.0.0.1")) ||
     process.env.NEXT_PUBLIC_DEV_MODE === "true";
 
+  useEffect(() => {
+    if (!showReport || roadmapClearMarkedRef.current) return;
+    if (roadmapStageId < 1 || !roadmapNodeId) return;
+
+    const clearTarget = Math.max(3, Math.ceil(cards.length * 0.7));
+    if (solvedCount < clearTarget) return;
+
+    markGameModeStageCleared(roadmapStageId, roadmapNodeId, "memory");
+    roadmapClearMarkedRef.current = true;
+  }, [cards.length, roadmapNodeId, roadmapStageId, showReport, solvedCount]);
+
   return (
     <LingoGameShell
-      badge="Game Training • Memory"
+      badge="Game Mode • Memory"
       title="말로 열기"
       onRestart={restart}
-      onBack={onBack}
-      statusLabel={isMicReady && micEnabled ? "LISTENING..." : "READY"}
+      onBack={onBack ?? (() => router.push(stageMapHref))}
+      variant="gameMode"
+      statusLabel={isMicReady && micEnabled ? "듣는 중" : "준비"}
       progressLabel={`${solvedCount} / ${cards.length}`}
       headerActions={
-        isLocalDebug ? (
+        (
           <>
-            {[
-              { label: "과일", transcript: "과일" },
-              { label: "동물", transcript: "동물" },
-              { label: "탈것", transcript: "탈것" },
-            ].map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${trainingButtonStyles.slateSoft}`}
-                disabled={!currentCard || showDifficultyModal}
-                onClick={() => runSpeechTestInput(item.transcript)}
-              >
-                {item.label}
-              </button>
-            ))}
+            <button
+              type="button"
+              className="px-3 py-1.5 rounded-full font-black text-[11px] border bg-violet-600 text-white border-violet-500"
+                disabled={!currentCard}
+              onClick={() => runRoadmapJudge("success")}
+            >
+              성공 처리
+            </button>
+            <button
+              type="button"
+              className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${trainingButtonStyles.slateSoft}`}
+                disabled={!currentCard}
+              onClick={() => runRoadmapJudge("fail")}
+            >
+              실패 처리
+            </button>
           </>
-        ) : null
+        )
       }
     >
       <div className="vt-layout vt-layout-playing tetris-layout-no-left">
@@ -1484,58 +1370,60 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
                     <div className="tetris-canvas-stage memory-canvas-stage">
                       {currentCard ? (
                         <div
-                          className={`memory-main-card relative w-full max-w-none overflow-hidden rounded-[44px] border-[6px] bg-white p-6 shadow-2xl transition-all duration-500 sm:rounded-[52px] sm:p-8 ${
+                          className={`memory-main-card relative w-full max-w-none overflow-hidden rounded-[44px] border-[3px] bg-[#0c0820]/95 p-6 backdrop-blur-sm transition-all duration-500 sm:rounded-[52px] sm:p-8 ${
                             feedbackState === "success"
-                              ? "scale-[1.03] border-emerald-400 shadow-emerald-100"
+                              ? "scale-[1.03] border-emerald-500/70 shadow-[0_0_40px_rgba(52,211,153,0.20)]"
                               : feedbackState === "fail"
-                                ? "border-rose-400 shadow-rose-100"
-                                : "border-white"
+                                ? "border-rose-500/70 shadow-[0_0_40px_rgba(248,113,113,0.20)]"
+                                : "border-violet-500/25 shadow-[0_0_40px_rgba(139,92,246,0.10)]"
                           }`}
                         >
                           <div className="mb-6 flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <span className="rounded-full bg-violet-600 px-4 py-1.5 text-[11px] font-black uppercase tracking-widest text-white shadow-lg shadow-violet-100">
-                                Visual Cognitive
+                              <span className="rounded-full bg-violet-600 px-4 py-1.5 text-[11px] font-black uppercase tracking-widest text-white shadow-lg shadow-violet-900/50 [box-shadow:0_0_16px_rgba(139,92,246,0.4)]">
+                                도시 핵심어
                               </span>
-                              <span className="text-sm font-black text-slate-400">
-                                Level {difficulty.toUpperCase()}
+                              <span className="text-sm font-black text-violet-300/60">
+                                {`레벨 ${roadmapStageId || 1}`}
                               </span>
                             </div>
                             <div className="flex items-center gap-3">
-                              <div className="rounded-full bg-slate-50 px-4 py-1.5 ring-1 ring-slate-100">
-                                <span className="text-[10px] font-black uppercase tracking-tighter text-slate-500">
+                              <div className="rounded-full bg-[#1a1435] px-4 py-1.5 ring-1 ring-violet-500/25">
+                                <span className="text-[10px] font-black uppercase tracking-tighter text-violet-300/60">
                                   제한 시간
                                 </span>
-                                <strong className="ml-2 text-sm font-black text-violet-600">
+                                <strong className="ml-2 text-sm font-black text-violet-300">
                                   {timeLeft}s
                                 </strong>
                               </div>
-                              <div className="flex items-center gap-2 rounded-full bg-slate-50 px-4 py-1.5 ring-1 ring-slate-100">
+                              <div className="flex items-center gap-2 rounded-full bg-[#1a1435] px-4 py-1.5 ring-1 ring-violet-500/25">
                                 <div
                                   className={`h-2 w-2 rounded-full ${
                                   isMicReady && micEnabled
-                                    ? "animate-pulse bg-emerald-500 shadow-[0_0_8px_#10b981]"
-                                    : "bg-slate-300"
+                                    ? "animate-pulse bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]"
+                                    : "bg-violet-900/60"
                                 }`}
                               />
-                              <span className="text-[10px] font-black uppercase tracking-tighter text-slate-500">
-                                {isMicReady && micEnabled ? "Mic Active" : "Mic Standby"}
+                              <span className="text-[10px] font-black uppercase tracking-tighter text-violet-300/60">
+                                {isMicReady && micEnabled ? "듣기 활성" : "듣기 대기"}
                               </span>
                               </div>
                             </div>
                           </div>
 
-                          <div className="mb-6 rounded-full bg-slate-100 p-1 shadow-inner">
-                            <div className="mb-2 flex items-center justify-between px-2 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-                              <span>Round Timer</span>
-                              <span className={timeLeft <= 2 ? "text-rose-500" : "text-violet-600"}>
+                          <div className="mb-6 rounded-full bg-violet-900/20 p-1 ring-1 ring-violet-500/15">
+                            <div className="mb-2 flex items-center justify-between px-2 text-[10px] font-black uppercase tracking-[0.18em] text-violet-300/60">
+                              <span>남은 시간</span>
+                              <span className={timeLeft <= 2 ? "text-rose-400" : "text-violet-300"}>
                                 {timeLeft}s
                               </span>
                             </div>
-                            <div className="h-2.5 w-full overflow-hidden rounded-full bg-white">
+                            <div className="h-2.5 w-full overflow-hidden rounded-full bg-[#0c0820]">
                               <div
                                 className={`h-full transition-all duration-1000 ${
-                                  timeLeft <= 2 ? "bg-rose-500" : "bg-violet-500"
+                                  timeLeft <= 2
+                                    ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]"
+                                    : "bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.5)]"
                                 }`}
                                 style={{ width: `${timeRatio}%` }}
                               />
@@ -1546,8 +1434,8 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
                             <div
                               className={`pointer-events-none absolute right-6 top-28 rounded-full px-4 py-2 text-sm font-black shadow-lg sm:right-8 ${
                                 feedbackState === "success"
-                                  ? "bg-emerald-500 text-white shadow-emerald-100"
-                                  : "bg-rose-500 text-white shadow-rose-100"
+                                  ? "bg-emerald-500 text-white shadow-[0_0_20px_rgba(52,211,153,0.5)]"
+                                  : "bg-rose-500 text-white shadow-[0_0_20px_rgba(248,113,113,0.5)]"
                               }`}
                             >
                               {feedbackState === "success"
@@ -1558,91 +1446,68 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
 
                           <div className="grid items-stretch gap-6 lg:grid-cols-[1fr_280px] lg:gap-8">
                             <div className="flex min-w-0 flex-col items-center justify-center text-center">
-                              <div className="mb-5 w-full rounded-[28px] border border-slate-100 bg-slate-50/80 px-5 py-4 sm:px-6 sm:py-5">
-                                <div className="mb-3 text-sm font-black uppercase tracking-[0.24em] text-slate-500 sm:text-[15px]">
-                                  Speak One Category
+                              <div className="mb-5 w-full rounded-[28px] border border-violet-500/20 bg-[#0a0818]/80 px-5 py-4 sm:px-6 sm:py-5">
+                                <div className="mb-3 text-sm font-black uppercase tracking-[0.24em] text-violet-300/60 sm:text-[15px]">
+                                  말해야 하는 단어
                                 </div>
-                                <div className="flex items-center justify-center gap-2 sm:gap-3">
-                                  {[
-                                    {
-                                      label: "과일",
-                                      emoji: "🍎",
-                                      color:
-                                        "bg-amber-100 text-amber-600 border-amber-200",
-                                    },
-                                    {
-                                      label: "동물",
-                                      emoji: "🐶",
-                                      color:
-                                        "bg-emerald-100 text-emerald-600 border-emerald-200",
-                                    },
-                                    {
-                                      label: "탈것",
-                                      emoji: "🚗",
-                                      color:
-                                        "bg-blue-100 text-blue-600 border-blue-200",
-                                    },
-                                  ].map((cat) => (
-                                    <div
-                                      key={cat.label}
-                                      className={`flex shrink-0 items-center gap-2 rounded-full border-2 px-4 py-2.5 text-sm font-black shadow-sm sm:px-6 sm:py-3 sm:text-base ${cat.color}`}
-                                    >
-                                      <span>{cat.emoji}</span>
-                                      {cat.label}
-                                    </div>
-                                  ))}
+                                <div className="flex items-center justify-center">
+                                  <div className="flex min-w-[240px] items-center justify-center rounded-full border-2 border-violet-400/50 bg-violet-500/20 px-6 py-3 text-2xl font-black tracking-tight text-white shadow-[0_0_20px_rgba(139,92,246,0.18)]">
+                                    {currentCard?.word ?? "핵심어"}
+                                  </div>
                                 </div>
                               </div>
 
                               <div
-                                className={`mb-5 flex w-full items-center gap-3 rounded-[24px] border px-5 py-4 text-left shadow-sm transition-all ${
+                                className={`mb-5 flex w-full items-center gap-3 rounded-[24px] border px-5 py-4 text-left transition-all ${
                                   micEnabled
-                                    ? "border-violet-200 bg-violet-50/80 shadow-violet-100"
-                                    : "border-slate-200 bg-slate-50"
+                                    ? "border-violet-500/40 bg-violet-900/20"
+                                    : "border-violet-500/15 bg-[#0a0818]/60"
                                 }`}
                               >
                                 <span
                                   className={`h-3 w-3 shrink-0 rounded-full ${
                                     micEnabled
-                                      ? "animate-pulse bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.45)]"
-                                      : "bg-slate-300"
+                                      ? "animate-pulse bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.6)]"
+                                      : "bg-violet-900/60"
                                   }`}
                                 />
                                 <div className="min-w-0">
                                   <div
                                     className={`text-xs font-black uppercase tracking-[0.18em] ${
                                       micEnabled
-                                        ? "text-violet-600"
-                                        : "text-slate-400"
+                                        ? "text-violet-300"
+                                        : "text-violet-300/50"
                                     }`}
                                   >
-                                    {micEnabled ? "자동 듣기 활성화" : "듣기 대기"}
+                                    {micEnabled
+                                      ? "핵심어 듣기 활성화"
+                                      : "듣기 대기"}
                                   </div>
                                   <p
                                     className={`mt-1 text-sm font-bold ${
                                       micEnabled
-                                        ? "text-slate-700"
+                                        ? "text-slate-300"
                                         : "text-slate-500"
                                     }`}
                                   >
                                     {micEnabled
-                                      ? "지금 과일, 동물, 탈것 중 하나를 말하세요."
+                                      ? "지금 카드에 맞는 핵심어를 말하세요."
                                       : "마이크 연결 후 자동으로 듣기를 시작합니다."}
                                   </p>
                                 </div>
                               </div>
 
-                              <div className="group relative mb-6 flex aspect-square w-56 items-center justify-center rounded-[40px] border-2 border-slate-50 bg-slate-50 shadow-inner sm:w-64 sm:rounded-[48px]">
-                                <div className="absolute inset-0 rounded-[48px] bg-gradient-to-b from-white/50 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+                              <div className="group relative mb-6 flex aspect-square w-56 items-center justify-center rounded-[40px] border-2 border-violet-500/25 bg-[#0c0820]/90 sm:w-64 sm:rounded-[48px]">
+                                <div className="absolute inset-0 rounded-[48px] bg-gradient-to-b from-violet-500/5 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
                                 <span className="relative z-10 select-none text-[150px] drop-shadow-2xl">
                                   {currentCard.visual}
                                 </span>
                               </div>
-                              <h2 className="mb-2 text-3xl font-black tracking-tighter text-slate-900 sm:text-4xl">
-                                알맞은 분류를 말해보세요
+                              <h2 className="mb-2 text-3xl font-black tracking-tighter text-white sm:text-4xl">
+                                알맞은 핵심어를 말해보세요
                               </h2>
-                              <p className="text-base font-bold text-slate-400 sm:text-lg">
-                                그림을 보고 과일, 동물, 탈것 중 하나를 고르세요.
+                              <p className="text-base font-bold text-slate-300 sm:text-lg">
+                                {activeMemoryPayload.hintPool?.[0] ?? "카드에 맞는 핵심어를 말해 보세요."}
                               </p>
                               <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
                                 <span
@@ -1671,12 +1536,12 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
                                 }`}
                               >
                                 <div className="mb-1 text-[10px] font-black uppercase tracking-widest text-violet-400">
-                                  Listening Stream
-                                </div>
-                                <p className="truncate text-lg font-black text-white sm:text-xl">
-                                  {heardText ||
-                                    (isMicReady && micEnabled
-                                      ? "지금 분류를 말해 주세요..."
+                                인식된 말
+                              </div>
+                              <p className="truncate text-lg font-black text-white sm:text-xl">
+                                {heardText ||
+                                  (isMicReady && micEnabled
+                                      ? "지금 핵심어를 말해 주세요..."
                                       : "마이크 대기 중")}
                                 </p>
                                 <p className="mt-2 text-xs font-bold text-slate-300">
@@ -1689,7 +1554,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
                               <div className="flex flex-1 flex-col rounded-[32px] border-2 border-slate-100 bg-slate-50/50 p-5 shadow-inner sm:rounded-[40px] sm:p-6">
                                 <div className="mb-4 flex items-center justify-between px-1 sm:px-2">
                                   <span className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
-                                    Session Progress
+                                    카드 진행
                                   </span>
                                   <strong className="text-sm font-black text-violet-600">
                                     {solvedRatio}%
@@ -1737,7 +1602,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
 
                                 <div className="mt-auto space-y-2 border-t border-slate-200 pt-4">
                                   <div className="flex items-center justify-between text-[10px] font-black uppercase text-slate-400">
-                                    <span>Target Word</span>
+                                    <span>완료 진행도</span>
                                     <span className="text-slate-800">
                                       {solvedCount} / {cards.length}
                                     </span>
@@ -1815,20 +1680,20 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
 
                         <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
                           <div className="flex items-center justify-between px-2">
-                            <span className="text-[10px] font-black uppercase text-slate-400">
-                              Accuracy
-                            </span>
-                            <strong className="text-lg font-black text-violet-600">
-                              {accuracy}%
-                            </strong>
-                          </div>
-                          <div className="flex items-center justify-between px-2">
-                            <span className="text-[10px] font-black uppercase text-slate-400">
-                              Score
-                            </span>
-                            <strong className="text-lg font-black text-slate-800">
-                              {score}pt
-                            </strong>
+                              <span className="text-[10px] font-black uppercase text-slate-400">
+                               정답률
+                              </span>
+                              <strong className="text-lg font-black text-violet-600">
+                               {accuracy}%
+                              </strong>
+                            </div>
+                            <div className="flex items-center justify-between px-2">
+                              <span className="text-[10px] font-black uppercase text-slate-400">
+                               점수
+                              </span>
+                              <strong className="text-lg font-black text-slate-800">
+                               {score}pt
+                              </strong>
                           </div>
                         </div>
                       </div>
@@ -1838,21 +1703,13 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
               </div>
             </div>
 
-            {showDifficultyModal ? (
-              <SelectionModal
-                difficulty={difficulty}
-                onSelect={changeDifficulty}
-                onStart={() => void startGameForDifficulty()}
-              />
-            ) : null}
             {showReport ? (
               <ResultModal
                 elapsedTime={elapsedTime}
                 accuracy={accuracy}
                 solvedCount={solvedCount}
                 totalCount={cards.length}
-                onRestart={restart}
-                onHome={onBack}
+                onHome={handleStageReturn}
               />
             ) : null}
           </div>

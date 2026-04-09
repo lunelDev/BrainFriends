@@ -1,8 +1,8 @@
 export const trainingButtonStyles = {
   homeIcon:
-    "rounded-full border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 inline-flex items-center justify-center transition-colors",
+    "rounded-full border border-[#d7e6fb] bg-white text-[#5f7fb3] hover:bg-[#f7fbff] hover:text-[#4f6fa8] inline-flex items-center justify-center transition-colors shadow-sm",
   navyPrimary:
-    "bg-[#0B1A3A] text-white hover:bg-[#09152f] transition-all shadow-xl shadow-slate-200 active:scale-[0.98]",
+    "bg-[#111d42] text-white hover:bg-[#172754] transition-all shadow-xl shadow-black/30 active:scale-[0.98]",
   navyPrimaryMuted:
     "bg-slate-300 text-white cursor-not-allowed transition-all",
   orangeOutline:
@@ -12,10 +12,10 @@ export const trainingButtonStyles = {
   orangeSolid:
     "bg-orange-500 text-white border border-orange-500 hover:bg-orange-600 transition-all",
   slateOutline:
-    "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all",
+    "bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-all shadow-sm",
   slateMuted:
-    "bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed",
+    "bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed",
   slateSoft:
-    "bg-slate-100 text-slate-700 border border-slate-200 transition-all",
+    "bg-white text-slate-500 border border-slate-200 transition-all hover:bg-slate-50 hover:text-slate-700 shadow-sm",
 } as const;
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import LingoGameShell from "@/components/lingo/LingoGameShell";
 import LingoResultModalShell from "@/components/lingo/LingoResultModalShell";
@@ -16,7 +16,9 @@ import {
   TONGUE_TWISTER_QUESTIONS,
   TONGUE_TWISTER_THRESHOLDS,
 } from "@/data/sentenceGameData";
+import { getGameModeNodePayload } from "@/constants/gameModeStagePayloads";
 import { useAudioAnalyzer } from "@/lib/audio/useAudioAnalyzer";
+import { markGameModeStageCleared } from "@/lib/gameModeProgress";
 
 type SentenceQuestion = (typeof SENTENCE_EXAMPLE_QUESTIONS)[number];
 type SentenceMode = (typeof SENTENCE_MAGIC_MODES)[number];
@@ -214,12 +216,14 @@ function SentenceSetupModal({
   const handleHome = onHome ?? (() => router.push("/select-page/game-mode"));
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-900/80 p-4 [@media(min-height:901px)]:p-6 backdrop-blur-md">
-      <div className="relative my-auto w-full max-w-[560px] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[40px] [@media(min-height:901px)]:rounded-[56px] border-[6px] border-white bg-white shadow-[0_32px_80px_rgba(0,0,0,0.4)] ring-1 ring-slate-200">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-[#05050c]/90 p-4 [@media(min-height:901px)]:p-6 backdrop-blur-xl">
+      <div className="relative my-auto w-full max-w-[560px] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[40px] border border-[#2a2a5a] bg-[#111120] text-white shadow-[0_32px_80px_rgba(0,0,0,0.55)] [@media(min-height:901px)]:rounded-[56px]">
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(42,42,90,0.18)_1px,transparent_1px),linear-gradient(90deg,rgba(42,42,90,0.18)_1px,transparent_1px)] bg-[size:28px_28px] opacity-60" />
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#74b9ff] via-[#a29bfe] to-[#55efc4]" />
         <button
           type="button"
           onClick={handleHome}
-          className="absolute right-5 top-5 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-violet-200 hover:text-violet-600"
+          className="absolute right-5 top-5 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/12 bg-white/6 text-slate-200 shadow-sm transition-colors hover:bg-white/10"
           aria-label="홈으로 이동"
           title="홈"
         >
@@ -230,20 +234,20 @@ function SentenceSetupModal({
           </svg>
         </button>
 
-        <div className="border-b-2 border-slate-100 bg-slate-50/80 px-5 pb-5 pt-7 [@media(min-height:901px)]:px-8 [@media(min-height:901px)]:pb-8 [@media(min-height:901px)]:pt-12 text-center">
-          <div className="mx-auto mb-3 [@media(min-height:901px)]:mb-6 flex h-14 w-14 [@media(min-height:901px)]:h-20 [@media(min-height:901px)]:w-20 items-center justify-center rounded-[24px] [@media(min-height:901px)]:rounded-[32px] bg-violet-600 text-white shadow-xl ring-4 ring-violet-50">
+        <div className="relative border-b border-[#2a2a5a] bg-white/[0.03] px-5 pb-5 pt-7 text-center [@media(min-height:901px)]:px-8 [@media(min-height:901px)]:pb-8 [@media(min-height:901px)]:pt-12">
+          <div className="mx-auto mb-3 [@media(min-height:901px)]:mb-6 flex h-14 w-14 [@media(min-height:901px)]:h-20 [@media(min-height:901px)]:w-20 items-center justify-center rounded-[24px] [@media(min-height:901px)]:rounded-[32px] border border-white/10 bg-gradient-to-br from-[#ff6b6b] to-[#a29bfe] text-white shadow-xl">
             <span className="text-2xl [@media(min-height:901px)]:text-4xl">✨</span>
           </div>
-          <span className="mb-2 block text-[12px] font-black uppercase tracking-[0.4em] text-violet-500">
-            Sentence Magic Protocol
+          <span className="mb-2 block text-[12px] font-black uppercase tracking-[0.4em] text-violet-300">
+            Battle Roadmap Protocol
           </span>
-          <h3 className="text-2xl [@media(min-height:901px)]:text-4xl font-black tracking-tighter text-slate-900">문장 마법</h3>
+          <h3 className="text-2xl [@media(min-height:901px)]:text-4xl font-black tracking-tighter text-white">문장 마법</h3>
           <p className="mt-2 break-keep text-sm font-bold text-slate-400">
             모드와 도전 단계를 선택한 뒤 문장을 또렷하게 읽어 보세요.
           </p>
         </div>
 
-        <div className="bg-white p-5 [@media(min-height:901px)]:p-8">
+        <div className="relative p-5 [@media(min-height:901px)]:p-8">
           <div className="mb-4 [@media(min-height:901px)]:mb-8 grid gap-3 [@media(min-height:901px)]:gap-4 sm:grid-cols-2">
             {SENTENCE_MAGIC_MODES.map((item) => (
               <button
@@ -251,8 +255,8 @@ function SentenceSetupModal({
                 type="button"
                 className={`rounded-[24px] [@media(min-height:901px)]:rounded-[32px] border-2 p-4 [@media(min-height:901px)]:p-5 text-left transition-all ${
                   selectedModeId === item.id
-                    ? "border-violet-600 bg-violet-600 text-white shadow-lg"
-                    : "border-slate-300 bg-slate-50 text-slate-500 hover:border-violet-300 hover:bg-white"
+                    ? "border-violet-400 bg-violet-500/18 text-white shadow-lg"
+                    : "border-white/10 bg-white/5 text-slate-300 hover:border-violet-300 hover:bg-white/10"
                 }`}
                 onClick={() => onSelectMode(item.id)}
               >
@@ -278,8 +282,8 @@ function SentenceSetupModal({
                   type="button"
                   className={`rounded-[18px] [@media(min-height:901px)]:rounded-[22px] border-2 px-3 py-2 [@media(min-height:901px)]:px-4 [@media(min-height:901px)]:py-3 text-sm font-black transition-all ${
                     selectedThreshold === item.threshold
-                      ? "border-violet-600 bg-violet-600 text-white"
-                      : "border-slate-200 bg-white text-slate-500 hover:border-violet-300"
+                      ? "border-violet-400 bg-violet-500/18 text-white"
+                      : "border-white/10 bg-white/6 text-slate-300 hover:border-violet-300 hover:bg-white/10"
                   }`}
                   onClick={() => onSelectThreshold(item.threshold)}
                 >
@@ -291,7 +295,7 @@ function SentenceSetupModal({
 
           <button
             type="button"
-            className="flex h-14 [@media(min-height:901px)]:h-20 w-full items-center justify-center gap-3 rounded-[24px] [@media(min-height:901px)]:rounded-[28px] bg-slate-900 text-base [@media(min-height:901px)]:text-xl font-black text-white shadow-2xl shadow-slate-200 transition-transform active:scale-95"
+            className="flex h-14 [@media(min-height:901px)]:h-20 w-full items-center justify-center gap-3 rounded-[24px] [@media(min-height:901px)]:rounded-[28px] bg-gradient-to-r from-[#111d42] to-[#ff6b6b] text-base [@media(min-height:901px)]:text-xl font-black text-white shadow-2xl shadow-black/30 transition-transform active:scale-95"
             onClick={onStart}
           >
             시작하기
@@ -330,13 +334,12 @@ function SentenceBattleResultModal({
       badgeText={battleModal.type === "success" ? "Battle Success" : "Battle Fail"}
       title={battleModal.title}
       subtitle={battleModal.subtitle}
-      headerToneClass="bg-violet-50"
+      headerToneClass="bg-transparent"
       iconToneClass={battleModal.type === "success" ? "bg-gradient-to-br from-violet-500 to-indigo-600" : "bg-gradient-to-br from-violet-600 to-fuchsia-600"}
-      badgeToneClass="text-violet-600"
+      badgeToneClass="text-violet-300"
       primaryLabel={battleModal.isLast ? "단계 선택으로" : "다음으로"}
-      onPrimary={onNext}
-      secondaryLabel={battleModal.isLast ? "메인 화면으로 돌아가기" : undefined}
-      onSecondary={battleModal.isLast ? handleHome : undefined}
+      onPrimary={battleModal.isLast ? handleHome : onNext}
+      primaryButtonClass="bg-gradient-to-r from-[#111d42] to-[#6c5ce7]"
       maxWidthClass="max-w-[560px]"
     >
       {battleModal.isLast ? (
@@ -502,6 +505,19 @@ function SentenceBattleResultModal({
 }
 
 export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const roadmapStageId = Number(searchParams.get("roadmapStage") || "0");
+  const roadmapNodeId =
+    searchParams.get("roadmapNode") || searchParams.get("roadmapSection") || "";
+  const roadmapNodePayload = getGameModeNodePayload(roadmapStageId, roadmapNodeId);
+  const roadmapSentenceGameType =
+    roadmapNodePayload?.gameType === "sentence_build" ||
+    roadmapNodePayload?.gameType === "tongue_twister"
+      ? roadmapNodePayload.gameType
+      : null;
+  const roadmapSentencePayload =
+    roadmapSentenceGameType ? roadmapNodePayload.payload : null;
   const [index, setIndex] = useState(0);
   const [message, setMessage] = useState(
     "문장을 확인한 뒤 녹음을 시작해 보세요.",
@@ -512,7 +528,7 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
   const [accuracyScore, setAccuracyScore] = useState(0);
   const [playerHp, setPlayerHp] = useState(3);
   const [enemyHp, setEnemyHp] = useState(3);
-  const [showSetupModal, setShowSetupModal] = useState(true);
+  const [showSetupModal, setShowSetupModal] = useState(false);
   const [selectedModeId, setSelectedModeId] = useState<SentenceModeId>("example");
   const [selectedThreshold, setSelectedThreshold] = useState<ThresholdValue>(55);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -532,12 +548,30 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const autoStartedRef = useRef(false);
+  const roadmapClearMarkedRef = useRef(false);
+  const stageMapHref =
+    roadmapStageId >= 1
+      ? `/select-page/game-mode/stage/${roadmapStageId}`
+      : "/select-page/game-mode";
+  const stageMapReturnHref =
+    roadmapStageId >= 1
+      ? `/select-page/game-mode/stage/${roadmapStageId}?opened=1&focusNode=${encodeURIComponent(roadmapNodeId)}`
+      : "/select-page/game-mode";
+  const handleStageReturn = () => router.push(stageMapReturnHref);
 
   const mode: SentenceMode =
     SENTENCE_MAGIC_MODES.find((item) => item.id === selectedModeId) ??
     SENTENCE_MAGIC_MODES[0];
   const isExampleMode = selectedModeId === "example";
   const questions = useMemo<SentenceQuestion[]>(() => {
+    if (roadmapSentencePayload?.promptPool?.length) {
+      return roadmapSentencePayload.promptPool.map((prompt) => ({
+        prompt: `${roadmapNodePayload?.title ?? "도시"} 문장을 읽고 말해 보세요.`,
+        answer: prompt.split(" "),
+      }));
+    }
+
     if (selectedModeId !== "tongue") {
       return SENTENCE_EXAMPLE_QUESTIONS;
     }
@@ -546,13 +580,23 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
       TONGUE_TWISTER_QUESTION_GROUPS[selectedThreshold as keyof TongueTwisterQuestionGroups] ??
       TONGUE_TWISTER_QUESTIONS
     );
-  }, [selectedModeId, selectedThreshold]);
+  }, [roadmapNodePayload?.title, roadmapSentencePayload?.promptPool, selectedModeId, selectedThreshold]);
   const question = questions[index] ?? questions[0];
   const targetSentence = useMemo(
     () => question.answer.join(" "),
     [question.answer],
   );
   const battleEnded = isBattleFinished(playerHp, enemyHp);
+
+  useEffect(() => {
+    if (!battleModal || roadmapClearMarkedRef.current) return;
+    if (roadmapStageId < 1 || !roadmapNodeId) return;
+    if (battleModal.enemyHp > 0) return;
+    if (!roadmapSentenceGameType) return;
+
+    markGameModeStageCleared(roadmapStageId, roadmapNodeId, roadmapSentenceGameType);
+    roadmapClearMarkedRef.current = true;
+  }, [battleModal, roadmapNodeId, roadmapSentenceGameType, roadmapStageId]);
 
   useEffect(() => {
     setSupported(isRecordingSupported());
@@ -587,6 +631,7 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
   }
 
   function openSetup() {
+    roadmapClearMarkedRef.current = false;
     stopAudioMonitor();
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
@@ -601,8 +646,10 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
     setBattleModal(null);
     setBattleDetailsOpen(false);
     setServerError("");
-    setShowSetupModal(true);
-    setMessage("모드를 고른 뒤 시작해 보세요.");
+    setShowSetupModal(false);
+    resetBattleState();
+    resetRound(0);
+    setMessage(getRoundGuide(isExampleMode, selectedThreshold));
   }
 
   function startSelectedMode() {
@@ -611,6 +658,72 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
     resetRound(0);
     setMessage(getRoundGuide(isExampleMode, selectedThreshold));
   }
+
+  function resolveModeFromParams() {
+    const difficultyParam = String(searchParams.get("difficulty") || "Easy");
+    const forcedMode = String(searchParams.get("sentenceMode") || "");
+    if (forcedMode === "example" || forcedMode === "tongue") {
+      return {
+        modeId: forcedMode as SentenceModeId,
+        threshold:
+          forcedMode === "tongue"
+            ? difficultyParam === "Hard" || difficultyParam === "Expert"
+              ? 70
+              : difficultyParam === "Normal"
+                ? 55
+                : 40
+            : difficultyParam === "Hard" || difficultyParam === "Expert"
+              ? 70
+              : difficultyParam === "Normal"
+                ? 55
+                : 40,
+      };
+    }
+    if (roadmapSentenceGameType === "sentence_build") {
+      return { modeId: "example" as SentenceModeId, threshold: 40 as ThresholdValue };
+    }
+    if (roadmapSentenceGameType === "tongue_twister") {
+      return {
+        modeId: "tongue" as SentenceModeId,
+        threshold:
+          difficultyParam === "Hard" || difficultyParam === "Expert"
+            ? (70 as ThresholdValue)
+            : difficultyParam === "Normal"
+              ? (55 as ThresholdValue)
+              : (40 as ThresholdValue),
+      };
+    }
+    const useTongueMode =
+      difficultyParam === "Hard" || difficultyParam === "Expert";
+    const nextThreshold: ThresholdValue =
+      difficultyParam === "Hard" || difficultyParam === "Expert"
+        ? 70
+        : difficultyParam === "Normal"
+          ? 55
+          : 40;
+
+    return {
+      modeId: (useTongueMode ? "tongue" : "example") as SentenceModeId,
+      threshold: nextThreshold,
+    };
+  }
+
+  useEffect(() => {
+    if (autoStartedRef.current) return;
+
+    const resolved = resolveModeFromParams();
+    autoStartedRef.current = true;
+    setSelectedModeId(resolved.modeId);
+    setSelectedThreshold(resolved.threshold);
+    setShowSetupModal(false);
+  }, [roadmapSentenceGameType, searchParams]);
+
+  useEffect(() => {
+    if (!autoStartedRef.current || showSetupModal) return;
+    resetBattleState();
+    resetRound(0);
+    setMessage(getRoundGuide(isExampleMode, selectedThreshold));
+  }, [isExampleMode, selectedThreshold, showSetupModal]);
 
   function buildSuccessModal(nextAccuracy: number): BattleModal {
     const isLast = index === questions.length - 1;
@@ -823,17 +936,13 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
 
     if (battleModal.enemyHp <= 0) {
       openSetup();
-      resetBattleState();
-      resetRound(0);
-      setMessage("클리어. 단계 선택에서 다시 시작해 보세요.");
+      setMessage("클리어. 같은 조건으로 다시 시작합니다.");
       return;
     }
 
     if (battleModal.playerHp <= 0) {
       openSetup();
-      resetBattleState();
-      resetRound(0);
-      setMessage("패배. 단계 선택에서 다시 도전해 보세요.");
+      setMessage("패배. 같은 조건으로 다시 도전합니다.");
     }
   }
 
@@ -896,7 +1005,8 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
       badge="Game Training • Sentence"
       title="문장 마법"
       onRestart={restart}
-      onBack={onBack}
+      onBack={onBack ?? (() => router.push(stageMapHref))}
+      variant={roadmapStageId >= 1 ? "gameMode" : "default"}
       statusLabel={battleStateLabel}
       headerActions={
         isLocalDebug ? (
@@ -906,14 +1016,14 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
               className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${trainingButtonStyles.slateSoft}`}
               onClick={() => runExampleBattle(true)}
             >
-              성공 예시
+              {roadmapStageId >= 1 ? "성공 처리" : "성공 예시"}
             </button>
             <button
               type="button"
               className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${trainingButtonStyles.slateSoft}`}
               onClick={() => runExampleBattle(false)}
             >
-              실패 예시
+              {roadmapStageId >= 1 ? "실패 처리" : "실패 예시"}
             </button>
           </>
         ) : null
@@ -931,23 +1041,25 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
           />
 
           <div
-            className={`relative w-full max-w-4xl rounded-[28px] border-[3px] bg-white px-4 pb-6 pt-5 text-center shadow-2xl transition-all duration-500 sm:rounded-[36px] sm:border-[4px] sm:px-6 sm:pb-8 sm:pt-7 lg:rounded-[40px] lg:px-10 lg:pb-9 lg:pt-9 ${
-              isRecording ? "border-violet-400 shadow-violet-100" : "border-white"
+            className={`relative w-full max-w-4xl rounded-[28px] border-[2px] bg-[#0c0820]/95 px-4 pb-6 pt-5 text-center backdrop-blur-md transition-all duration-500 sm:rounded-[36px] sm:px-6 sm:pb-8 sm:pt-7 lg:rounded-[40px] lg:px-10 lg:pb-9 lg:pt-9 ${
+              isRecording
+                ? "border-violet-500/80 shadow-[0_0_40px_rgba(139,92,246,0.25)]"
+                : "border-violet-500/22 shadow-[0_0_20px_rgba(139,92,246,0.08)]"
             }`}
           >
             <div className="mb-4 flex justify-center sm:mb-6">
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-[9px] font-black uppercase tracking-[0.16em] text-slate-500 sm:px-4 sm:text-[10px] sm:tracking-widest">
-                Selected Spell: {mode.label}
+              <span className="rounded-full bg-violet-900/30 px-3 py-1 text-[9px] font-black uppercase tracking-[0.16em] text-violet-300 ring-1 ring-violet-500/30 sm:px-4 sm:text-[10px] sm:tracking-widest">
+                {roadmapStageId >= 1 ? `선택 문장 : ${mode.label}` : `Selected Spell: ${mode.label}`}
               </span>
             </div>
 
-            <div className="mb-6 min-h-[96px] text-[2rem] font-black leading-tight tracking-tight text-slate-800 break-keep sm:mb-8 sm:min-h-[120px] sm:text-4xl lg:min-h-[132px] lg:text-5xl">
+            <div className="mb-6 min-h-[96px] text-[2rem] font-black leading-tight tracking-tight text-white break-keep sm:mb-8 sm:min-h-[120px] sm:text-4xl lg:min-h-[132px] lg:text-5xl">
               {isExampleMode ? (
                 <div className="flex flex-wrap justify-center gap-2.5 sm:gap-3">
                   {shuffledWords.map((word, wordIndex) => (
                     <span
                       key={`${word}-${wordIndex}`}
-                      className="rounded-2xl border-2 border-violet-100 bg-violet-50 px-4 py-2 text-violet-600 sm:px-5"
+                      className="rounded-2xl border-2 border-violet-500/40 bg-violet-900/30 px-4 py-2 text-violet-300 sm:px-5"
                     >
                       {word}
                     </span>
@@ -965,10 +1077,10 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
                 disabled={isAnalyzing || battleEnded}
                 aria-label={isRecording ? "녹음 정지" : "녹음 시작"}
                 title={isRecording ? "녹음 정지" : "녹음 시작"}
-                className={`group relative flex h-20 w-20 items-center justify-center rounded-full shadow-[0_12px_32px_rgba(0,0,0,0.18)] transition-all active:scale-95 sm:h-24 sm:w-24 ${
+                className={`group relative flex h-20 w-20 items-center justify-center rounded-full shadow-[0_12px_32px_rgba(0,0,0,0.4)] transition-all active:scale-95 sm:h-24 sm:w-24 ${
                   isRecording
-                    ? "bg-rose-500 shadow-rose-200"
-                    : "bg-slate-900 shadow-slate-200 hover:bg-violet-600"
+                    ? "bg-rose-500 shadow-[0_0_30px_rgba(244,63,94,0.4)]"
+                    : "bg-[#1a0f3a] hover:bg-violet-700 shadow-[0_0_20px_rgba(139,92,246,0.25)] ring-1 ring-violet-500/30"
                 }`}
                 style={{ transform: `scale(${recordButtonScale})` }}
               >
@@ -981,10 +1093,16 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
               <div className="flex flex-col gap-1 text-center">
                 <span
                   className={`text-[10px] font-black uppercase tracking-[0.16em] sm:text-[11px] sm:tracking-widest ${
-                    isRecording ? "text-rose-500" : "text-slate-400"
+                    isRecording ? "text-rose-400" : "text-violet-300/60"
                   }`}
                 >
-                  {isRecording ? "Listening..." : "Tap to Spell"}
+                  {isRecording
+                    ? roadmapStageId >= 1
+                      ? "듣는 중"
+                      : "Listening..."
+                    : roadmapStageId >= 1
+                      ? "녹음 시작"
+                      : "Tap to Spell"}
                 </span>
                 <p className="mx-auto max-w-xl text-sm font-bold text-slate-400 sm:text-[0.95rem]">{message}</p>
                 <div className="mt-2 flex items-end justify-center gap-1" aria-hidden="true">
@@ -1001,18 +1119,18 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
               </div>
             </div>
 
-            <div className="mx-auto mt-6 w-full max-w-3xl rounded-[22px] border border-slate-100 bg-slate-50/80 px-4 py-4 text-left sm:mt-7 sm:rounded-[28px] sm:px-5">
+            <div className="mx-auto mt-6 w-full max-w-3xl rounded-[22px] border border-violet-500/20 bg-[#0a0818]/80 px-4 py-4 text-left sm:mt-7 sm:rounded-[28px] sm:px-5">
               <div className="mb-2 flex items-center justify-between gap-3">
-                <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 sm:text-[11px] sm:tracking-widest">
-                  Real-time Recognition
+                <span className="text-[10px] font-black uppercase tracking-[0.16em] text-violet-300/60 sm:text-[11px] sm:tracking-widest">
+                  {roadmapStageId >= 1 ? "인식된 문장" : "Real-time Recognition"}
                 </span>
                 {supported && accuracyScore > 0 ? (
-                  <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-black text-violet-600">
+                  <span className="rounded-full bg-violet-900/40 px-3 py-1 text-xs font-black text-violet-300 ring-1 ring-violet-500/40">
                     {accuracyScore}%
                   </span>
                 ) : null}
               </div>
-              <p className="min-h-[2.8rem] text-sm font-bold leading-relaxed text-slate-600 sm:text-base lg:text-lg">
+              <p className="min-h-[2.8rem] text-sm font-bold leading-relaxed text-slate-300 sm:text-base lg:text-lg">
                 {recognitionText ||
                   (isRecording
                     ? "목소리를 듣고 있습니다..."
@@ -1022,24 +1140,13 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
           </div>
 
           {(micError || serverError) ? (
-            <div className="mt-5 w-full max-w-4xl rounded-[22px] border-2 border-amber-100 bg-amber-50 px-4 py-4 shadow-sm sm:mt-6 sm:rounded-[28px] sm:px-5">
-              <span className="mb-1 block text-sm font-black text-amber-700">음성 안내</span>
-              <p className="text-sm font-medium leading-relaxed text-amber-800">
+            <div className="mt-5 w-full max-w-4xl rounded-[22px] border border-amber-500/30 bg-amber-900/20 px-4 py-4 sm:mt-6 sm:rounded-[28px] sm:px-5">
+              <span className="mb-1 block text-sm font-black text-amber-400">음성 안내</span>
+              <p className="text-sm font-medium leading-relaxed text-amber-300/80">
                 {serverError || micError}
               </p>
             </div>
           ) : null}
-
-            {showSetupModal ? (
-              <SentenceSetupModal
-                selectedModeId={selectedModeId}
-                selectedThreshold={selectedThreshold}
-                onSelectMode={setSelectedModeId}
-                onSelectThreshold={setSelectedThreshold}
-                onStart={startSelectedMode}
-                onHome={onBack}
-              />
-            ) : null}
 
             {battleModal ? (
               <SentenceBattleResultModal
@@ -1048,7 +1155,7 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
                 setBattleDetailsOpen={setBattleDetailsOpen}
                 recognitionText={recognitionText}
                 onNext={closeBattleModal}
-                onHome={onBack}
+                onHome={handleStageReturn}
               />
             ) : null}
 
@@ -1058,7 +1165,9 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
                   <span className="sentence-magic-impact-icon" aria-hidden="true">
                     <span className="sentence-magic-analyzing-badge">✨</span>
                   </span>
-                  <span className="sentence-magic-analyzing-kicker">Analyzing Spell</span>
+                  <span className="sentence-magic-analyzing-kicker">
+                    {roadmapStageId >= 1 ? "문장 분석 중" : "Analyzing Spell"}
+                  </span>
                   <h3>문장을 분석하고 있어요</h3>
                   <p>
                     인식된 문장과 목표 문장을 비교해 <br />

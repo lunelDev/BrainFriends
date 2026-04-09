@@ -234,6 +234,142 @@ Not intended use:
 - Brain Karaoke
 - 결과 리포트 및 이력 조회
 
+## Game Mode Design Direction
+
+게임 모드는 단순 미니게임 묶음이 아니라, `도시 테마 + 말소리 발달 난이도 + 게임별 payload`를 함께 설계하는 별도 훈련 레이어로 관리한다.
+
+현재 기준 게임 모드 핵심 규칙:
+
+- `stage/[stageId]` 는 반드시 단일 도시만 렌더링한다.
+- 한 도시 스테이지는 `하 / 중 / 상` 3개 구간으로 구성한다.
+- 각 구간은 5개 노드로 구성하며, 도시당 총 15개 노드를 가진다.
+- 같은 스테이지 안에 다른 도시 이름이나 단어가 섞이면 안 된다.
+- `풍선 키우기`는 기본 코어 노드가 아니라 추후 이벤트/보너스 레이어로 분리한다.
+
+예:
+
+- `stage/1 = 서울`
+- 서울 내부 노드 15개는 모두 서울 관련 장소/상징/단어만 사용
+- 인천/부산/전주 데이터가 서울 스테이지에 섞이면 안 됨
+
+### Game Mode Core Games
+
+현재 코어 게임은 아래 3개를 기준으로 레벨 payload를 설계한다.
+
+- `테트리스`
+- `말로 열기`
+- `문장 대결`
+
+각 게임은 공통 텍스트를 하드코딩하지 않고, 반드시 `stageId + nodeId` 기준 payload를 읽어야 한다.
+
+권장 selector 계약:
+
+- `getStageNodes(stageId)`
+- `getNodePayload(stageId, nodeId)`
+- `getGamePayloadForNode(stageId, nodeId, gameType)`
+
+### Speech Development References
+
+게임 모드 레벨 디자인은 아래 문서를 참고해 말소리 발달 순서를 반영한다.
+
+- `docs/모음발달순서.png`
+- `docs/자음발달순서.png`
+- `docs/발음방법 및 위치.png`
+
+현재 반영 기준:
+
+- `하`
+  - 쉬운 자음/모음 중심
+  - 자음: `ㅁ, ㄴ, ㅇ, ㅂ, ㄷ, ㄱ, ㅍ`
+  - 모음: `ㅏ, ㅓ, ㅜ, ㅣ, ㅐ`
+- `중`
+  - 중간 난이도 소리 확장
+  - 자음: `ㅈ, ㅉ, ㅊ`
+  - 모음: `ㅔ, ㅡ, ㅢ, ㅑ, ㅕ`
+- `상`
+  - 후반 고난도 소리 반영
+  - 자음: `ㄹ, ㅅ, ㅆ`
+  - 모음: `ㅛ, ㅠ, ㅘ, ㅙ, ㅞ`
+
+즉 같은 도시 테마라도,
+
+- `하`는 기본 모음 + 쉬운 파열음/비음 중심
+- `중`은 파찰음과 중간 모음 확장
+- `상`은 `ㄹ/ㅅ/ㅆ`, 복합모음, 긴 단어/문장
+
+으로 난이도를 설계한다.
+
+### Node Payload Rules
+
+각 노드는 반드시 하나의 게임 타입을 가지며, 게임별 payload shape를 분리한다.
+
+- `tetris`
+  - `wordPool`
+  - `previewWords`
+  - `clearCondition`
+- `open`
+  - `hintPool`
+  - `answerPool`
+  - `previewAnswers`
+- `battle`
+  - `promptPool`
+  - `previewPrompts`
+
+추가 권장 필드:
+
+- `speechTarget.consonants`
+- `speechTarget.vowels`
+- `speechTarget.articulation`
+- `speechTarget.reason`
+
+예:
+
+- 서울 `하-1 한강`
+  - 도시 테마: `한강 / 유람선 / 야경`
+  - 발달 목표: `ㄱ`, `ㅎ`, `ㅏ`
+  - 게임 타입: `tetris`
+- 서울 `하-2 경복궁`
+  - 도시 테마: `경복궁 / 궁궐 / 전통`
+  - 발달 목표: `ㄱ`, `ㅂ`, `ㅜ`
+  - 게임 타입: `open`
+- 서울 `상-3 표준어`
+  - 도시 테마: `표준어 / 서울 / 방송`
+  - 발달 목표: `ㅅ`, `ㄹ`
+  - 게임 타입: `battle`
+
+### Card Preview Rules
+
+메인 카드와 스테이지 노드 카드에는 아래 요소가 같이 보여야 한다.
+
+- 도시명 + 이모지
+- 도시 소개 문구
+- 도시 대표 키워드
+- 현재 노드의 게임 타입
+- 현재 노드의 발달 목표
+
+즉 카드 미리보기는 단순 지역 소개가 아니라, 아래를 동시에 전달해야 한다.
+
+- 이 도시에서 무엇을 연습하는지
+- 이 노드에서 어떤 소리를 목표로 하는지
+- 어떤 게임 방식으로 진행되는지
+
+### Implementation Notes
+
+게임 모드 데이터는 장기적으로 아래처럼 분리하는 방향을 기준으로 한다.
+
+- `city metadata`
+- `level / node structure`
+- `game payload`
+- `selectors / builders`
+
+즉 도시 정보, 게임 정보, UI 조합 로직을 한 파일에 섞지 않는다.
+
+장기 목표:
+
+- 맵이 100개 이상으로 늘어나도 유지보수 가능한 구조
+- 도시 단위 확장과 게임 단위 확장을 서로 분리
+- 카드 미리보기와 실제 인게임 payload의 source of truth 일치
+
 현재 핵심 분석 요소:
 - 음성 녹음 및 STT
 - 안면 랜드마크 추적

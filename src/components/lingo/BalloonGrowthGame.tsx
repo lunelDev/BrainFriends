@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import LingoGameShell from "@/components/lingo/LingoGameShell";
 import LingoResultModalShell from "@/components/lingo/LingoResultModalShell";
 import { BALLOON_GROWTH_DIFFICULTIES } from "@/data/balloonGrowthData";
 import { useBalloonAudioInput } from "@/lib/audio/useBalloonAudioInput";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
+import { markGameModeStageCleared } from "@/lib/gameModeProgress";
 
 type BalloonResult = {
   type: "success" | "fail";
@@ -140,14 +141,12 @@ function ResultModal({
       badgeText={badgeText}
       title={title}
       subtitle={subtitle}
-      headerToneClass={lightBg}
+      headerToneClass="bg-transparent"
       iconToneClass={themeColor}
-      badgeToneClass={textColor}
-      primaryLabel={isSuccess ? "다음 단계 도전하기" : "다시 시도하기"}
-      onPrimary={onRestart}
-      primaryButtonClass={`${themeColor} shadow-violet-100`}
-      secondaryLabel="메인 화면으로 돌아가기"
-      onSecondary={handleHome}
+      badgeToneClass="text-violet-300"
+      primaryLabel="단계 선택으로"
+      onPrimary={handleHome}
+      primaryButtonClass={`${themeColor} shadow-black/30`}
       footerNote={`Session Report Index: ${Date.now().toString().slice(-6)}`}
       maxWidthClass="max-w-[480px]"
     >
@@ -203,12 +202,14 @@ function SelectionModal({
   const handleBack = onBack ?? (() => router.push("/select-page/game-mode"));
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center overflow-y-auto bg-slate-900/80 p-4 backdrop-blur-md sm:p-6">
-      <div className="relative my-auto w-full max-w-[520px] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[36px] border-4 border-white bg-white shadow-[0_24px_60px_rgba(0,0,0,0.32)] ring-1 ring-slate-300 transition-all sm:rounded-[56px] sm:border-[6px] sm:shadow-[0_32px_80px_rgba(0,0,0,0.4)]">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center overflow-y-auto bg-[#05050c]/90 p-4 backdrop-blur-xl sm:p-6">
+      <div className="relative my-auto w-full max-w-[520px] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[36px] border border-[#2a2a5a] bg-[#111120] text-white shadow-[0_32px_80px_rgba(0,0,0,0.55)] transition-all sm:rounded-[56px]">
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(42,42,90,0.18)_1px,transparent_1px),linear-gradient(90deg,rgba(42,42,90,0.18)_1px,transparent_1px)] bg-[size:28px_28px] opacity-60" />
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#74b9ff] via-[#a29bfe] to-[#55efc4]" />
         <button
           type="button"
           onClick={handleBack}
-          className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-violet-200 hover:text-violet-600 sm:right-5 sm:top-5"
+          className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/12 bg-white/6 text-slate-200 shadow-sm transition-colors hover:bg-white/10 sm:right-5 sm:top-5"
           aria-label="홈으로 이동"
           title="홈"
         >
@@ -228,8 +229,8 @@ function SelectionModal({
             <path d="M10 21v-5h4v5" />
           </svg>
         </button>
-        <div className="border-b-2 border-slate-200 bg-slate-50/80 px-5 pb-5 pt-7 text-center sm:px-8 sm:pb-8 sm:pt-12 [@media(max-height:900px)]:px-5 [@media(max-height:900px)]:pb-5 [@media(max-height:900px)]:pt-7">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-[18px] bg-violet-600 text-white shadow-[0_12px_30px_rgba(124,58,237,0.3)] ring-4 ring-violet-50 sm:mb-5 sm:h-16 sm:w-16 sm:rounded-[24px] [@media(min-height:901px)]:mb-5 [@media(min-height:901px)]:h-16 [@media(min-height:901px)]:w-16 [@media(min-height:901px)]:rounded-[24px]">
+        <div className="relative border-b border-[#2a2a5a] bg-white/[0.03] px-5 pb-5 pt-7 text-center sm:px-8 sm:pb-8 sm:pt-12 [@media(max-height:900px)]:px-5 [@media(max-height:900px)]:pb-5 [@media(max-height:900px)]:pt-7">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-[18px] border border-white/10 bg-gradient-to-br from-[#a29bfe] to-[#ff6b6b] text-white shadow-[0_12px_30px_rgba(124,58,237,0.3)] sm:mb-5 sm:h-16 sm:w-16 sm:rounded-[24px] [@media(min-height:901px)]:mb-5 [@media(min-height:901px)]:h-16 [@media(min-height:901px)]:w-16 [@media(min-height:901px)]:rounded-[24px]">
             <svg
               width="30"
               height="30"
@@ -245,32 +246,32 @@ function SelectionModal({
               <circle cx="12" cy="9" r="3" />
             </svg>
           </div>
-          <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.28em] text-violet-500 sm:text-[12px] sm:tracking-[0.4em]">
-            Rehab Protocol
+          <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.28em] text-violet-300 sm:text-[12px] sm:tracking-[0.4em]">
+            Roadmap Voice Protocol
           </span>
-          <h3 className="text-xl font-black tracking-tighter text-slate-900 sm:text-[1.9rem] [@media(min-height:901px)]:text-[1.9rem]">
+          <h3 className="text-xl font-black tracking-tighter text-white sm:text-[1.9rem] [@media(min-height:901px)]:text-[1.9rem]">
             훈련 단계 설정
           </h3>
         </div>
 
-        <div className="space-y-2 bg-white p-3 sm:space-y-3 sm:p-5 [@media(min-height:901px)]:space-y-4 [@media(min-height:901px)]:p-6">
+        <div className="relative space-y-2 p-3 sm:space-y-3 sm:p-5 [@media(min-height:901px)]:space-y-4 [@media(min-height:901px)]:p-6">
           {difficulties.map((item, index) => (
             <button
               key={item.id}
               type="button"
-              className="group relative flex w-full items-center gap-3 rounded-[18px] border-2 border-slate-300 bg-slate-50/70 p-3 text-left transition-all hover:border-violet-500 hover:bg-white hover:shadow-[0_20px_40px_rgba(124,58,237,0.1)] active:scale-[0.97] sm:gap-4 sm:rounded-[24px] sm:p-4 [@media(min-height:901px)]:gap-6 [@media(min-height:901px)]:rounded-[28px] [@media(min-height:901px)]:p-5"
+              className="group relative flex w-full items-center gap-3 rounded-[18px] border-2 border-white/10 bg-white/5 p-3 text-left transition-all hover:border-violet-400 hover:bg-white/10 hover:shadow-[0_20px_40px_rgba(0,0,0,0.2)] active:scale-[0.97] sm:gap-4 sm:rounded-[24px] sm:p-4 [@media(min-height:901px)]:gap-6 [@media(min-height:901px)]:rounded-[28px] [@media(min-height:901px)]:p-5"
               onClick={() => onSelect(item)}
             >
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-white text-base font-black text-slate-800 shadow-sm ring-1 ring-slate-300 transition-all group-hover:bg-violet-600 group-hover:text-white group-hover:ring-violet-600 sm:h-14 sm:w-14 sm:rounded-[22px] sm:text-lg">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] border border-white/10 bg-[#090914] text-base font-black text-white shadow-sm transition-all group-hover:bg-violet-600 group-hover:text-white group-hover:ring-violet-600 sm:h-14 sm:w-14 sm:rounded-[22px] sm:text-lg">
                 {index + 1}
               </div>
 
               <div className="min-w-0 flex-1">
                 <div className="mb-1 flex items-start justify-between gap-2 sm:items-center sm:gap-3">
-                  <strong className="text-base font-black text-slate-900 transition-colors group-hover:text-violet-600 sm:text-xl">
+                  <strong className="text-base font-black text-white transition-colors group-hover:text-violet-200 sm:text-xl">
                     {item.label}
                   </strong>
-                  <span className="shrink-0 rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-black text-violet-700 ring-1 ring-violet-200 sm:px-3 sm:text-[11px]">
+                  <span className="shrink-0 rounded-full bg-violet-500/14 px-2.5 py-1 text-[10px] font-black text-violet-100 ring-1 ring-violet-400/25 sm:px-3 sm:text-[11px]">
                     {item.stage.durationSec}s
                   </span>
                 </div>
@@ -325,6 +326,7 @@ function SelectionModal({
 }
 
 export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
+  const searchParams = useSearchParams();
   const { volume, isMicReady, error, start, stop } = useBalloonAudioInput();
   const [isAdminAccount, setIsAdminAccount] = useState(false);
   const [phase, setPhase] = useState<"select" | "playing" | "success" | "fail">(
@@ -339,6 +341,18 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
   const [result, setResult] = useState<BalloonResult | null>(null);
   const [testVoiceBoost, setTestVoiceBoost] = useState(false);
   const [waveDisplayLevel, setWaveDisplayLevel] = useState(0);
+  const roadmapStageId = Number(searchParams.get("roadmapStage") || "0");
+  const roadmapNodeId =
+    searchParams.get("roadmapNode") || searchParams.get("roadmapSection") || "";
+  const stageMapHref =
+    roadmapStageId >= 1
+      ? `/select-page/game-mode/stage/${roadmapStageId}`
+      : "/select-page/game-mode";
+  const stageMapReturnHref =
+    roadmapStageId >= 1
+      ? `/select-page/game-mode/stage/${roadmapStageId}?opened=1&focusNode=${encodeURIComponent(roadmapNodeId)}`
+      : "/select-page/game-mode";
+  const handleStageReturn = onBack ?? (() => router.push(stageMapReturnHref));
 
   const balloonSizeRef = useRef(18);
   const timeLeftRef = useRef(0);
@@ -358,6 +372,7 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
   const guideRecognitionRef = useRef<BalloonSpeechRecognitionInstance | null>(null);
   const guideRecognitionShouldResumeRef = useRef(false);
   const guideBoostUntilRef = useRef(0);
+  const autoStartedRef = useRef(false);
 
   const difficulty = selectedDifficulty ?? BALLOON_GROWTH_DIFFICULTIES[0];
   const stage = difficulty.stage;
@@ -767,19 +782,38 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
     setPhase("playing");
   }
 
+  function resolveDifficultyFromParams() {
+    const difficultyParam = String(searchParams.get("difficulty") || "Easy");
+    const difficultyId =
+      difficultyParam === "Hard" || difficultyParam === "Expert"
+        ? "advanced"
+        : difficultyParam === "Normal"
+          ? "intermediate"
+          : "beginner";
+
+    return (
+      BALLOON_GROWTH_DIFFICULTIES.find((item) => item.id === difficultyId) ??
+      BALLOON_GROWTH_DIFFICULTIES[0]
+    );
+  }
+
+  useEffect(() => {
+    if (autoStartedRef.current) return;
+
+    autoStartedRef.current = true;
+    void handleStart(resolveDifficultyFromParams());
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (phase !== "success") return;
+    if (roadmapStageId < 1 || !roadmapNodeId) return;
+    markGameModeStageCleared(roadmapStageId, roadmapNodeId, "balloon");
+  }, [phase, roadmapNodeId, roadmapStageId]);
+
   function handleRestart() {
     stop();
-    setPhase("select");
-    setSelectedDifficulty(null);
-    setBalloonSize(18);
-    setTimeLeft(0);
-    setDangerRatio(0);
-    setResult(null);
-    setMessage("단계를 고른 뒤 풍선을 키워 보세요.");
-    endTimeRef.current = null;
-    previousVolumeRef.current = 0;
-    toneHoldMsRef.current = 0;
-    guideBoostUntilRef.current = 0;
+    autoStartedRef.current = false;
+    void handleStart(selectedDifficulty ?? resolveDifficultyFromParams());
   }
 
   return (
@@ -788,6 +822,7 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
       title="풍선 키우기"
       onRestart={handleRestart}
       onBack={onBack}
+      variant={roadmapStageId >= 1 ? "gameMode" : "default"}
       headerActions={
         isAdminAccount ? (
           <button
@@ -809,39 +844,43 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
       <div className="vt-layout vt-layout-playing tetris-layout-no-left">
         <section className="balloon-game-container relative flex h-full w-full flex-1 flex-col gap-3 px-0 py-4 sm:gap-5 sm:px-0 sm:py-5">
           <div className="grid grid-cols-3 items-center gap-2 sm:grid-cols-[104px_minmax(0,1fr)_104px] sm:gap-3 lg:grid-cols-[120px_minmax(0,1fr)_120px] lg:gap-4 xl:grid-cols-[140px_minmax(0,1fr)_140px]">
-            <div className="min-w-0 rounded-[20px] border border-slate-100 bg-white/92 px-2 py-2 text-center shadow-sm backdrop-blur sm:rounded-[24px] sm:px-3 sm:py-2.5 lg:rounded-[28px] lg:px-4 lg:py-3">
-              <span className="block text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+            <div className="min-w-0 rounded-[20px] border border-violet-500/20 bg-[#0c0820]/88 px-2 py-2 text-center backdrop-blur-md sm:rounded-[24px] sm:px-3 sm:py-2.5 lg:rounded-[28px] lg:px-4 lg:py-3">
+              <span className="block text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300/60">
                 Time
               </span>
-              <strong className="text-lg font-black text-slate-700 sm:text-xl lg:text-2xl xl:text-3xl">
+              <strong className="text-lg font-black text-white sm:text-xl lg:text-2xl xl:text-3xl">
                 {Math.ceil(timeLeft)}s
               </strong>
             </div>
-            <div className="min-w-0 rounded-[20px] border border-slate-100 bg-white/92 px-3 py-2.5 shadow-sm backdrop-blur sm:rounded-[24px] sm:px-4 sm:py-3 lg:rounded-[28px] lg:px-5 lg:py-4">
-              <div className="flex items-center justify-between gap-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+            <div className="min-w-0 rounded-[20px] border border-violet-500/20 bg-[#0c0820]/88 px-3 py-2.5 backdrop-blur-md sm:rounded-[24px] sm:px-4 sm:py-3 lg:rounded-[28px] lg:px-5 lg:py-4">
+              <div className="flex items-center justify-between gap-3 text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300/60">
                 <span>Progress</span>
                 <span>{Math.round(targetProgress)}%</span>
               </div>
-              <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-100 sm:mt-2.5 sm:h-3 lg:mt-3 lg:h-3.5">
+              <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-violet-900/30 sm:mt-2.5 sm:h-3 lg:mt-3 lg:h-3.5">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-violet-400 via-violet-500 to-indigo-500 transition-all duration-300"
+                  className="h-full rounded-full bg-gradient-to-r from-violet-500 via-violet-400 to-sky-400 transition-all duration-300"
                   style={{ width: `${targetProgress}%` }}
                 />
               </div>
             </div>
-            <div className="min-w-0 rounded-[20px] border border-slate-100 bg-white/92 px-2 py-2 text-center shadow-sm backdrop-blur sm:rounded-[24px] sm:px-3 sm:py-2.5 lg:rounded-[28px] lg:px-4 lg:py-3">
-              <span className="block text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+            <div className="min-w-0 rounded-[20px] border border-violet-500/20 bg-[#0c0820]/88 px-2 py-2 text-center backdrop-blur-md sm:rounded-[24px] sm:px-3 sm:py-2.5 lg:rounded-[28px] lg:px-4 lg:py-3">
+              <span className="block text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300/60">
                 Level
               </span>
-              <strong className="text-lg font-black text-slate-700 sm:text-xl lg:text-2xl xl:text-3xl">
+              <strong className="text-lg font-black text-white sm:text-xl lg:text-2xl xl:text-3xl">
                 {difficulty.label}
               </strong>
             </div>
           </div>
 
           <div
-            className={`relative grid min-h-[500px] flex-1 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[28px] border border-violet-100 bg-gradient-to-b from-violet-50 to-white shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_24px_60px_rgba(148,163,184,0.14)] sm:min-h-[520px] sm:rounded-[36px] lg:min-h-[620px] lg:rounded-[44px] xl:min-h-[760px] ${
-              isDanger ? "from-rose-50 to-white" : isOptimal ? "from-violet-50 to-indigo-50" : ""
+            className={`relative grid min-h-[500px] flex-1 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[28px] border sm:min-h-[520px] sm:rounded-[36px] lg:min-h-[620px] lg:rounded-[44px] xl:min-h-[760px] ${
+              isDanger
+                ? "border-rose-500/25 bg-gradient-to-b from-[#1a0810] to-[#090914] shadow-[0_0_60px_rgba(244,63,94,0.08)]"
+                : isOptimal
+                  ? "border-violet-500/25 bg-gradient-to-b from-[#0f0a1e] to-[#090914] shadow-[0_0_60px_rgba(139,92,246,0.10)]"
+                  : "border-violet-500/20 bg-gradient-to-b from-[#0d0a1c] to-[#090914] shadow-[0_0_40px_rgba(139,92,246,0.06)]"
             }`}
           >
             <span className="balloon-cloud balloon-cloud-a" />
@@ -860,7 +899,7 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
               </span>
               <p
                 className={`mx-auto mt-2 min-h-[48px] max-w-[260px] text-sm font-semibold leading-6 sm:mt-3 sm:min-h-[54px] sm:max-w-xl sm:text-[15px] lg:mt-4 lg:min-h-[60px] lg:max-w-3xl lg:text-base xl:text-lg ${
-                  isDanger ? "text-rose-600" : "text-slate-600"
+                  isDanger ? "text-rose-400" : "text-slate-400"
                 }`}
               >
                 {progressDescription}
@@ -886,9 +925,8 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
                   />
                   {isDanger ? <div className="balloon-game-warning">위험!</div> : null}
                 </div>
-                <div className="relative flex min-h-[60px] items-center justify-center rounded-[999px] border border-violet-100/80 bg-white/80 px-4 py-3 shadow-[0_12px_24px_rgba(148,163,184,0.12)] backdrop-blur sm:min-h-[64px] sm:px-5 lg:min-h-[70px] lg:px-6">
-                  <span className="pointer-events-none absolute inset-x-4 inset-y-2 rounded-[999px] bg-gradient-to-r from-violet-50 via-white to-sky-50 opacity-90" />
-                  <span className="pointer-events-none absolute inset-x-5 bottom-2 h-px bg-gradient-to-r from-transparent via-violet-200/70 to-transparent" />
+                <div className="relative flex min-h-[60px] items-center justify-center rounded-[999px] border border-violet-500/25 bg-[#0c0820]/80 px-4 py-3 backdrop-blur-md sm:min-h-[64px] sm:px-5 lg:min-h-[70px] lg:px-6">
+                  <span className="pointer-events-none absolute inset-x-4 inset-y-2 rounded-[999px] bg-gradient-to-r from-violet-900/30 via-transparent to-sky-900/20 opacity-80" />
                   <div className="relative flex items-center justify-center gap-3 sm:gap-4">
                     <div className="flex items-end justify-center gap-1.5 sm:gap-2">
                       {voiceWaveBars.map((barHeight, index) => (
@@ -897,24 +935,24 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
                           className={`relative w-1.5 rounded-full transition-all duration-100 sm:w-2 ${
                             phase === "playing" && waveDisplayLevel >= 8
                               ? isDanger
-                                ? "bg-gradient-to-t from-rose-500 via-rose-400 to-rose-200 shadow-[0_0_10px_rgba(244,63,94,0.35)]"
-                                : "bg-gradient-to-t from-violet-500 via-violet-400 to-sky-300 shadow-[0_0_10px_rgba(129,140,248,0.28)]"
-                              : "bg-slate-200"
+                                ? "bg-gradient-to-t from-rose-500 via-rose-400 to-rose-300 shadow-[0_0_10px_rgba(244,63,94,0.5)]"
+                                : "bg-gradient-to-t from-violet-600 via-violet-400 to-sky-300 shadow-[0_0_10px_rgba(139,92,246,0.5)]"
+                              : "bg-violet-900/40"
                           }`}
                           style={{ height: `${barHeight}px` }}
                           aria-hidden="true"
                         >
-                          <span className="absolute inset-x-0 top-0 h-[35%] rounded-full bg-white/45" />
+                          <span className="absolute inset-x-0 top-0 h-[35%] rounded-full bg-white/20" />
                         </span>
                       ))}
                     </div>
                     <div className="flex min-w-[48px] flex-col items-end text-right">
-                      <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-300">
+                      <span className="text-[9px] font-black uppercase tracking-[0.18em] text-violet-300/60">
                         input
                       </span>
-                      <span className={`text-sm font-black ${isDanger ? "text-rose-500" : "text-slate-500"}`}>
+                      <span className={`text-sm font-black ${isDanger ? "text-rose-400" : "text-violet-200"}`}>
                         {Math.round(effectiveVolume)}
-                        <span className="ml-1 text-[10px] font-semibold text-slate-300">dB</span>
+                        <span className="ml-1 text-[10px] font-semibold text-violet-300/50">dB</span>
                       </span>
                     </div>
                   </div>
@@ -922,17 +960,17 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
               </div>
 
               <div className="flex h-full min-h-[280px] items-center justify-center">
-                <div className="flex w-full max-w-[320px] flex-col items-center justify-center rounded-[32px] border border-violet-100/80 bg-white/78 px-6 py-8 text-center shadow-[0_18px_40px_rgba(148,163,184,0.14)] backdrop-blur-xl sm:rounded-[36px] sm:px-8 sm:py-10">
-                  <span className="rounded-full bg-violet-100 px-4 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-violet-700">
+                <div className="flex w-full max-w-[320px] flex-col items-center justify-center rounded-[32px] border border-violet-500/25 bg-[#0c0820]/90 px-6 py-8 text-center backdrop-blur-xl sm:rounded-[36px] sm:px-8 sm:py-10 [box-shadow:0_0_40px_rgba(139,92,246,0.10)]">
+                  <span className="rounded-full bg-violet-900/40 px-4 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-violet-300 ring-1 ring-violet-500/30">
                     단모음 가이드
                   </span>
-                  <div className="mt-6 rounded-[28px] bg-gradient-to-br from-violet-500 to-indigo-600 px-10 py-8 text-white shadow-lg shadow-violet-200 sm:px-12 sm:py-10">
+                  <div className="mt-6 rounded-[28px] bg-gradient-to-br from-violet-600 to-indigo-700 px-10 py-8 text-white shadow-lg shadow-violet-900/50 sm:px-12 sm:py-10 [box-shadow:0_0_30px_rgba(139,92,246,0.35)]">
                     <span className="text-7xl font-black sm:text-8xl">{vowelGuide.vowel}</span>
                   </div>
-                  <p className="mt-5 text-base font-black text-slate-800 sm:text-lg">
+                  <p className="mt-5 text-base font-black text-white sm:text-lg">
                     {vowelGuide.vowel} 발성 느낌으로 유지해 보세요
                   </p>
-                  <p className="mt-2 text-sm font-semibold leading-6 text-slate-500 sm:text-[15px]">
+                  <p className="mt-2 text-sm font-semibold leading-6 text-violet-300/70 sm:text-[15px]">
                     {vowelGuide.label}
                   </p>
                 </div>
@@ -941,24 +979,16 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
 
           </div>
           {error ? (
-            <p className="rounded-[20px] border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600 sm:rounded-[24px]">
+            <p className="rounded-[20px] border border-rose-500/30 bg-rose-900/20 px-4 py-3 text-sm font-semibold text-rose-400 sm:rounded-[24px]">
               {error}
             </p>
-          ) : null}
-
-          {phase === "select" ? (
-            <SelectionModal
-              difficulties={BALLOON_GROWTH_DIFFICULTIES}
-              onSelect={(item) => void handleStart(item)}
-              onBack={onBack}
-            />
           ) : null}
 
           {(phase === "success" || phase === "fail") && result ? (
             <ResultModal
               result={result}
               onRestart={handleRestart}
-              onHome={onBack}
+              onHome={handleStageReturn}
               currentProgress={targetProgress}
             />
           ) : null}
