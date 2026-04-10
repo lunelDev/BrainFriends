@@ -11,7 +11,12 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import LingoGameShell from "@/components/lingo/LingoGameShell";
-import { getGameModeNodePayload } from "@/constants/gameModeStagePayloads";
+import {
+  getGameModeNodePayload,
+  getGameModeWordHunterStageMission,
+  type GameModeWordHunterCategory,
+  type GameModeWordHunterCategoryKey,
+} from "@/constants/gameModeStagePayloads";
 import { useAudioAnalyzer } from "@/lib/audio/useAudioAnalyzer";
 import {
   registerMediaStream,
@@ -287,7 +292,7 @@ function levenshtein(a: string, b: string) {
 type MemoryDifficultyId = "easy" | "normal" | "hard";
 type MemoryCard = {
   word: string;
-  category: string;
+  category: GameModeWordHunterCategoryKey;
   visual: string;
   displayIndex: number;
   revealed: boolean;
@@ -339,27 +344,138 @@ function matchesCardWord(text: string, word: string) {
   });
 }
 
+function getCategoryAliases(categoryKey: GameModeWordHunterCategoryKey) {
+  switch (categoryKey) {
+    case "festival_culture":
+      return ["축제", "문화", "행사", "공연"];
+    case "dialect":
+      return ["방언", "사투리", "표현", "말투"];
+    case "landmark":
+      return ["명소", "관광지", "장소", "랜드마크"];
+    case "food_specialty":
+      return ["음식", "특산물", "먹거리", "요리"];
+    default:
+      return [];
+  }
+}
+
+function resolveSpokenCategoryKey(
+  text: string,
+  categories: GameModeWordHunterCategory[],
+) {
+  const normalizedText = normalizeCategoryText(text);
+  const compactText = normalizedText.replace(/\s+/g, "");
+  if (!compactText) return null;
+
+  for (const category of categories) {
+    const aliases = [
+      CATEGORY_SHORT_LABELS[category.key],
+      category.label,
+      ...getCategoryAliases(category.key),
+    ];
+    const matched = aliases.some((alias) => {
+      const normalizedAlias = normalizeCategoryText(alias).replace(/\s+/g, "");
+      if (!normalizedAlias) return false;
+      return (
+        compactText === normalizedAlias ||
+        compactText.includes(normalizedAlias) ||
+        normalizedAlias.includes(compactText) ||
+        (Math.abs(compactText.length - normalizedAlias.length) <= 1 &&
+          levenshtein(compactText, normalizedAlias) <= 1)
+      );
+    });
+    if (matched) return category.key;
+  }
+
+  return null;
+}
+
 function buildRecognition() {
   if (typeof window === "undefined") return null;
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
 
-const ROADMAP_MEMORY_CATEGORY = {
-  id: "roadmap",
-  label: "핵심어",
-  color: "#a78bfa",
+const CATEGORY_VISUALS: Record<GameModeWordHunterCategoryKey, string> = {
+  festival_culture: "🎉",
+  dialect: "🗣️",
+  landmark: "🗺️",
+  food_specialty: "🍲",
 };
 
-function buildRoadmapDeck(words: string[]): MemoryCard[] {
-  const uniqueWords = [...new Set(words)].filter(Boolean).slice(0, 8);
+const CATEGORY_SHORT_LABELS: Record<GameModeWordHunterCategoryKey, string> = {
+  festival_culture: "축제",
+  dialect: "방언",
+  landmark: "명소",
+  food_specialty: "음식",
+};
+
+const FALLBACK_WORD_HUNTER_CATEGORIES: GameModeWordHunterCategory[] = [
+  {
+    key: "festival_culture",
+    label: "축제/문화",
+    missionText: "축제나 문화 단어만 말하세요.",
+    words: ["축제", "문화", "행사", "공연", "체험"],
+  },
+  {
+    key: "dialect",
+    label: "사투리/방언",
+    missionText: "지역 표현만 말하세요.",
+    words: ["사투리", "방언", "표현", "말투", "억양"],
+  },
+  {
+    key: "landmark",
+    label: "관광지/명소",
+    missionText: "명소 단어만 말하세요.",
+    words: ["명소", "관광지", "거리", "공원", "광장"],
+  },
+  {
+    key: "food_specialty",
+    label: "음식/특산물",
+    missionText: "음식과 특산물만 말하세요.",
+    words: ["음식", "특산물", "먹거리", "간식", "요리"],
+  },
+];
+
+function getCardCountForDifficulty(difficulty: MemoryDifficultyId) {
+  switch (difficulty) {
+    case "easy":
+      return 6;
+    case "hard":
+      return 12;
+    case "normal":
+    default:
+      return 9;
+  }
+}
+
+function getClearTarget(totalCount: number, difficulty: MemoryDifficultyId) {
+  const ratio = difficulty === "easy" ? 0.6 : difficulty === "hard" ? 0.75 : 0.7;
+  return Math.max(3, Math.ceil(totalCount * ratio));
+}
+
+function buildWordHunterDeck(
+  categories: GameModeWordHunterCategory[],
+  cardCount: number,
+): MemoryCard[] {
+  const entries = categories.flatMap((category) =>
+    category.words.slice(0, 5).map((word) => ({
+      word,
+      category: category.key,
+      visual: CATEGORY_VISUALS[category.key],
+    })),
+  );
+  const uniqueWords = [...new Map(entries.map((entry) => [entry.word, entry])).values()].slice(
+    0,
+    cardCount,
+  );
   const randomizedDisplayOrder = shuffle(
     Array.from({ length: uniqueWords.length }, (_, index) => index),
   );
 
-  return uniqueWords.map((word, index) => ({
-    word,
-    category: ROADMAP_MEMORY_CATEGORY.id,
-    visual: "📍",
+  return uniqueWords.map((entry, index) => ({
+    word: entry.word,
+    category: entry.category,
+    visual: entry.visual,
     displayIndex: randomizedDisplayOrder[index],
     revealed: false,
     solved: false,
@@ -451,7 +567,7 @@ function ResultModal({
       icon="🏆"
       badgeText="훈련 완료"
       title="훈련 완료 리포트"
-      subtitle="분류 훈련을 성공적으로 마쳤습니다."
+      subtitle="단어 먹기 미션을 성공적으로 마쳤습니다."
       headerToneClass="bg-transparent"
       iconToneClass="bg-gradient-to-br from-[#00cec9] to-[#6c5ce7]"
       badgeToneClass="text-violet-300"
@@ -512,13 +628,11 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   const roadmapNodeId =
     searchParams.get("roadmapNode") || searchParams.get("roadmapSection") || "";
   const roadmapNodePayload = getGameModeNodePayload(roadmapStageId, roadmapNodeId);
-  const roadmapMemoryPayload =
-    roadmapNodePayload?.gameType === "memory" ? roadmapNodePayload.payload : null;
-  const activeMemoryPayload = roadmapMemoryPayload ?? {
-    previewAnswers: ["핵심어"],
-    hintPool: ["로드맵 노드 데이터가 없습니다. 스테이지에서 다시 진입해 주세요."],
-    answerPool: ["핵심어"],
-  };
+  const roadmapWordHunterMission = getGameModeWordHunterStageMission(roadmapStageId);
+  const activeWordHunterCategories =
+    roadmapWordHunterMission?.categories?.length
+      ? roadmapWordHunterMission.categories
+      : FALLBACK_WORD_HUNTER_CATEGORIES;
   const {
     volume,
     isMicReady,
@@ -529,12 +643,12 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
 
   const [difficulty, setDifficulty] = useState<MemoryDifficultyId>("normal");
   const [cards, setCards] = useState<MemoryCard[]>(() =>
-    buildRoadmapDeck(activeMemoryPayload.answerPool),
+    buildWordHunterDeck(activeWordHunterCategories, getCardCountForDifficulty("normal")),
   );
   const [targetWord, setTargetWord] = useState<string | null>(null);
   const [heardText, setHeardText] = useState("");
   const [message, setMessage] = useState(
-    "한 번 마이크를 켜면 계속 듣습니다. 카드에 맞는 핵심어를 또렷하게 말해 보세요.",
+    "미션 카테고리를 확인한 뒤, 현재 단어가 맞으면 빠르게 말해 주세요.",
   );
   const [score, setScore] = useState(0);
   const [solvedCount, setSolvedCount] = useState(0);
@@ -548,7 +662,11 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   );
   const [wrongByCategory, setWrongByCategory] = useState<
     Record<string, number>
-  >({ [ROADMAP_MEMORY_CATEGORY.id]: 0 });
+  >(() =>
+    Object.fromEntries(
+      activeWordHunterCategories.map((category) => [category.key, 0]),
+    ),
+  );
   const [isListening, setIsListening] = useState(false);
   const [micEnabled, setMicEnabled] = useState(false);
   const [supported, setSupported] = useState(true);
@@ -591,7 +709,6 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
       ? `/select-page/game-mode/stage/${roadmapStageId}?opened=1&focusNode=${encodeURIComponent(roadmapNodeId)}`
       : "/select-page/game-mode";
   const handleStageReturn = () => router.push(stageMapReturnHref);
-
   useEffect(() => {
     successStreakRef.current = successStreak;
   }, [successStreak]);
@@ -754,6 +871,11 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
       remaining.find((card) => card.word === targetWord) ?? remaining[0] ?? null
     );
   }, [cards, targetWord]);
+  const activeTargetCategory =
+    activeWordHunterCategories.find((category) => category.key === currentCard?.category) ??
+    activeWordHunterCategories[0];
+  const activeTargetCategoryLabel =
+    CATEGORY_SHORT_LABELS[activeTargetCategory.key] ?? activeTargetCategory.label;
 
   useEffect(() => {
     cardsRef.current = cards;
@@ -774,7 +896,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
 
   useEffect(() => {
     if (!currentCard) {
-      setMessage("모든 카드를 분류했어요.");
+      setMessage("이번 단어 먹기 미션을 완료했어요.");
       setSessionFinishedAt((value) => value ?? Date.now());
     }
   }, [currentCard]);
@@ -799,7 +921,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   useEffect(() => {
     if (!currentCard) return;
     setHeardText("");
-    setMessage("지금 카드와 맞는 핵심어를 말하세요.");
+    setMessage("현재 단어가 어떤 분류인지 보고 카테고리 이름을 말해 주세요.");
     ignoreSpeechUntilRef.current = Date.now() + 1200;
     const unlockTimer = window.setTimeout(() => {
       transitionLockRef.current = false;
@@ -903,15 +1025,15 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     setTargetWord(getNextTargetWord(nextCards, currentWord));
   }
 
-  function revealCategory(targetWord: string, correct: boolean) {
+  function revealCategory(targetWord: string, result: "success" | "fail" | "skip") {
     const nextCards = cardsRef.current.map((card) => {
       if (card.word === targetWord) {
         return {
           ...card,
-          revealed: true,
-          solved: correct,
+          revealed: result !== "skip",
+          solved: result === "success",
           completed: true,
-          result: correct ? "success" : "fail",
+          result: result === "skip" ? "pending" : result,
         };
       }
       return card;
@@ -938,6 +1060,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     transitionLockRef.current = true;
     ignoreSpeechUntilRef.current = Date.now() + 900;
     handledTargetRef.current = `done-${activeCard.word}`;
+    setHeardText("");
     setAttemptCount((value) => value + 1);
     setWrongCount((value) => value + 1);
     setScore((value) => Math.max(0, value - 2));
@@ -947,11 +1070,10 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     }));
     setSuccessStreak(0);
     setFailStreak((value) => Math.min(6, value + 1));
-    setHeardText("");
-    revealCategory(activeCard.word, false);
-    setMessage("시간 초과예요. 오답으로 표시하고 다음 그림으로 넘어갑니다.");
+    revealCategory(activeCard.word, "fail");
+    setMessage(`시간 초과예요. "${activeCard.word}"는 ${activeTargetCategoryLabel} 분류입니다.`);
     triggerFeedback("fail");
-  }, []);
+  }, [activeTargetCategoryLabel]);
 
   function handleSpeechResult(transcript: string) {
     const activeCard = currentCardRef.current;
@@ -964,25 +1086,35 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
       return;
     setHeardText(transcript);
 
-    const matchedByWord = matchesCardWord(transcript, activeCard.word);
+    const spokenCategoryKey = resolveSpokenCategoryKey(
+      transcript,
+      activeWordHunterCategories,
+    );
+    if (!spokenCategoryKey) return;
+
+    transitionLockRef.current = true;
+    ignoreSpeechUntilRef.current = Date.now() + 900;
+    handledTargetRef.current = `done-${activeCard.word}`;
     setAttemptCount((value) => value + 1);
 
-    if (matchedByWord) {
-      transitionLockRef.current = true;
-      ignoreSpeechUntilRef.current = Date.now() + 900;
-      handledTargetRef.current = `done-${activeCard.word}`;
-      setHeardText("");
-      revealCategory(activeCard.word, true);
+    if (spokenCategoryKey === activeCard.category) {
+      revealCategory(activeCard.word, "success");
       triggerFeedback("success");
       setScore((value) => value + 15);
       setSolvedCount((value) => value + 1);
       setSuccessStreak((value) => value + 1);
       setFailStreak(0);
-      setMessage(`정답이에요. "${activeCard.word}" 인식 성공`);
+      setMessage(`정답이에요. "${activeCard.word}"는 ${activeTargetCategoryLabel} 분류입니다.`);
       return;
     }
 
-    setScore((value) => Math.max(0, value - 2));
+    const spokenCategoryLabel =
+      CATEGORY_SHORT_LABELS[spokenCategoryKey] ??
+      activeWordHunterCategories.find((category) => category.key === spokenCategoryKey)?.label ??
+      "다른 분류";
+    revealCategory(activeCard.word, "fail");
+    triggerFeedback("fail");
+    setScore((value) => Math.max(0, value - 3));
     setWrongCount((value) => value + 1);
     setWrongByCategory((value) => ({
       ...value,
@@ -990,13 +1122,9 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     }));
     setSuccessStreak(0);
     setFailStreak((value) => Math.min(6, value + 1));
-    transitionLockRef.current = true;
-    ignoreSpeechUntilRef.current = Date.now() + 900;
-    handledTargetRef.current = `done-${activeCard.word}`;
-    setHeardText("");
-    revealCategory(activeCard.word, false);
-    setMessage(`오답이에요. "${activeCard.word}" 를 다시 떠올려 보세요.`);
-    triggerFeedback("fail");
+    setMessage(
+      `오답이에요. "${activeCard.word}"는 ${spokenCategoryLabel}이 아니라 ${activeTargetCategoryLabel} 분류입니다.`,
+    );
   }
 
   function runSpeechTestInput(transcript: string) {
@@ -1021,13 +1149,13 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     setHeardText("");
 
     if (result === "success") {
-      revealCategory(activeCard.word, true);
+      revealCategory(activeCard.word, "success");
       triggerFeedback("success");
       setScore((value) => value + 15);
       setSolvedCount((value) => value + 1);
       setSuccessStreak((value) => value + 1);
       setFailStreak(0);
-      setMessage(`정답이에요. "${activeCard.word}" 카드가 열렸습니다.`);
+      setMessage(`정답이에요. "${activeCard.word}"를 맞혔습니다.`);
       return;
     }
 
@@ -1035,14 +1163,13 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     setWrongCount((value) => value + 1);
     setWrongByCategory((value) => ({
       ...value,
-      [ROADMAP_MEMORY_CATEGORY.id]:
-        (value[ROADMAP_MEMORY_CATEGORY.id] ?? 0) + 1,
+      [activeCard.category]: (value[activeCard.category] ?? 0) + 1,
     }));
     setSuccessStreak(0);
     setFailStreak((value) => Math.min(6, value + 1));
-    revealCategory(activeCard.word, false);
+    revealCategory(activeCard.word, "fail");
     triggerFeedback("fail");
-    setMessage(`오답이에요. "${activeCard.word}" 를 다시 떠올려 보세요.`);
+    setMessage(`오답이에요. "${activeCard.word}"의 분류를 다시 골라 주세요.`);
   }
 
   useEffect(() => {
@@ -1081,7 +1208,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     recognition.onstart = () => {
       setIsListening(true);
       setMicEnabled(true);
-      setMessage("듣는 중이에요. 카드에 맞는 핵심어를 말해 보세요.");
+      setMessage(`현재 단어를 보고 분류를 말해 주세요. 예: ${CATEGORY_SHORT_LABELS[activeWordHunterCategories[0].key]}`);
     };
 
     recognition.onresult = (event: any) => {
@@ -1093,16 +1220,13 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
 
         setHeardText(transcript);
 
-        if (
-          currentCardRef.current &&
-          matchesCardWord(transcript, currentCardRef.current.word)
-        ) {
+        if (resolveSpokenCategoryKey(transcript, activeWordHunterCategories)) {
           handleSpeechResult(transcript);
           return;
         }
 
         if (result?.isFinal) {
-          setMessage("카드의 핵심어를 또박또박 말해 주세요.");
+          setMessage("분류 이름만 또박또박 말해 주세요. 예: 축제, 방언, 명소, 음식");
         }
       }
     };
@@ -1127,7 +1251,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
 
     recognitionRef.current = recognition;
     recognition.start();
-  }, [supported]);
+  }, [activeWordHunterCategories, supported]);
 
   useEffect(() => {
     if (!currentCard || !keepListeningRef.current) return;
@@ -1204,11 +1328,14 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
 
   async function startGameForDifficulty(startDifficulty = difficulty) {
     roadmapClearMarkedRef.current = false;
-    const nextCards = buildRoadmapDeck(activeMemoryPayload.answerPool);
+    const nextCards = buildWordHunterDeck(
+      activeWordHunterCategories,
+      getCardCountForDifficulty(startDifficulty),
+    );
     setCards(nextCards);
     setTargetWord(nextCards.find((card) => !card.completed)?.word ?? null);
     setHeardText("");
-    setMessage("한 번 마이크를 켜면 계속 듣습니다. 카드에 맞는 핵심어를 말해 보세요.");
+    setMessage("현재 단어를 보고 분류 이름을 말해 주세요.");
     setScore(0);
     setSolvedCount(0);
     setAttemptCount(0);
@@ -1217,7 +1344,11 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     setFailStreak(0);
     setSessionStartedAt(Date.now());
     setSessionFinishedAt(null);
-    setWrongByCategory({ [ROADMAP_MEMORY_CATEGORY.id]: 0 });
+    setWrongByCategory(
+      Object.fromEntries(
+        activeWordHunterCategories.map((category) => [category.key, 0]),
+      ),
+    );
     setFeedbackState("idle");
     setTimeLeft(getRoundTimeLimit(startDifficulty));
     keepListeningRef.current = true;
@@ -1292,6 +1423,20 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   );
   const accuracy =
     attemptCount > 0 ? Math.round((solvedCount / attemptCount) * 100) : 0;
+  const feedbackLabel =
+    feedbackState === "success"
+      ? "정답"
+      : feedbackState === "fail"
+        ? "오답"
+        : null;
+  const feedbackHint =
+    feedbackState === "success"
+      ? "말한 분류가 현재 단어와 맞습니다."
+      : feedbackState === "fail"
+        ? "말한 분류가 현재 단어와 맞지 않습니다."
+        : isMicReady && micEnabled
+          ? "현재 단어를 보고 분류 이름을 말하면 판정합니다."
+          : "세션이 시작되면 자동으로 음성을 듣습니다.";
   const showReport = !currentCard;
   const roadmapClearMarkedRef = useRef(false);
   const elapsedTime =
@@ -1303,7 +1448,9 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   )[0];
   const mostConfusedLabel =
     mostConfusedCategory && mostConfusedCategory[1] > 0
-      ? ROADMAP_MEMORY_CATEGORY.label
+      ? activeWordHunterCategories.find(
+          (category) => category.key === mostConfusedCategory[0],
+        )?.label ?? "없음"
       : "없음";
   const cardGridLayout = (() => {
     if (cards.length === 6) return { rows: 2, columns: 3 };
@@ -1321,17 +1468,17 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
     if (!showReport || roadmapClearMarkedRef.current) return;
     if (roadmapStageId < 1 || !roadmapNodeId) return;
 
-    const clearTarget = Math.max(3, Math.ceil(cards.length * 0.7));
+    const clearTarget = getClearTarget(cards.length, difficulty);
     if (solvedCount < clearTarget) return;
 
     markGameModeStageCleared(roadmapStageId, roadmapNodeId, "memory");
     roadmapClearMarkedRef.current = true;
-  }, [cards.length, roadmapNodeId, roadmapStageId, showReport, solvedCount]);
+  }, [cards.length, difficulty, roadmapNodeId, roadmapStageId, showReport, solvedCount]);
 
   return (
     <LingoGameShell
-      badge="Game Mode • Memory"
-      title="말로 열기"
+      badge="Game Mode • Word Hunter"
+      title="단어 먹기"
       onRestart={restart}
       onBack={onBack ?? (() => router.push(stageMapHref))}
       variant="gameMode"
@@ -1381,7 +1528,7 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
                           <div className="mb-6 flex items-center justify-between">
                             <div className="flex items-center gap-3">
                               <span className="rounded-full bg-violet-600 px-4 py-1.5 text-[11px] font-black uppercase tracking-widest text-white shadow-lg shadow-violet-900/50 [box-shadow:0_0_16px_rgba(139,92,246,0.4)]">
-                                도시 핵심어
+                                단어 먹기
                               </span>
                               <span className="text-sm font-black text-violet-300/60">
                                 {`레벨 ${roadmapStageId || 1}`}
@@ -1444,95 +1591,99 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
                             </div>
                           ) : null}
 
-                          <div className="grid items-stretch gap-6 lg:grid-cols-[1fr_280px] lg:gap-8">
-                            <div className="flex min-w-0 flex-col items-center justify-center text-center">
-                              <div className="mb-5 w-full rounded-[28px] border border-violet-500/20 bg-[#0a0818]/80 px-5 py-4 sm:px-6 sm:py-5">
-                                <div className="mb-3 text-sm font-black uppercase tracking-[0.24em] text-violet-300/60 sm:text-[15px]">
-                                  말해야 하는 단어
-                                </div>
-                                <div className="flex items-center justify-center">
-                                  <div className="flex min-w-[240px] items-center justify-center rounded-full border-2 border-violet-400/50 bg-violet-500/20 px-6 py-3 text-2xl font-black tracking-tight text-white shadow-[0_0_20px_rgba(139,92,246,0.18)]">
-                                    {currentCard?.word ?? "핵심어"}
+                          <div className="grid items-stretch gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-8">
+                            <div className="flex min-w-0 flex-col gap-4">
+                              <div className="rounded-[28px] border border-violet-500/20 bg-[#0a0818]/80 px-5 py-5 sm:px-6">
+                                <div className="mb-4 flex items-center justify-between gap-3">
+                                  <div>
+                                    <div className="text-xs font-black uppercase tracking-[0.24em] text-violet-300/60">
+                                      분류 게임
+                                    </div>
+                                    <p className="mt-2 text-lg font-black text-white sm:text-xl">
+                                      현재 단어를 보고 `축제`, `방언`, `명소`, `음식` 중 하나를 말하세요.
+                                    </p>
+                                  </div>
+                                  <div className="rounded-full border border-violet-400/35 bg-violet-500/12 px-4 py-2 text-[11px] font-black text-violet-200">
+                                    4개 분류 중 선택
                                   </div>
                                 </div>
-                              </div>
-
-                              <div
-                                className={`mb-5 flex w-full items-center gap-3 rounded-[24px] border px-5 py-4 text-left transition-all ${
-                                  micEnabled
-                                    ? "border-violet-500/40 bg-violet-900/20"
-                                    : "border-violet-500/15 bg-[#0a0818]/60"
-                                }`}
-                              >
-                                <span
-                                  className={`h-3 w-3 shrink-0 rounded-full ${
-                                    micEnabled
-                                      ? "animate-pulse bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.6)]"
-                                      : "bg-violet-900/60"
-                                  }`}
-                                />
-                                <div className="min-w-0">
-                                  <div
-                                    className={`text-xs font-black uppercase tracking-[0.18em] ${
-                                      micEnabled
-                                        ? "text-violet-300"
-                                        : "text-violet-300/50"
-                                    }`}
-                                  >
-                                    {micEnabled
-                                      ? "핵심어 듣기 활성화"
-                                      : "듣기 대기"}
-                                  </div>
-                                  <p
-                                    className={`mt-1 text-sm font-bold ${
-                                      micEnabled
-                                        ? "text-slate-300"
-                                        : "text-slate-500"
-                                    }`}
-                                  >
-                                    {micEnabled
-                                      ? "지금 카드에 맞는 핵심어를 말하세요."
-                                      : "마이크 연결 후 자동으로 듣기를 시작합니다."}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="group relative mb-6 flex aspect-square w-56 items-center justify-center rounded-[40px] border-2 border-violet-500/25 bg-[#0c0820]/90 sm:w-64 sm:rounded-[48px]">
-                                <div className="absolute inset-0 rounded-[48px] bg-gradient-to-b from-violet-500/5 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
-                                <span className="relative z-10 select-none text-[150px] drop-shadow-2xl">
-                                  {currentCard.visual}
-                                </span>
-                              </div>
-                              <h2 className="mb-2 text-3xl font-black tracking-tighter text-white sm:text-4xl">
-                                알맞은 핵심어를 말해보세요
-                              </h2>
-                              <p className="text-base font-bold text-slate-300 sm:text-lg">
-                                {activeMemoryPayload.hintPool?.[0] ?? "카드에 맞는 핵심어를 말해 보세요."}
-                              </p>
-                              <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
-                                <span
-                                  className={`h-2.5 w-2.5 rounded-full ${
-                                  isMicReady && micEnabled
-                                    ? "animate-pulse bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.45)]"
-                                    : "bg-slate-300"
-                                  }`}
-                                />
-                                <span
-                                  className={`text-xs font-black uppercase tracking-[0.18em] ${
-                                    isMicReady && micEnabled ? "text-rose-500" : "text-slate-400"
+                                <div
+                                  className={`flex min-h-[172px] items-center justify-center rounded-[28px] border-2 px-6 py-6 text-center transition-all duration-300 ${
+                                    feedbackState === "success"
+                                      ? "border-emerald-400/70 bg-emerald-500/18 shadow-[0_0_28px_rgba(52,211,153,0.22)]"
+                                      : feedbackState === "fail"
+                                        ? "border-rose-400/70 bg-rose-500/18 shadow-[0_0_28px_rgba(244,63,94,0.20)]"
+                                        : "border-violet-400/50 bg-violet-500/20 shadow-[0_0_20px_rgba(139,92,246,0.18)]"
                                   }`}
                                 >
-                                  {isMicReady && micEnabled ? "녹음 중" : "녹음 대기"}
-                                </span>
+                                  <div>
+                                    <div className="mb-2 text-[11px] font-black uppercase tracking-[0.18em] text-violet-200/70">
+                                      제시어
+                                    </div>
+                                    <div className="text-5xl font-black tracking-tight text-white sm:text-6xl">
+                                      {currentCard?.word ?? "단어"}
+                                    </div>
+                                    {feedbackLabel ? (
+                                      <div
+                                        className={`mt-4 inline-flex items-center rounded-full px-4 py-2 text-sm font-black ${
+                                          feedbackState === "success"
+                                            ? "bg-emerald-500 text-white"
+                                            : "bg-rose-500 text-white"
+                                        }`}
+                                      >
+                                        {feedbackLabel === "정답" ? "맞았어요" : "틀렸어요"}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                                  {activeWordHunterCategories.map((category) => {
+                                    const isCorrectCategory =
+                                      category.key === activeTargetCategory.key;
+                                    const showCorrectCategory =
+                                      feedbackState !== "idle" && isCorrectCategory;
+                                    return (
+                                      <div
+                                        key={category.key}
+                                        className={`rounded-[22px] border px-4 py-4 text-center transition-all ${
+                                          showCorrectCategory
+                                            ? "border-emerald-400/60 bg-emerald-500/18 shadow-[0_0_18px_rgba(52,211,153,0.16)]"
+                                            : "border-violet-500/20 bg-[#131022]/80"
+                                        }`}
+                                      >
+                                        <div
+                                          className={`text-[10px] font-black uppercase tracking-[0.18em] ${
+                                            showCorrectCategory
+                                              ? "text-emerald-200/85"
+                                              : "text-violet-300/45"
+                                          }`}
+                                        >
+                                          분류
+                                        </div>
+                                        <div
+                                          className={`mt-2 text-xl font-black ${
+                                            showCorrectCategory ? "text-white" : "text-slate-200"
+                                          }`}
+                                        >
+                                          {CATEGORY_SHORT_LABELS[category.key]}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               </div>
                             </div>
 
                             <div className="flex h-full min-h-0 flex-col gap-4">
                               <div
                                 className={`rounded-[24px] px-5 py-4 text-left shadow-xl transition-all sm:rounded-[28px] sm:px-6 sm:py-5 ${
-                                  isMicReady && micEnabled
-                                    ? "bg-slate-900 ring-2 ring-violet-400/30"
-                                    : "bg-slate-800"
+                                  feedbackState === "success"
+                                    ? "bg-emerald-950/80 ring-2 ring-emerald-400/35"
+                                    : feedbackState === "fail"
+                                      ? "bg-rose-950/75 ring-2 ring-rose-400/35"
+                                      : isMicReady && micEnabled
+                                        ? "bg-slate-900 ring-2 ring-violet-400/30"
+                                        : "bg-slate-800"
                                 }`}
                               >
                                 <div className="mb-1 text-[10px] font-black uppercase tracking-widest text-violet-400">
@@ -1541,14 +1692,25 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
                               <p className="truncate text-lg font-black text-white sm:text-xl">
                                 {heardText ||
                                   (isMicReady && micEnabled
-                                      ? "지금 핵심어를 말해 주세요..."
+                                      ? "지금 단어를 말해 주세요..."
                                       : "마이크 대기 중")}
+                              </p>
+                              <div className="mt-3 flex items-center justify-between gap-3">
+                                <p className="text-xs font-bold text-slate-300">
+                                  {feedbackHint}
                                 </p>
-                                <p className="mt-2 text-xs font-bold text-slate-300">
-                                  {isMicReady && micEnabled
-                                    ? "정답을 말하면 바로 다음 카드로 넘어갑니다."
-                                    : "세션이 시작되면 자동으로 음성을 듣습니다."}
-                                </p>
+                                <div
+                                  className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${
+                                    feedbackState === "success"
+                                      ? "bg-emerald-500 text-white"
+                                      : feedbackState === "fail"
+                                        ? "bg-rose-500 text-white"
+                                        : "bg-violet-500/20 text-violet-200"
+                                  }`}
+                                >
+                                  판정: {feedbackLabel ?? "대기"}
+                                </div>
+                              </div>
                               </div>
 
                               <div className="flex flex-1 flex-col rounded-[32px] border-2 border-slate-100 bg-slate-50/50 p-5 shadow-inner sm:rounded-[40px] sm:p-6">
@@ -1576,10 +1738,10 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
                                     return (
                                       <div
                                         key={i}
-                                        className={`flex aspect-square items-center justify-center rounded-2xl border-2 p-2 text-center transition-all duration-700 ${
+                                        className={`flex min-h-[72px] items-center justify-center rounded-2xl border-2 p-2 text-center transition-all duration-700 ${
                                           isSuccess
                                             ? "border-violet-400 bg-violet-600 text-white shadow-lg shadow-violet-100"
-                                            : isFail
+                                          : isFail
                                               ? "border-rose-300 bg-rose-500 text-white shadow-lg shadow-rose-100"
                                               : "border-white bg-white text-slate-200"
                                         }`}

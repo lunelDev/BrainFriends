@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { WORDS_BY_LEVEL } from "@/data/tetrisWords";
-import { getGameModeNodePayload } from "@/constants/gameModeStagePayloads";
+import {
+  getGameModeNodePayload,
+  type GameModeTetrisNodePayload,
+} from "@/constants/gameModeStagePayloads";
 import { useAudioAnalyzer } from "@/lib/audio/useAudioAnalyzer";
 import {
   registerMediaStream,
@@ -15,10 +18,10 @@ import {
   loadPreferredAudioInputId,
   savePreferredAudioInputId,
 } from "@/lib/media/audioPreferences";
-import MonitoringPanelShell from "@/components/training/MonitoringPanelShell";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import LingoResultModalShell from "@/components/lingo/LingoResultModalShell";
 import { markGameModeStageCleared } from "@/lib/gameModeProgress";
+import { playLingoSuccessSound } from "@/lib/audio/playLingoSuccessSound";
 
 // ─── 블록 상수 ─────────────────────────────────────────────────────────────────
 const BLOCK_COLORS = [
@@ -79,6 +82,11 @@ const ROWS = 20;
 const COLS = 10;
 const BLOCK_SIZE = 24;
 const MATCH_COOLDOWN_MS = 450;
+const WORD_DROP_CARD_HEIGHT = 44;
+const WORD_DROP_CARD_GAP = 6;
+const WORD_DROP_MAX_ACTIVE = 4;
+const WORD_DROP_STACK_LIMIT = 6;
+const WORD_DROP_SPAWN_INTERVAL_MS = 2400;
 
 // ─── 코스튬 티어 ───────────────────────────────────────────────────────────────
 const COSTUME_TIERS = [
@@ -135,6 +143,22 @@ type WordFlowEntry = {
   word: string;
   status: WordChipState;
 };
+type FallingWord = {
+  id: number;
+  text: string;
+  y: number;
+  speed: number;
+};
+type WordBurstParticle = {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  color: string;
+};
 type ActionFeedback = {
   id: number;
   type: "success" | "fail";
@@ -146,6 +170,8 @@ type GameResult = {
   averageScore: number;
   successCount: number;
   failCount: number;
+  survived: boolean;
+  durationSeconds: number;
 };
 type SpeechRecognitionAlternativeLike = {
   transcript: string;
@@ -640,6 +666,13 @@ function getDropInterval(level: number) {
   return 1000;
 }
 
+function getLevelSurvivalDuration(level: number) {
+  if (level <= 3) return 25;
+  if (level <= 6) return 32;
+  if (level <= 8) return 40;
+  return 48;
+}
+
 function createPiece(level: number): Piece {
   const shape = HANGUL_SHAPES[Math.floor(Math.random() * HANGUL_SHAPES.length)];
   const width = shape[0]?.length ?? 1;
@@ -897,6 +930,57 @@ function getSpeechScore(transcript: string, targetWord: string) {
   return best;
 }
 
+function findDirectSpeechMatch(transcript: string, fallingWords: FallingWord[]) {
+  const normalizedTranscript = normalizeText(transcript);
+  if (!normalizedTranscript) return null;
+
+  const directMatches = fallingWords
+    .map((entry) => {
+      const normalizedWord = normalizeText(entry.text);
+      if (!normalizedWord) return null;
+
+      const isExact =
+        normalizedTranscript === normalizedWord ||
+        normalizedTranscript.includes(normalizedWord);
+      const isContained =
+        normalizedWord.length >= 2 && normalizedWord.includes(normalizedTranscript);
+
+      if (!isExact && !isContained) return null;
+
+      return {
+        entry,
+        threshold: getPassThreshold(entry.text),
+        normalizedLength: normalizedWord.length,
+      };
+    })
+    .filter(Boolean) as Array<{
+    entry: FallingWord;
+    threshold: number;
+    normalizedLength: number;
+  }>;
+
+  if (!directMatches.length) return null;
+
+  directMatches.sort(
+    (a, b) => b.entry.y - a.entry.y || b.normalizedLength - a.normalizedLength,
+  );
+
+  return {
+    entry: directMatches[0].entry,
+    score: 100,
+    threshold: directMatches[0].threshold,
+  };
+}
+
+function removeMatchedFallingWords(fallingWords: FallingWord[], matchedWord: string) {
+  const normalizedMatchedWord = normalizeText(matchedWord);
+  if (!normalizedMatchedWord) return fallingWords;
+
+  return fallingWords.filter(
+    (entry) => normalizeText(entry.text) !== normalizedMatchedWord,
+  );
+}
+
 function getDisplayTranscript(transcript: string) {
   return transcript
     .replace(/[^가-힣a-zA-Z0-9\s]/g, " ")
@@ -1047,14 +1131,19 @@ function GameResultModal({
   result: GameResult;
   onHome: () => void;
 }) {
-  const successRate = Math.round((result.successCount / 10) * 100);
+  const totalAttempts = Math.max(1, result.successCount + result.failCount);
+  const successRate = Math.round((result.successCount / totalAttempts) * 100);
 
   return (
     <LingoResultModalShell
       icon="🏆"
-      badgeText="Training Complete"
-      title="훈련 완료 리포트"
-      subtitle="안면 신경과 언어 기능을 성공적으로 자극했습니다!"
+      badgeText={result.survived ? "Training Complete" : "Training Result"}
+      title={result.survived ? "생존 성공 리포트" : "훈련 결과 리포트"}
+      subtitle={
+        result.survived
+          ? "제한 시간 동안 단어를 버텨내며 스테이지를 클리어했습니다."
+          : "쌓인 단어가 한계에 도달해 훈련이 종료되었습니다."
+      }
       headerToneClass="bg-transparent"
       iconToneClass="bg-gradient-to-br from-[#74b9ff] to-[#4ecdc4]"
       badgeToneClass="text-violet-300"
@@ -1071,9 +1160,9 @@ function GameResultModal({
           </div>
           <div className="rounded-[32px] border border-slate-100 bg-slate-50 p-6 text-center">
             <span className="mb-2 block text-[11px] font-black uppercase text-slate-400">
-              Avg Accuracy
+              Survival Time
             </span>
-            <strong className="text-4xl font-black text-slate-900">{result.averageScore}점</strong>
+            <strong className="text-4xl font-black text-slate-900">{result.durationSeconds}s</strong>
           </div>
         </div>
 
@@ -1104,7 +1193,9 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     searchParams.get("roadmapNode") || searchParams.get("roadmapSection") || "";
   const roadmapNodePayload = getGameModeNodePayload(roadmapStageId, roadmapNodeId);
   const customTetrisWordPool =
-    roadmapNodePayload?.gameType === "tetris" ? roadmapNodePayload.payload.wordPool : null;
+    roadmapNodePayload?.gameType === "tetris"
+      ? (roadmapNodePayload.payload as GameModeTetrisNodePayload).wordPool
+      : null;
   const isLocalDebug =
     process.env.NODE_ENV !== "production" ||
     process.env.NEXT_PUBLIC_DEV_MODE === "true";
@@ -1122,10 +1213,18 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const boardRef = useRef<Board>(makeBoard());
   const pieceRef = useRef<Piece | null>(null);
+  const fallingWordsRef = useRef<FallingWord[]>([]);
+  const stackedWordsRef = useRef<string[]>([]);
+  const burstParticlesRef = useRef<WordBurstParticle[]>([]);
   const runningRef = useRef(false);
   const animRef = useRef<number | null>(null);
   const lastTimeRef = useRef(0);
   const dropCounterRef = useRef(0);
+  const spawnCounterRef = useRef(0);
+  const nextFallingWordIdRef = useRef(1);
+  const nextBurstParticleIdRef = useRef(1);
+  const survivalTimeLeftRef = useRef(0);
+  const spawnWordIdxRef = useRef(0);
   const levelRef = useRef(1);
   const wordsClearedRef = useRef(0);
   const wordIdxRef = useRef(0);
@@ -1168,6 +1267,8 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   const [fallProgress, setFallProgress] = useState(0);
   const [dropTimeLeftMs, setDropTimeLeftMs] = useState(0);
   const [dropTimeTotalMs, setDropTimeTotalMs] = useState(0);
+  const [activeWords, setActiveWords] = useState<string[]>([]);
+  const [survivalTimeLeftMs, setSurvivalTimeLeftMs] = useState(0);
   const [totalAccuracy, setTotalAccuracy] = useState(0);
   const [failCount, setFailCount] = useState(0);
   const [failStreak, setFailStreak] = useState(0);
@@ -1233,7 +1334,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   useEffect(() => {
     if (!gameResult || roadmapClearMarkedRef.current) return;
     if (roadmapStageId < 1 || !roadmapNodeId) return;
-    if (gameResult.successCount < 6) return;
+    if (!gameResult.survived) return;
 
     markGameModeStageCleared(roadmapStageId, roadmapNodeId, "tetris");
     roadmapClearMarkedRef.current = true;
@@ -1248,45 +1349,92 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     }
   }, []);
 
-  const setActiveWord = useCallback((word: string) => {
-    currentWordRef.current = word;
-    setCurrentWord(word);
-    const segments = splitTargetIntoSegments(word);
-    targetSegmentsRef.current = segments;
+  const syncVisibleWords = useCallback((words: string[]) => {
+    const visible = words.slice(0, WORD_DROP_MAX_ACTIVE);
+    setActiveWords(visible);
+    const lead = visible[0] ?? "";
+    currentWordRef.current = lead;
+    setCurrentWord(lead);
+    targetSegmentsRef.current = lead ? [lead] : [];
     segmentIdxRef.current = 0;
     setSegmentIndex(0);
-    setSegmentCount(segments.length);
-    currentSegmentRef.current = segments[0] ?? word;
-    setCurrentSegment(currentSegmentRef.current);
-    setPassThreshold(getPassThreshold(currentSegmentRef.current));
-    setHeardText("");
-    setTotalAccuracy(0);
-    recognitionCooldownRef.current = Date.now() + 450;
+    setSegmentCount(lead ? 1 : 0);
+    currentSegmentRef.current = lead;
+    setCurrentSegment(lead);
+    setPassThreshold(getPassThreshold(lead));
   }, []);
 
   const syncDropTiming = useCallback(() => {
-    const piece = pieceRef.current;
-    if (!piece) {
+    const fallingWords = fallingWordsRef.current;
+    if (!fallingWords.length) {
       setFallProgress(0);
       setDropTimeLeftMs(0);
       setDropTimeTotalMs(0);
       return;
     }
 
-    const interval = getDropInterval(levelRef.current);
-    const remainingSteps = getDropStepsUntilCollision(boardRef.current, piece);
-    const toNextStep = Math.max(0, interval - dropCounterRef.current);
-    const totalMs = interval * Math.max(1, remainingSteps + 1);
-    const remainingMs = remainingSteps > 0 ? toNextStep + (remainingSteps - 1) * interval : toNextStep;
-    const safeRemainingMs = Math.max(0, remainingMs);
+    const canvasHeight = ROWS * BLOCK_SIZE;
+    const stackHeight =
+      stackedWordsRef.current.length * (WORD_DROP_CARD_HEIGHT + WORD_DROP_CARD_GAP);
+    const dangerY =
+      canvasHeight -
+      stackHeight -
+      WORD_DROP_CARD_HEIGHT -
+      16;
+    const nearestWord = [...fallingWords].sort((a, b) => b.y - a.y)[0];
+    const remainingPx = Math.max(0, dangerY - nearestWord.y);
+    const totalPx = Math.max(1, dangerY + WORD_DROP_CARD_HEIGHT);
+    const remainingMs = Math.round((remainingPx / Math.max(1, nearestWord.speed)) * 1000);
+    const totalMs = Math.round((totalPx / Math.max(1, nearestWord.speed)) * 1000);
 
     setDropTimeTotalMs(totalMs);
-    setDropTimeLeftMs(safeRemainingMs);
+    setDropTimeLeftMs(remainingMs);
     setFallProgress(
       totalMs > 0
-        ? Math.max(0, Math.min(100, Math.round((safeRemainingMs / totalMs) * 100)))
+        ? Math.max(0, Math.min(100, Math.round((remainingMs / totalMs) * 100)))
         : 0,
     );
+  }, []);
+
+  const spawnFallingWord = useCallback(() => {
+    const nextWord = getRoadmapAwareWord(levelRef.current, spawnWordIdxRef.current);
+    if (!nextWord) return;
+
+    spawnWordIdxRef.current += 1;
+    const nextEntry: FallingWord = {
+      id: nextFallingWordIdRef.current++,
+      text: nextWord,
+      y: -WORD_DROP_CARD_HEIGHT,
+      speed: 30 + levelRef.current * 2,
+    };
+
+    fallingWordsRef.current = [...fallingWordsRef.current, nextEntry];
+    syncVisibleWords(fallingWordsRef.current.map((entry) => entry.text));
+    syncDropTiming();
+  }, [getRoadmapAwareWord, syncDropTiming, syncVisibleWords]);
+
+  const spawnWordBurst = useCallback((word: FallingWord) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const centerX = canvas.width / 2;
+    const centerY = word.y + WORD_DROP_CARD_HEIGHT / 2;
+    const colors = ["#a78bfa", "#f472b6", "#22d3ee", "#fbbf24"];
+    const particles: WordBurstParticle[] = Array.from({ length: 14 }, (_, index) => {
+      const angle = (Math.PI * 2 * index) / 14;
+      const speed = 40 + Math.random() * 55;
+      return {
+        id: nextBurstParticleIdRef.current++,
+        x: centerX,
+        y: centerY,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 10,
+        life: 0.38 + Math.random() * 0.18,
+        maxLife: 0.38 + Math.random() * 0.18,
+        color: colors[index % colors.length],
+      };
+    });
+    burstParticlesRef.current = [...burstParticlesRef.current, ...particles];
+    playLingoSuccessSound();
   }, []);
 
   const buildRecognition = useCallback(() => {
@@ -1551,16 +1699,51 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     stopCamera();
   }, [stopAudioMonitor, stopCamera, stopSpeechCapture]);
 
+  const finishGame = useCallback(
+    (survived: boolean) => {
+      runningRef.current = false;
+      setGameStarted(false);
+      stopSessionDevices();
+
+      const fullDuration = getLevelSurvivalDuration(levelRef.current);
+      const remainingSeconds = Math.max(
+        0,
+        Math.ceil(survivalTimeLeftRef.current / 1000),
+      );
+      const durationSeconds = survived
+        ? fullDuration
+        : Math.max(0, fullDuration - remainingSeconds);
+
+      setGameResult({
+        clearedWords: wordsClearedRef.current,
+        level: levelRef.current,
+        averageScore: totalAccuracy,
+        successCount: wordsClearedRef.current,
+        failCount: failCountRef.current,
+        survived,
+        durationSeconds,
+      });
+    },
+    [stopSessionDevices, totalAccuracy],
+  );
+
   const goToNextWord = useCallback(() => {
-    wordIdxRef.current = (wordIdxRef.current + 1) % 10;
-    setActiveWord(getRoadmapAwareWord(levelRef.current, wordIdxRef.current));
-  }, [getRoadmapAwareWord, setActiveWord]);
+    if (fallingWordsRef.current.length < Math.max(2, WORD_DROP_MAX_ACTIVE - 1)) {
+      spawnFallingWord();
+    } else {
+      syncVisibleWords(fallingWordsRef.current.map((entry) => entry.text));
+      syncDropTiming();
+    }
+  }, [spawnFallingWord, syncDropTiming, syncVisibleWords]);
 
   const applyDangerPenalty = useCallback(() => {
-    const failedIndex = wordIdxRef.current % 10;
-    const nextProgress = wordsClearedRef.current + 1;
-    wordsClearedRef.current = nextProgress;
-    setWordsCleared(nextProgress);
+    const target = [...fallingWordsRef.current].sort((a, b) => b.y - a.y)[0];
+    if (!target) return;
+
+    fallingWordsRef.current = fallingWordsRef.current.filter((entry) => entry.id !== target.id);
+    stackedWordsRef.current = [...stackedWordsRef.current, target.text];
+
+    const failedIndex = Math.min(9, wordsClearedRef.current + failCountRef.current);
     failCountRef.current += 1;
     setFailCount(failCountRef.current);
     failStreakRef.current += 1;
@@ -1573,7 +1756,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     setWordFlowEntries((prev) => {
       const updated = [...prev];
       updated[failedIndex] = {
-        word: currentWordRef.current || currentSegmentRef.current || `단어 ${failedIndex + 1}`,
+        word: target.text || `단어 ${failedIndex + 1}`,
         status: "fail",
       };
       return updated;
@@ -1585,30 +1768,20 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
       label: "Fail",
     });
 
-    if (nextProgress >= 10) {
-      runningRef.current = false;
-      setGameStarted(false);
-      stopSessionDevices();
-      setGameResult({
-        clearedWords: nextProgress,
-        level: levelRef.current,
-        averageScore: totalAccuracy,
-        successCount: nextProgress - failCountRef.current,
-        failCount: failCountRef.current,
-      });
+    syncVisibleWords(fallingWordsRef.current.map((entry) => entry.text));
+    syncDropTiming();
+
+    if (stackedWordsRef.current.length >= WORD_DROP_STACK_LIMIT) {
+      finishGame(false);
       return;
     }
 
-    boardRef.current = raiseGarbageRow(boardRef.current);
     goToNextWord();
-    pieceRef.current = createPiece(levelRef.current);
-    dropCounterRef.current = 0;
-    syncDropTiming();
 
     setTimeout(() => {
       setActionFeedback(null);
-    }, 1600);
-  }, [goToNextWord, stopSessionDevices, syncDropTiming, totalAccuracy]);
+    }, 1200);
+  }, [finishGame, goToNextWord, syncDropTiming]);
 
   // ─── Canvas 그리기 ────────────────────────────────────────────────────────
   const draw = useCallback(() => {
@@ -1620,130 +1793,132 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     ctx.fillStyle = "#020617";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    boardRef.current.forEach((row, y) => {
-      row.forEach((val, x) => {
-        if (!val) return;
-        drawBlockCell(
-          ctx,
-          x * BLOCK_SIZE,
-          y * BLOCK_SIZE,
-          BLOCK_COLORS[val] ?? "#94a3b8",
-        );
-      });
+    const drawWordCard = (
+      word: string,
+      x: number,
+      y: number,
+      width: number,
+      height: number,
+      mode: "active" | "stacked",
+    ) => {
+      ctx.save();
+      ctx.shadowBlur = mode === "active" ? 18 : 0;
+      ctx.shadowColor = mode === "active" ? "rgba(139, 92, 246, 0.35)" : "transparent";
+      ctx.fillStyle = mode === "active" ? "#2a1650" : "#3b1734";
+      ctx.strokeStyle = mode === "active" ? "rgba(167, 139, 250, 0.7)" : "rgba(244, 114, 182, 0.45)";
+      ctx.lineWidth = 2;
+      rrect(ctx, x, y, width, height, 18);
+      ctx.fill();
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `bold ${mode === "active" ? 18 : 15}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(word, x + width / 2, y + height / 2);
+      ctx.restore();
+    };
+
+    const cardWidth = canvas.width - 28;
+    const cardX = 14;
+    const stackedWords = stackedWordsRef.current;
+    stackedWords.forEach((word, index) => {
+      const y =
+        canvas.height -
+        14 -
+        WORD_DROP_CARD_HEIGHT -
+        index * (WORD_DROP_CARD_HEIGHT + WORD_DROP_CARD_GAP);
+      drawWordCard(word, cardX, y, cardWidth, WORD_DROP_CARD_HEIGHT, "stacked");
     });
 
-    const p = pieceRef.current;
-    if (p) {
-      p.matrix.forEach((row, y) => {
-        row.forEach((val, x) => {
-          if (!val) return;
-          drawBlockCell(
-            ctx,
-            (x + p.pos.x) * BLOCK_SIZE,
-            (y + p.pos.y) * BLOCK_SIZE,
-            BLOCK_COLORS[p.color] ?? "#94a3b8",
-          );
-        });
-      });
-    }
+    const fallingWords = [...fallingWordsRef.current].sort((a, b) => a.y - b.y);
+    fallingWords.forEach((entry) => {
+      drawWordCard(entry.text, cardX, entry.y, cardWidth, WORD_DROP_CARD_HEIGHT, "active");
+    });
+
+    burstParticlesRef.current.forEach((particle) => {
+      const alpha = Math.max(0, particle.life / particle.maxLife);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = particle.color;
+      ctx.beginPath();
+      ctx.arc(particle.x, particle.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
   }, []);
-
-  // ─── 블록 낙하 ────────────────────────────────────────────────────────────
-  const playerDrop = useCallback(() => {
-    if (!pieceRef.current) return;
-    pieceRef.current.pos.y++;
-
-    if (collide(boardRef.current, pieceRef.current)) {
-      pieceRef.current.pos.y--;
-      applyDangerPenalty();
-      return;
-    }
-    dropCounterRef.current = 0;
-    syncDropTiming();
-  }, [applyDangerPenalty, syncDropTiming]);
 
   // ─── 게임 루프 ────────────────────────────────────────────────────────────
   const gameLoop = useCallback(
     (time = 0) => {
       if (!runningRef.current) return;
-      const delta = time - lastTimeRef.current;
+      const delta =
+        lastTimeRef.current === 0 ? 0 : Math.max(0, time - lastTimeRef.current);
       lastTimeRef.current = time;
-      dropCounterRef.current += delta;
+
+      survivalTimeLeftRef.current = Math.max(
+        0,
+        survivalTimeLeftRef.current - delta,
+      );
+      setSurvivalTimeLeftMs(survivalTimeLeftRef.current);
+      if (survivalTimeLeftRef.current <= 0) {
+        finishGame(true);
+        syncVisibleWords(fallingWordsRef.current.map((entry) => entry.text));
+        draw();
+        return;
+      }
+
+      fallingWordsRef.current = fallingWordsRef.current.map((entry) => ({
+        ...entry,
+        y: entry.y + entry.speed * (delta / 1000),
+      }));
+      burstParticlesRef.current = burstParticlesRef.current
+        .map((particle) => ({
+          ...particle,
+          x: particle.x + particle.vx * (delta / 1000),
+          y: particle.y + particle.vy * (delta / 1000),
+          vy: particle.vy + 120 * (delta / 1000),
+          life: particle.life - delta / 1000,
+        }))
+        .filter((particle) => particle.life > 0);
+
+      const dangerY =
+        ROWS * BLOCK_SIZE -
+        stackedWordsRef.current.length * (WORD_DROP_CARD_HEIGHT + WORD_DROP_CARD_GAP) -
+        WORD_DROP_CARD_HEIGHT -
+        16;
+      const overflowWord = [...fallingWordsRef.current].sort((a, b) => b.y - a.y)[0];
+      if (overflowWord && overflowWord.y >= dangerY) {
+        applyDangerPenalty();
+      }
+
+      spawnCounterRef.current += delta;
+      if (
+        runningRef.current &&
+        spawnCounterRef.current >= WORD_DROP_SPAWN_INTERVAL_MS &&
+        fallingWordsRef.current.length < WORD_DROP_MAX_ACTIVE
+      ) {
+        spawnCounterRef.current = 0;
+        spawnFallingWord();
+      }
+
+      syncVisibleWords(fallingWordsRef.current.map((entry) => entry.text));
       syncDropTiming();
-      if (dropCounterRef.current > getDropInterval(levelRef.current))
-        playerDrop();
       draw();
       animRef.current = requestAnimationFrame(gameLoop);
     },
-    [draw, playerDrop, syncDropTiming],
+    [
+      applyDangerPenalty,
+      draw,
+      finishGame,
+      spawnFallingWord,
+      syncDropTiming,
+      syncVisibleWords,
+    ],
   );
 
-  // ─── PERFECT: AI 자동 최적 배치 ──────────────────────────────────────────
-  const autoPlaceAndClear = useCallback(() => {
-    if (!pieceRef.current) return;
-    let bestScore = -Infinity;
-    let bestX = pieceRef.current.pos.x;
-    let bestMatrix = pieceRef.current.matrix;
-    let cur = pieceRef.current.matrix;
-
-    for (let r = 0; r < 4; r++) {
-      for (let x = -2; x < COLS; x++) {
-        const sim = { pos: { x, y: 0 }, matrix: cur };
-        if (collide(boardRef.current, sim)) continue;
-        while (!collide(boardRef.current, sim)) sim.pos.y++;
-        sim.pos.y--;
-
-        let score = sim.pos.y * 10;
-        sim.matrix.forEach((row, ry) => {
-          const by = sim.pos.y + ry;
-          if (by >= 0 && by < ROWS) {
-            let full = true;
-            for (let bx = 0; bx < COLS; bx++) {
-              let val = boardRef.current[by][bx];
-              if (
-                bx >= sim.pos.x &&
-                bx < sim.pos.x + sim.matrix[0].length &&
-                sim.matrix[ry][bx - sim.pos.x]
-              )
-                val = 1;
-              if (!val) {
-                full = false;
-                break;
-              }
-            }
-            if (full) score += 1000;
-          }
-        });
-
-        if (score > bestScore) {
-          bestScore = score;
-          bestX = x;
-          bestMatrix = JSON.parse(JSON.stringify(cur));
-        }
-      }
-      cur = rotatePiece(cur);
-    }
-
-    const placed = {
-      pos: { x: bestX, y: 0 },
-      matrix: bestMatrix,
-      color: pieceRef.current.color,
-    };
-    while (!collide(boardRef.current, placed)) placed.pos.y++;
-    placed.pos.y--;
-
-    boardRef.current = sweepLines(mergePiece(boardRef.current, placed));
-    pieceRef.current = createPiece(levelRef.current);
-    if (collide(boardRef.current, pieceRef.current)) {
-      boardRef.current = fillDebris(levelRef.current);
-      pieceRef.current = createPiece(levelRef.current);
-    }
-    dropCounterRef.current = 0;
-    syncDropTiming();
-  }, [syncDropTiming]);
-
   const advanceAfterMatch = useCallback(() => {
-    const successIndex = wordIdxRef.current % 10;
+    const successIndex = Math.min(9, wordsClearedRef.current + failCountRef.current);
     const next = wordsClearedRef.current + 1;
     const nextStreak = successStreakRef.current + 1;
     wordsClearedRef.current = next;
@@ -1755,37 +1930,24 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     setWordFlowEntries((prev) => {
       const updated = [...prev];
       updated[successIndex] = {
-        word: currentWordRef.current || currentSegmentRef.current || `단어 ${successIndex + 1}`,
+        word: currentWordRef.current || `단어 ${successIndex + 1}`,
         status: "success",
       };
       return updated;
     });
 
-    if (next >= 10) {
-      runningRef.current = false;
-      setGameStarted(false);
-      stopSessionDevices();
-      setGameResult({
-        clearedWords: next,
-        level: levelRef.current,
-        averageScore: totalAccuracy,
-        successCount: next - failCountRef.current,
-        failCount: failCountRef.current,
-      });
-      return;
-    }
-
-    goToNextWord();
-  }, [goToNextWord, stopSessionDevices, totalAccuracy]);
+    window.setTimeout(() => {
+      if (!runningRef.current) return;
+      goToNextWord();
+    }, 220);
+  }, [goToNextWord]);
 
   // ─── 발화 결과 처리 ───────────────────────────────────────────────────────
   const processResult = useCallback(
     (transcript: string) => {
-      if (!runningRef.current || !currentSegmentRef.current) return;
+      if (!runningRef.current || !fallingWordsRef.current.length) return;
       if (Date.now() < recognitionCooldownRef.current) return;
 
-      const total = getSpeechScore(transcript, currentSegmentRef.current);
-      const threshold = getPassThreshold(currentSegmentRef.current);
       const displayTranscript = getDisplayTranscript(transcript);
 
       if (displayTranscript && !shouldHideTranscriptDisplay(displayTranscript)) {
@@ -1794,58 +1956,92 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
         setHeardText("...");
       }
 
-      setTotalAccuracy(total);
-
-      if (total < threshold) return;
-
-      recognitionCooldownRef.current = Date.now() + MATCH_COOLDOWN_MS;
-
-      const nextSegmentIndex = segmentIdxRef.current + 1;
-      if (nextSegmentIndex < targetSegmentsRef.current.length) {
-        segmentIdxRef.current = nextSegmentIndex;
-        currentSegmentRef.current = targetSegmentsRef.current[nextSegmentIndex];
-        setCurrentSegment(currentSegmentRef.current);
-        setSegmentIndex(nextSegmentIndex);
-        setPassThreshold(getPassThreshold(currentSegmentRef.current));
+      const directMatch = findDirectSpeechMatch(transcript, fallingWordsRef.current);
+      if (directMatch?.entry) {
+        recognitionCooldownRef.current = Date.now() + MATCH_COOLDOWN_MS;
+        setTotalAccuracy(directMatch.score);
+        setPassThreshold(directMatch.threshold);
+        spawnWordBurst(directMatch.entry);
+        fallingWordsRef.current = removeMatchedFallingWords(
+          fallingWordsRef.current,
+          directMatch.entry.text,
+        );
+        syncVisibleWords(fallingWordsRef.current.map((entry) => entry.text));
+        syncDropTiming();
+        draw();
         setActionFeedback({
           id: Date.now(),
           type: "success",
-          label: `${nextSegmentIndex + 1}구간으로 이동`,
+          label: "Perfect",
         });
-        pieceRef.current = createPiece(levelRef.current);
-        if (collide(boardRef.current, pieceRef.current)) {
-          boardRef.current = fillDebris(levelRef.current);
-          pieceRef.current = createPiece(levelRef.current);
-        }
-        dropCounterRef.current = 0;
-        syncDropTiming();
+        currentWordRef.current = directMatch.entry.text;
+        advanceAfterMatch();
         setTimeout(() => {
           setActionFeedback(null);
-        }, 450);
+        }, 800);
         return;
       }
+
+      const scoredMatches = fallingWordsRef.current.map((entry) => {
+        const score = getSpeechScore(transcript, entry.text);
+        const threshold = getPassThreshold(entry.text);
+        return { entry, score, threshold };
+      });
+      const strongestMatch = scoredMatches.reduce<{
+        entry: FallingWord | null;
+        score: number;
+        threshold: number;
+      }>(
+        (best, candidate) => {
+          if (candidate.score > best.score) {
+            return candidate;
+          }
+          return best;
+        },
+        { entry: null, score: 0, threshold: 100 },
+      );
+
+      setTotalAccuracy(strongestMatch.score);
+      setPassThreshold(strongestMatch.threshold);
+
+      const removableMatches = scoredMatches
+        .filter((candidate) => candidate.entry && candidate.score >= candidate.threshold)
+        .sort((a, b) => b.entry.y - a.entry.y || b.score - a.score);
+
+      const matchedTarget = removableMatches[0];
+      if (!matchedTarget?.entry) return;
+
+      recognitionCooldownRef.current = Date.now() + MATCH_COOLDOWN_MS;
+      spawnWordBurst(matchedTarget.entry);
+      fallingWordsRef.current = removeMatchedFallingWords(
+        fallingWordsRef.current,
+        matchedTarget.entry.text,
+      );
+      syncVisibleWords(fallingWordsRef.current.map((entry) => entry.text));
+      syncDropTiming();
+      draw();
 
       setActionFeedback({
         id: Date.now(),
         type: "success",
-        label: getSpeechGradeLabel(total, threshold),
+        label: getSpeechGradeLabel(matchedTarget.score, matchedTarget.threshold),
       });
-      autoPlaceAndClear();
+      currentWordRef.current = matchedTarget.entry.text;
       advanceAfterMatch();
       setTimeout(() => {
         setActionFeedback(null);
       }, 800);
     },
-    [advanceAfterMatch, autoPlaceAndClear, syncDropTiming],
+    [advanceAfterMatch, draw, spawnWordBurst, syncDropTiming, syncVisibleWords],
   );
 
   const simulateMatch = useCallback(() => {
-    if (!runningRef.current || !currentSegmentRef.current) return;
-    processResult(currentSegmentRef.current);
+    if (!runningRef.current || !currentWordRef.current) return;
+    processResult(currentWordRef.current);
   }, [processResult]);
 
   const simulateStack = useCallback(() => {
-    if (!runningRef.current || !pieceRef.current) return;
+    if (!runningRef.current || !fallingWordsRef.current.length) return;
     recognitionCooldownRef.current = Date.now() + MATCH_COOLDOWN_MS;
     applyDangerPenalty();
   }, [applyDangerPenalty]);
@@ -1990,6 +2186,10 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   async function startGameForLevel(startLevel = selectedLevel) {
     levelRef.current = startLevel;
     setLevel(startLevel);
+    const durationMs = getLevelSurvivalDuration(startLevel) * 1000;
+    setGameResult(null);
+    roadmapClearMarkedRef.current = false;
+    setActionFeedback(null);
 
     const audioMonitorReady = await startAudioMonitor(preferredAudioInputIdRef.current);
     if (!audioMonitorReady) {
@@ -2011,16 +2211,23 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     prevCostumeTierRef.current = 0;
     setPendingCostumeTier(null);
     setCostumeUnlockToast(null);
-    setGameResult(null);
-    roadmapClearMarkedRef.current = false;
-    setActionFeedback(null);
-    boardRef.current = fillDebris(startLevel);
-    pieceRef.current = createPiece(startLevel);
-    lastTimeRef.current = 0;
+    survivalTimeLeftRef.current = durationMs;
+    setSurvivalTimeLeftMs(durationMs);
+    boardRef.current = makeBoard();
+    pieceRef.current = null;
+    fallingWordsRef.current = [];
+    stackedWordsRef.current = [];
+    burstParticlesRef.current = [];
+    lastTimeRef.current = performance.now();
     dropCounterRef.current = 0;
-    setActiveWord(getRoadmapAwareWord(startLevel, 0));
+    spawnCounterRef.current = 0;
+    spawnWordIdxRef.current = 0;
+    nextFallingWordIdRef.current = 1;
+    syncVisibleWords([]);
     syncDropTiming();
     setShowLevelModal(false);
+    spawnFallingWord();
+    spawnFallingWord();
     window.requestAnimationFrame(() => {
       void attachCameraPreview();
       void initFaceTracking();
@@ -2056,6 +2263,8 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
       setFallProgress(0);
       setDropTimeLeftMs(0);
       setDropTimeTotalMs(0);
+      survivalTimeLeftRef.current = 0;
+      setSurvivalTimeLeftMs(0);
       autoStartedRef.current = false;
       void startGameForLevel(levelRef.current);
       return;
@@ -2105,16 +2314,17 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
 
   // ─── 초기 그리기 + 카메라 자동 연결 ──────────────────────────────────────
   useEffect(() => {
-    boardRef.current = fillDebris(1);
-    pieceRef.current = createPiece(1);
-    setActiveWord(getRoadmapAwareWord(1, 0));
+    boardRef.current = makeBoard();
+    pieceRef.current = null;
+    burstParticlesRef.current = [];
+    syncVisibleWords([]);
     draw();
     const savedAudioInputId = loadPreferredAudioInputId();
     preferredAudioInputIdRef.current = savedAudioInputId;
     setPreferredAudioInputId(savedAudioInputId);
     void refreshAudioInputDevices();
     startCamera();
-  }, [draw, refreshAudioInputDevices, setActiveWord, startCamera]);
+  }, [draw, refreshAudioInputDevices, startCamera, syncVisibleWords]);
 
   // volume을 ref로 동기화 — 빠르게 바뀌는 volume이 setInterval deps에 있으면
   // interval이 매 RAF마다 재생성되어 wave가 거의 업데이트되지 않음
@@ -2162,9 +2372,9 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   }, [error]);
 
   useEffect(() => {
-    if (!gameStarted || !currentSegment) return;
-    void syncSpeechCaptureForWord(currentSegment, preferredAudioInputIdRef.current);
-  }, [currentSegment, gameStarted, syncSpeechCaptureForWord]);
+    if (!gameStarted || !currentWord) return;
+    void syncSpeechCaptureForWord(currentWord);
+  }, [currentWord, gameStarted, syncSpeechCaptureForWord]);
 
   // ─── 코스튬 티어 감지 ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -2207,8 +2417,6 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     };
   }, [stopSessionDevices]);
 
-  const showStatusPanel = gameStarted || cameraReady || Boolean(gameResult);
-
   // ─── 코스튬 계산 ──────────────────────────────────────────────────────────
   const successCount = successStreak;
   const currentTierIdx = COSTUME_TIERS.reduce(
@@ -2218,7 +2426,12 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   const currentTier = COSTUME_TIERS[currentTierIdx];
   const isChampion = currentTier.id === "sparkle";
   const micSignalDetected = isMicReady && volume > 4;
-  const roundSeconds = Math.max(0, Math.ceil(dropTimeLeftMs / 1000));
+  const roundSeconds = Math.max(0, Math.ceil(survivalTimeLeftMs / 1000));
+  const fullRoundSeconds = Math.max(1, getLevelSurvivalDuration(level));
+  const timeProgressPercent = Math.max(
+    0,
+    Math.min(100, Math.round((survivalTimeLeftMs / (fullRoundSeconds * 1000)) * 100)),
+  );
   const recognitionCooldownMs = Math.max(0, recognitionCooldownRef.current - Date.now());
   const speechPhase = !gameStarted
     ? "idle"
@@ -2241,11 +2454,11 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
             : "대기";
   const speechPhaseDescription =
     speechPhase === "speak"
-      ? "현재 단어를 또렷하게 말하면 바로 판정합니다."
+      ? "떨어지는 단어 중 하나를 말하면 해당 단어가 바로 사라집니다."
       : speechPhase === "judging"
         ? "방금 말한 단어를 확인하고 있습니다."
         : speechPhase === "prepare"
-          ? "단어가 막 바뀌었습니다. 잠시 후 말하면 더 안정적으로 인식됩니다."
+          ? "새 단어가 내려오고 있습니다. 잠시 후 말하면 더 안정적으로 인식됩니다."
           : speechPhase === "waitingMic"
             ? "마이크 연결이 되면 자동으로 듣기를 시작합니다."
             : "게임을 시작하면 자동으로 듣기를 시작합니다.";
@@ -2257,18 +2470,16 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
         : speechPhase === "prepare"
           ? "border-violet-400/40 bg-violet-500/10 text-violet-200"
           : "border-slate-500/30 bg-slate-500/10 text-slate-300";
-  const displayWord =
-    currentSegment || currentWord || customTetrisWordPool?.[0] || getWord(selectedLevel, 0);
   const roadmapClearText =
     roadmapNodePayload?.gameType === "tetris"
-      ? roadmapNodePayload.payload.clearCondition
-      : "정답을 말하면 자동 배치되고, 실패하면 X로 기록됩니다.";
+      ? "단어를 말하면 즉시 제거되고, 못 맞춘 단어는 아래에 쌓입니다."
+      : "정답을 말하면 단어가 제거되고, 쌓이면 GAME OVER가 됩니다.";
 
   // ─── 렌더 ─────────────────────────────────────────────────────────────────
   return (
     <main className="lingo-game-shell relative flex min-h-screen flex-col overflow-hidden bg-[#090914] text-white">
       <div className="pointer-events-none absolute inset-0 z-0 bg-[linear-gradient(rgba(26,26,54,0.55)_1px,transparent_1px),linear-gradient(90deg,rgba(26,26,54,0.55)_1px,transparent_1px)] bg-[size:36px_36px]" />
-      <header className="relative z-10 min-h-16 px-3 sm:px-6 py-2 sm:py-0 border-b border-[#1a1a36] flex flex-wrap sm:flex-nowrap justify-between items-center gap-2 bg-[#090914]/90 backdrop-blur-md shrink-0 sticky top-0">
+      <header className="relative z-10 px-3 py-2 sm:px-6 sm:py-2 border-b border-[#1a1a36] flex flex-wrap sm:flex-nowrap justify-between items-center gap-2 bg-[#090914]/90 backdrop-blur-md shrink-0 sticky top-0">
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
           <img
             src="/images/logo/logo.png"
@@ -2277,10 +2488,10 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
           />
           <div className="min-w-0">
             <span className="font-black text-[10px] uppercase tracking-[0.28em] leading-none block text-violet-300/80">
-              Game Training • Tetris
+              Game Training • Word Clear
             </span>
-            <h2 className="text-base sm:text-lg font-black text-white tracking-tight truncate">
-              한글 테트리스
+            <h2 className="text-sm sm:text-base font-black text-white tracking-tight truncate">
+              단어 폭탄
             </h2>
           </div>
         </div>
@@ -2326,7 +2537,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
               : "READY"}
           </div>
           <div className="px-4 py-1.5 rounded-full font-black text-xs border border-sky-400/35 bg-sky-500/12 text-sky-100">
-            {gameStarted ? wordsCleared : 0} / 10
+            성공 {gameStarted ? wordsCleared : 0}
           </div>
           <button
             type="button"
@@ -2370,21 +2581,27 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
             <div className="tetris-content-layout">
               <div className="vt-board-shell tetris-board-shell">
                 <div className="vt-canvas-wrap">
-                  <div
-                    className={`tetris-board-card-layout ${showStatusPanel ? "has-status" : ""}`}
-                  >
+                  <div className="tetris-board-card-layout">
                     <div className="tetris-game-panel memory-game-panel">
                       <div className="memory-main-card relative w-full max-w-none overflow-hidden rounded-[44px] border-[3px] border-violet-500/25 bg-[#0c0820]/95 p-6 backdrop-blur-sm shadow-[0_0_40px_rgba(139,92,246,0.10)] sm:rounded-[52px] sm:p-8">
-                        <div className="mb-6 flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm font-black text-violet-300/60">
+                        <div className="mb-6 flex items-center justify-between gap-4">
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
+                            <span className="shrink-0 text-sm font-black text-violet-300/60">
                               레벨 {level}
                             </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="h-2 overflow-hidden rounded-full bg-[#1a1435] ring-1 ring-violet-500/20">
+                                <div
+                                  className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-violet-400 to-fuchsia-400 transition-[width] duration-300"
+                                  style={{ width: `${timeProgressPercent}%` }}
+                                />
+                              </div>
+                            </div>
                           </div>
                           <div className="flex items-center gap-3">
                             <div className="rounded-full bg-[#1a1435] px-4 py-1.5 ring-1 ring-violet-500/25">
                               <span className="text-[10px] font-black uppercase tracking-tighter text-violet-300/60">
-                                블록 시간
+                                남은 시간
                               </span>
                               <strong className="ml-2 text-sm font-black text-violet-300">
                                 {roundSeconds}s
@@ -2413,22 +2630,58 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
                                   <div className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-black tracking-[0.18em] ${speechPhaseTone}`}>
                                     {speechPhaseLabel}
                                   </div>
-                                  <h3 className="mb-2 mt-4 text-2xl font-black tracking-tighter text-slate-100">
-                                    알맞은 단어를 말해보세요
-                                  </h3>
-                                  <p className="text-sm font-bold text-slate-400">
-                                    {speechPhaseDescription}
-                                  </p>
                                   <p className="mt-2 text-sm font-bold text-slate-500">
                                     {roadmapClearText}
                                   </p>
                                 </div>
-                                <div className="mt-5 text-sm font-black uppercase tracking-[0.24em] text-violet-300/60 sm:text-[15px]">
-                                  말해야 하는 단어
-                                </div>
-                                <div className="mt-4 flex items-center justify-center">
-                                  <div className="flex min-h-[96px] w-full items-center justify-center rounded-[24px] border-2 border-violet-500/40 bg-violet-900/30 px-6 py-4 text-center text-4xl font-black tracking-tight text-white [text-shadow:0_0_18px_rgba(255,255,255,0.35)] sm:text-5xl">
-                                    {displayWord}
+                                <div className="mt-5">
+                                  <div
+                                    className={`vt-camera-frame${isChampion && gameStarted ? " is-champion" : ""}`}
+                                  >
+                                    {cameraReady ? (
+                                      <>
+                                        <video
+                                          ref={videoRef}
+                                          className="vt-camera-video"
+                                          autoPlay
+                                          muted
+                                          playsInline
+                                          style={{
+                                            filter: getCameraFilter(currentCameraTierId, failStreak),
+                                          }}
+                                        />
+                                        <canvas
+                                          ref={costumeCanvasRef}
+                                          className="vt-camera-canvas"
+                                        />
+                                      </>
+                                    ) : (
+                                      <div className="vt-camera-placeholder">
+                                        <span>카메라 대기 중</span>
+                                        <p>카메라를 확인한 뒤 다시 시도해 주세요.</p>
+                                      </div>
+                                    )}
+
+                                    {costumeUnlockToast && (
+                                      <div
+                                        key={costumeUnlockToast.id}
+                                        className="vt-costume-unlock-toast"
+                                      >
+                                        <span>{costumeUnlockToast.icon}</span>
+                                        <strong>{costumeUnlockToast.label} 획득!</strong>
+                                      </div>
+                                    )}
+
+                                    <div className="tetris-camera-chip">
+                                      <span className="tetris-camera-chip-label">안면 상태</span>
+                                      <strong className="tetris-camera-chip-value">
+                                        {cameraReady
+                                          ? faceTracked
+                                            ? "인식 중"
+                                            : "준비"
+                                          : "대기"}
+                                      </strong>
+                                    </div>
                                   </div>
                                 </div>
                                 <div
@@ -2447,7 +2700,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
                                   </p>
                                   <p className="mt-2 text-xs font-bold text-slate-300">
                                     {isMicReady
-                                      ? "정답을 말하면 블록이 바로 정리됩니다."
+                                      ? "캔버스에 떨어지는 카드 단어를 그대로 말하면 바로 깨집니다."
                                       : "세션이 시작되면 자동으로 음성을 듣습니다."}
                                   </p>
                                   {hasRecognizedSpeech ? (
@@ -2524,101 +2777,12 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
                       </div>
                     </div>
 
-                    {showStatusPanel ? (
-                      <aside className="tetris-status-panel">
-                        <MonitoringPanelShell
-                          title="실시간 상태판"
-                          className="tetris-report-card-compact"
-                          bodyClassName="tetris-status-columns"
-                        >
-                            <div className="vt-monitor-card tetris-monitor-inline">
-                              <div
-                                className={`vt-camera-frame${isChampion && gameStarted ? " is-champion" : ""}`}
-                              >
-                                {cameraReady ? (
-                                  <>
-                                    <video
-                                      ref={videoRef}
-                                      className="vt-camera-video"
-                                      autoPlay
-                                      muted
-                                      playsInline
-                                      style={{
-                                        filter: getCameraFilter(currentCameraTierId, failStreak),
-                                      }}
-                                    />
-                                    <canvas
-                                      ref={costumeCanvasRef}
-                                      className="vt-camera-canvas"
-                                    />
-                                  </>
-                                ) : (
-                                  <div className="vt-camera-placeholder">
-                                    <span>카메라 대기 중</span>
-                                    <p>카메라를 확인한 뒤 다시 시도해 주세요.</p>
-                                  </div>
-                                )}
-
-                                {costumeUnlockToast && (
-                                  <div
-                                    key={costumeUnlockToast.id}
-                                    className="vt-costume-unlock-toast"
-                                  >
-                                    <span>{costumeUnlockToast.icon}</span>
-                                    <strong>{costumeUnlockToast.label} 획득!</strong>
-                                  </div>
-                                )}
-
-                              <div className="tetris-camera-chip">
-                                <span className="tetris-camera-chip-label">안면 상태</span>
-                                <strong className="tetris-camera-chip-value">
-                                  {cameraReady
-                                    ? faceTracked
-                                        ? "인식 중"
-                                        : "준비"
-                                      : "대기"}
-                                  </strong>
-                                </div>
-                              </div>
-
-                                <div className="vt-progress-block tetris-status-card">
-                                  <div className="vt-chips-label">문제 흐름</div>
-                                  <div className="mt-3 grid gap-2">
-                                    {wordFlowEntries.map((entry, i) => (
-                                      <div
-                                        key={i}
-                                        className={`flex items-center gap-2 rounded-[12px] border px-3 py-2 text-left text-xs font-black ${
-                                          entry?.status === "success"
-                                            ? "border-cyan-400/40 bg-cyan-500/10 text-cyan-200"
-                                            : entry?.status === "fail"
-                                              ? "border-rose-400/40 bg-rose-500/10 text-rose-200"
-                                              : "border-violet-500/20 bg-[#120b2a] text-violet-200/70"
-                                        }`}
-                                      >
-                                        <span className="shrink-0">
-                                          {entry?.status === "success"
-                                            ? "O"
-                                            : entry?.status === "fail"
-                                              ? "X"
-                                              : "·"}
-                                        </span>
-                                        <span className="truncate">
-                                          {entry ? `${i + 1}. ${entry.word}` : `${i + 1}. 대기`}
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                            </div>
-                        </MonitoringPanelShell>
-                      </aside>
-                    ) : null}
                   </div>
 
                   {!gameStarted ? (
                     <div className="vt-pause-screen">
                       <span className="vt-pause-icon">🎙️</span>
-                        <h3>한글 테트리스 훈련 화면</h3>
+                        <h3>단어 폭탄 훈련 화면</h3>
                       <p>
                         단계 선택 팝업에서 난이도를 고르고 훈련을 시작해 주세요.
                         <br />

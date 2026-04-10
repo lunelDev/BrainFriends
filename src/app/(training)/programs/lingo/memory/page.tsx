@@ -1,7 +1,7 @@
 "use client";
 
-import MemoryFlipGame from "@/components/lingo/MemoryFlipGame";
+import CategorySortGame from "@/components/lingo/CategorySortGame";
 
 export default function LingoMemoryPage() {
-  return <MemoryFlipGame />;
+  return <CategorySortGame />;
 }

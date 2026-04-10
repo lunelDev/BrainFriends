@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import {
   Brain,
   Flag,
+  Layers3,
   Lock,
   MessageSquareText,
+  ScanSearch,
   Swords,
 } from "lucide-react";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
@@ -30,17 +32,41 @@ const CORE_GAME_CARD_CONFIG: Record<
     chipClass: string;
   }
 > = {
+  association_clear: {
+    label: "연상 매칭",
+    description: "관련 단어만 말해 방해 단어를 남기고 화면을 정리",
+    icon: Brain,
+    borderClass: "border-[#b388ff66] bg-[#b388ff1a]",
+    labelClass: "text-[#d7bcff]",
+    chipClass: "bg-[#b388ff33] text-[#eadcff]",
+  },
+  word_select: {
+    label: "단어 선택",
+    description: "보기 중 관련 단어만 말해 음성으로 선택",
+    icon: ScanSearch,
+    borderClass: "border-[#f59e0b66] bg-[#f59e0b1a]",
+    labelClass: "text-[#ffd39a]",
+    chipClass: "bg-[#f59e0b33] text-[#ffe8c6]",
+  },
+  word_assemble: {
+    label: "단어 조합",
+    description: "제시된 음절을 조합해 관련 단어를 말로 완성",
+    icon: Layers3,
+    borderClass: "border-[#34d39966] bg-[#34d3991a]",
+    labelClass: "text-[#9ff5d2]",
+    chipClass: "bg-[#34d39933] text-[#c8ffea]",
+  },
   tetris: {
-    label: "테트리스",
-    description: "도시 단어 블록을 발화로 정리",
+    label: "단어 폭탄",
+    description: "명소와 관련된 단어를 말해 정리",
     icon: Swords,
     borderClass: "border-[#4ecdc466] bg-[#4ecdc41a]",
     labelClass: "text-[#78ebe3]",
     chipClass: "bg-[#4ecdc433] text-[#89f2eb]",
   },
   memory: {
-    label: "말로 열기",
-    description: "짧은 핵심어를 말해 카드 해금",
+    label: "단어 배치",
+    description: "단어를 말하면 풍경, 먹거리, 활동 슬롯으로 분류",
     icon: Brain,
     borderClass: "border-[#ffe66d66] bg-[#ffe66d1a]",
     labelClass: "text-[#ffe66d]",
@@ -183,6 +209,8 @@ export default function SelectGameModePage() {
     zoneLabel,
     levels: GAME_MODE_ROADMAP.filter((level) => level.zoneLabel === zoneLabel),
   }));
+  const isAdminAccount =
+    patient?.userRole === "admin" || patient?.name === "관리자";
 
   return (
     <div
@@ -267,7 +295,7 @@ export default function SelectGameModePage() {
         </section>
 
         <section className="mt-8 flex flex-wrap justify-center gap-3">
-          {(["tetris", "memory", "sentence_build", "tongue_twister", "balloon"] as GameModeNodeGameType[]).map(
+          {(["association_clear", "word_select", "word_assemble", "tetris", "memory", "sentence_build", "tongue_twister", "balloon"] as GameModeNodeGameType[]).map(
             (gameType) => {
               const game = CORE_GAME_CARD_CONFIG[gameType];
               return (
@@ -301,11 +329,14 @@ export default function SelectGameModePage() {
 
               <div className="space-y-8">
                 {levels.map((level, index) => {
-                  const isUnlocked = level.id <= unlockedThroughStage;
+                  const isUnlocked = isAdminAccount || level.id <= unlockedThroughStage;
                   const isCleared = hasPlayedAnyStageGame(
                     level.id,
                     progressSnapshot.playedStageGames,
                   );
+                  const associationClearPreview = getStagePreviewByGame(level.id, "association_clear");
+                  const wordSelectPreview = getStagePreviewByGame(level.id, "word_select");
+                  const wordAssemblePreview = getStagePreviewByGame(level.id, "word_assemble");
                   const tetrisPreview = getStagePreviewByGame(level.id, "tetris");
                   const memoryPreview = getStagePreviewByGame(level.id, "memory");
                   const sentenceBuildPreview = getStagePreviewByGame(level.id, "sentence_build");
@@ -385,9 +416,12 @@ export default function SelectGameModePage() {
                         </div>
                       </div>
 
-                      <div className="relative mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                      <div className="relative mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-8">
                         {(
                           [
+                            ["association_clear", associationClearPreview],
+                            ["word_select", wordSelectPreview],
+                            ["word_assemble", wordAssemblePreview],
                             ["tetris", tetrisPreview],
                             ["memory", memoryPreview],
                             ["sentence_build", sentenceBuildPreview],
@@ -480,7 +514,7 @@ export default function SelectGameModePage() {
               <div className="mt-1 text-[11px] text-slate-500">보스 스테이지</div>
             </div>
             <div>
-              <div className="text-[28px] font-black text-[#55efc4]">5</div>
+              <div className="text-[28px] font-black text-[#55efc4]">8</div>
               <div className="mt-1 text-[11px] text-slate-500">코어 게임</div>
             </div>
           </div>

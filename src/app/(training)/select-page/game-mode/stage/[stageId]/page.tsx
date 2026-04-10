@@ -11,7 +11,10 @@ import {
   getGameModeStageMap,
   type GameModeStageNodeDefinition,
 } from "@/constants/gameModeRoadmap";
-import { getGameModeNodePayload } from "@/constants/gameModeStagePayloads";
+import {
+  GAME_MODE_STAGE_CITY_LABELS,
+  getGameModeNodePayload,
+} from "@/constants/gameModeStagePayloads";
 import {
   assignGameModeStageGame,
   getAssignedGameModeStageGame,
@@ -23,14 +26,29 @@ import {
 } from "@/lib/gameModeProgress";
 
 const GAME_BADGE_THEME = {
+  association_clear: {
+    icon: "🧹",
+    label: "연상 매칭",
+    badgeClass: "border-[#b388ff55] bg-[#b388ff18] text-[#e8dcff]",
+  },
+  word_select: {
+    icon: "✅",
+    label: "단어 선택",
+    badgeClass: "border-[#f59e0b55] bg-[#f59e0b18] text-[#ffe8c6]",
+  },
+  word_assemble: {
+    icon: "🔡",
+    label: "단어 조합",
+    badgeClass: "border-[#34d39955] bg-[#34d39918] text-[#c8ffea]",
+  },
   tetris: {
     icon: "🟦",
-    label: "테트리스",
+    label: "단어 폭탄",
     badgeClass: "border-[#4ecdc455] bg-[#4ecdc418] text-[#7ef2ea]",
   },
   memory: {
     icon: "🔑",
-    label: "말로 열기",
+    label: "단어 배치",
     badgeClass: "border-[#ffd93d55] bg-[#ffd93d18] text-[#ffe77e]",
   },
   sentence_build: {
@@ -49,69 +67,6 @@ const GAME_BADGE_THEME = {
     badgeClass: "border-[#a29bfe55] bg-[#a29bfe18] text-[#d8d5ff]",
   },
 } as const;
-
-const CITY_NODE_LABELS: Record<number, { low: string[]; mid: string[]; high: string[] }> = {
-  1: {
-    low: ["한강", "경복궁", "남산", "인사동", "서울 하 FINAL"],
-    mid: ["광화문", "북촌한옥마을", "청계천", "여의도", "서울 중 FINAL"],
-    high: ["서울숲", "빛초롱", "표준어", "남산야경", "서울 FINAL"],
-  },
-  2: {
-    low: ["차이나타운", "월미도", "강화도", "개항장", "인천 하 FINAL"],
-    mid: ["송도", "소래포구", "짜장면", "자유공원", "인천 중 FINAL"],
-    high: ["영종도", "인천대교", "펜타포트", "을왕리", "인천 FINAL"],
-  },
-  3: {
-    low: ["해운대", "광안리", "자갈치", "감천마을", "부산 하 FINAL"],
-    mid: ["광안대교", "태종대", "국제시장", "송도해수욕장", "부산 중 FINAL"],
-    high: ["BIFF", "돼지국밥", "밀면", "오륙도", "부산 FINAL"],
-  },
-  4: {
-    low: ["불국사", "첨성대", "석굴암", "동궁월지", "경주 하 FINAL"],
-    mid: ["황리단길", "천마총", "대릉원", "교촌마을", "경주 중 FINAL"],
-    high: ["월정교", "신라문화제", "황남빵", "보문단지", "경주 FINAL"],
-  },
-  5: {
-    low: ["팔공산", "동성로", "막창", "김광석거리", "대구 하 FINAL"],
-    mid: ["서문시장", "치맥", "앞산", "수성못", "대구 중 FINAL"],
-    high: ["근대골목", "이월드", "납작만두", "약령시", "대구 FINAL"],
-  },
-  6: {
-    low: ["한옥마을", "비빔밥", "경기전", "전동성당", "전주 하 FINAL"],
-    mid: ["오목대", "남부시장", "전주천", "한지", "전주 중 FINAL"],
-    high: ["풍남문", "콩나물국밥", "모주", "소리축제", "전주 FINAL"],
-  },
-  7: {
-    low: ["무등산", "5·18", "비엔날레", "양림동", "광주 하 FINAL"],
-    mid: ["아시아문화전당", "상추튀김", "충장로", "김치축제", "광주 중 FINAL"],
-    high: ["펭귄마을", "빛고을", "예술의거리", "광주천", "광주 FINAL"],
-  },
-  8: {
-    low: ["여수밤바다", "오동도", "향일암", "돌산공원", "여수 하 FINAL"],
-    mid: ["해상케이블카", "갓김치", "이순신광장", "엑스포", "여수 중 FINAL"],
-    high: ["돌게장", "서시장", "거북선대교", "장어구이", "여수 FINAL"],
-  },
-  9: {
-    low: ["경포대", "정동진", "오죽헌", "커피거리", "강릉 하 FINAL"],
-    mid: ["안목해변", "초당두부", "단오제", "주문진", "강릉 중 FINAL"],
-    high: ["강문해변", "선교장", "커피", "바다열차", "강릉 FINAL"],
-  },
-  10: {
-    low: ["남이섬", "닭갈비", "막국수", "소양강", "춘천 하 FINAL"],
-    mid: ["의암호", "강촌", "공지천", "마임축제", "춘천 중 FINAL"],
-    high: ["삼악산", "레고랜드", "호반", "감자빵", "춘천 FINAL"],
-  },
-  11: {
-    low: ["하회마을", "도산서원", "안동찜닭", "탈춤", "안동 하 FINAL"],
-    mid: ["봉정사", "월영교", "안동소주", "간고등어", "안동 중 FINAL"],
-    high: ["병산서원", "유교문화", "헛제삿밥", "민속촌", "안동 FINAL"],
-  },
-  12: {
-    low: ["한라산", "성산일출봉", "우도", "협재해변", "제주 하 FINAL"],
-    mid: ["흑돼지", "한라봉", "만장굴", "오름", "제주 중 FINAL"],
-    high: ["섭지코지", "용두암", "해녀", "올레길", "제주 FINAL"],
-  },
-};
 
 const TIER_META = [
   { key: "low", label: "하", desc: "도시 입문 구간" },
@@ -161,6 +116,8 @@ export default function GameModeStageDetailPage() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showReturnFx, setShowReturnFx] = useState(false);
   const [progress, setProgress] = useState<GameModeProgress>(() => getGameModeProgress());
+  const isAdminAccount =
+    patient?.userRole === "admin" || patient?.name === "관리자";
 
   const stageId = Number(params?.stageId ?? "0");
   const stage = useMemo(() => getGameModeStage(stageId), [stageId]);
@@ -170,7 +127,7 @@ export default function GameModeStageDetailPage() {
   const stageSequence = useMemo<StageSequenceNode[]>(() => {
     if (!stageMap) return [];
 
-    const labelSet = CITY_NODE_LABELS[stageId];
+    const labelSet = GAME_MODE_STAGE_CITY_LABELS[stageId];
     const baseNodes = stageMap.nodes;
     const tiers = TIER_META.flatMap((tierMeta, tierIndex) => {
       const labels = labelSet?.[tierMeta.key] ?? Array.from({ length: 5 }, (_, idx) =>
@@ -254,18 +211,19 @@ export default function GameModeStageDetailPage() {
     };
   }, [focusNodeId, shouldPlayReturnFx, stageId]);
 
+  const activeStageMapId = stageMap?.id ?? stageId;
   const clearedCount = stageSequence.filter((node) =>
-    hasClearedGameModeStage(progress, stageMap.id, node.id),
+    hasClearedGameModeStage(progress, activeStageMapId, node.id),
   ).length;
   const allNodesCleared =
     stageSequence.length > 0 &&
-    stageSequence.every((node) => hasClearedGameModeStage(progress, stageMap.id, node.id));
+    stageSequence.every((node) => hasClearedGameModeStage(progress, activeStageMapId, node.id));
 
   useEffect(() => {
-    if (!allNodesCleared || !nextStage) return;
+    if (isAdminAccount || !allNodesCleared || !nextStage) return;
     unlockGameModeStage(nextStage.id);
     setProgress(getGameModeProgress());
-  }, [allNodesCleared, nextStage]);
+  }, [allNodesCleared, isAdminAccount, nextStage]);
 
   useEffect(() => {
     if (!stageSequence.length || !stageMap) return;
@@ -273,8 +231,9 @@ export default function GameModeStageDetailPage() {
     let changed = false;
     stageSequence.forEach((node, index) => {
       const unlocked =
-        progress.unlockedThroughStage >= stageMap.id &&
-        getNodeUnlocked(progress, stageMap.id, stageSequence, index);
+        isAdminAccount ||
+        (progress.unlockedThroughStage >= stageMap.id &&
+          getNodeUnlocked(progress, stageMap.id, stageSequence, index));
       const hasAssigned = Boolean(getAssignedGameModeStageGame(progress, stageMap.id, node.id));
       if (!unlocked || hasAssigned) return;
 
@@ -285,7 +244,7 @@ export default function GameModeStageDetailPage() {
     if (changed) {
       setProgress(getGameModeProgress());
     }
-  }, [progress, stageMap, stageSequence]);
+  }, [isAdminAccount, progress, stageMap, stageSequence]);
 
   const logout = async () => {
     setIsLoggingOut(true);
@@ -320,7 +279,7 @@ export default function GameModeStageDetailPage() {
     );
   }
 
-  const isLevelUnlocked = progress.unlockedThroughStage >= stage.id;
+  const isLevelUnlocked = isAdminAccount || progress.unlockedThroughStage >= stage.id;
 
   const handleNodeEnter = (
     levelId: number,
@@ -520,8 +479,9 @@ export default function GameModeStageDetailPage() {
                     <div className="space-y-4">
                       {tierGroup.nodes.map((node, index) => {
                   const unlocked =
-                    progress.unlockedThroughStage >= node.mapItem.id &&
-                    getNodeUnlocked(progress, node.mapItem.id, stageSequence, node.nodeIndex);
+                    isAdminAccount ||
+                    (progress.unlockedThroughStage >= node.mapItem.id &&
+                      getNodeUnlocked(progress, node.mapItem.id, stageSequence, node.nodeIndex));
                   const cleared = hasClearedGameModeStage(progress, node.mapItem.id, node.id);
                   const assignedGameKey = getAssignedGameModeStageGame(progress, node.mapItem.id, node.id);
                   const badgeTheme = assignedGameKey ? GAME_BADGE_THEME[assignedGameKey] : null;

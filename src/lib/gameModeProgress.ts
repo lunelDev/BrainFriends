@@ -61,6 +61,9 @@ function normalizeProgress(value: unknown): GameModeProgress {
         ? Object.fromEntries(
             Object.entries(candidate.assignedStageGames).filter(
               ([, gameKey]) =>
+                gameKey === "association_clear" ||
+                gameKey === "word_select" ||
+                gameKey === "word_assemble" ||
                 gameKey === "tetris" ||
                 gameKey === "balloon" ||
                 gameKey === "memory" ||
@@ -185,7 +188,10 @@ export function assignGameModeStageGame(
     };
   }
 
-  const fallback = [{ gameKey: "tetris" as GameModeGameKey }];
+  const fallback: Array<{
+    gameKey: GameModeGameKey;
+    sentenceMode?: "example" | "tongue";
+  }> = [{ gameKey: "tetris" }];
   const pool = candidates.length ? candidates : fallback;
   const assigned = pool[Math.floor(Math.random() * pool.length)] ?? pool[0];
 

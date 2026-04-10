@@ -16,7 +16,11 @@ import {
   TONGUE_TWISTER_QUESTIONS,
   TONGUE_TWISTER_THRESHOLDS,
 } from "@/data/sentenceGameData";
-import { getGameModeNodePayload } from "@/constants/gameModeStagePayloads";
+import {
+  getGameModeNodePayload,
+  type GameModeSentenceBuildNodePayload,
+  type GameModeTongueTwisterNodePayload,
+} from "@/constants/gameModeStagePayloads";
 import { useAudioAnalyzer } from "@/lib/audio/useAudioAnalyzer";
 import { markGameModeStageCleared } from "@/lib/gameModeProgress";
 
@@ -517,7 +521,11 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
       ? roadmapNodePayload.gameType
       : null;
   const roadmapSentencePayload =
-    roadmapSentenceGameType ? roadmapNodePayload.payload : null;
+    roadmapSentenceGameType && roadmapNodePayload
+      ? (roadmapNodePayload.payload as
+          | GameModeSentenceBuildNodePayload
+          | GameModeTongueTwisterNodePayload)
+      : null;
   const [index, setIndex] = useState(0);
   const [message, setMessage] = useState(
     "문장을 확인한 뒤 녹음을 시작해 보세요.",
