@@ -163,3 +163,33 @@ export async function assertObjectExists(objectKey: string) {
   );
 }
 
+export async function readObject(objectKey: string) {
+  const client = getObjectStorageClient();
+  const response = await client.send(
+    new GetObjectCommand({
+      Bucket: getObjectStorageBucketName(),
+      Key: objectKey,
+    }),
+  );
+
+  const body = response.Body;
+  if (!body) {
+    throw new Error("object_body_not_found");
+  }
+
+  if (typeof (body as any).transformToByteArray === "function") {
+    return Buffer.from(await (body as any).transformToByteArray());
+  }
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of body as AsyncIterable<Uint8Array | Buffer | string>) {
+    if (typeof chunk === "string") {
+      chunks.push(Buffer.from(chunk));
+      continue;
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks);
+}
+

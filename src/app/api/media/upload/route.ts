@@ -17,6 +17,7 @@ import {
   ensurePatientIdentity,
 } from "@/lib/server/patientIdentityDb";
 import { saveClinicalMediaRecord } from "@/lib/server/mediaDb";
+import { isServerPersistenceDisabled } from "@/lib/server/persistenceMode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,6 +62,14 @@ export async function POST(req: Request) {
       !(file instanceof File)
     ) {
       return NextResponse.json({ ok: false, error: "invalid_media_upload_payload" }, { status: 400 });
+    }
+
+    if (isServerPersistenceDisabled()) {
+      return NextResponse.json({
+        ok: true,
+        skipped: true,
+        reason: "vercel_server_persistence_disabled",
+      });
     }
 
     await ensurePatientIdentity(patient);

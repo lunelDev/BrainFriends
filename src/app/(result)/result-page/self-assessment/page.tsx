@@ -922,4 +922,3 @@ export default function ResultPage() {
     </Suspense>
   );
 }
-

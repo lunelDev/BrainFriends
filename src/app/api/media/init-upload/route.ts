@@ -6,6 +6,7 @@ import {
   createPutObjectSignedUrl,
   getObjectStorageBucketName,
 } from "@/lib/server/ncpObjectStorage";
+import { isServerPersistenceDisabled } from "@/lib/server/persistenceMode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,6 +36,14 @@ export async function POST(req: Request) {
 
   if (!body.sourceSessionKey || !body.trainingType || !body.mediaType || !body.captureRole || !body.mimeType || !body.fileExtension) {
     return NextResponse.json({ ok: false, error: "invalid_media_init_payload" }, { status: 400 });
+  }
+
+  if (isServerPersistenceDisabled()) {
+    return NextResponse.json({
+      ok: true,
+      skipped: true,
+      reason: "vercel_server_persistence_disabled",
+    });
   }
 
   try {

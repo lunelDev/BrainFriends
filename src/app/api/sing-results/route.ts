@@ -11,6 +11,7 @@ import {
   buildSingTrainingAuditLog,
 } from "@/lib/server/auditLog";
 import { recordTrainingUsageEvent } from "@/lib/server/trainingUsageEventsDb";
+import { isServerPersistenceDisabled } from "@/lib/server/persistenceMode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,6 +81,37 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { ok: false, error: "invalid_result_payload" },
       { status: 400 },
+    );
+  }
+
+  if (isServerPersistenceDisabled()) {
+    await appendClinicalAuditLog(
+      buildSingTrainingAuditLog({
+        request: req,
+        patient: body.patient,
+        sessionId: body.patient.sessionId,
+        status: "skipped",
+        result: {
+          song: body.result.song,
+          score: body.result.score,
+          finalJitter: body.result.finalJitter,
+          finalSi: body.result.finalSi,
+          rtLatency: body.result.rtLatency,
+          reviewAudioUrl: undefined,
+          versionSnapshot: body.result.versionSnapshot,
+        },
+        failureReason: "vercel_server_persistence_disabled",
+        storageTargets: [],
+      }),
+    );
+
+    return NextResponse.json(
+      {
+        ok: true,
+        skipped: true,
+        reason: "vercel_server_persistence_disabled",
+      },
+      { status: 200 },
     );
   }
 

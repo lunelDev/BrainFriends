@@ -9,6 +9,7 @@ import {
   buildTrainingHistoryAuditLog,
 } from "@/lib/server/auditLog";
 import { recordTrainingUsageEvent } from "@/lib/server/trainingUsageEventsDb";
+import { isServerPersistenceDisabled } from "@/lib/server/persistenceMode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -119,6 +120,29 @@ export async function POST(req: Request) {
         ok: true,
         skipped: true,
         reason: "non_measured_result_not_persisted",
+      },
+      { status: 200 },
+    );
+  }
+
+  if (isServerPersistenceDisabled()) {
+    await appendClinicalAuditLog(
+      buildTrainingHistoryAuditLog({
+        request: req,
+        patient: body.patient,
+        sessionId: body.patient.sessionId,
+        status: "skipped",
+        historyEntry: body.historyEntry,
+        failureReason: "vercel_server_persistence_disabled",
+        storageTargets: [],
+      }),
+    );
+
+    return NextResponse.json(
+      {
+        ok: true,
+        skipped: true,
+        reason: "vercel_server_persistence_disabled",
       },
       { status: 200 },
     );
