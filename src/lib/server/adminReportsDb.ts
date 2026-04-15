@@ -127,50 +127,58 @@ function mapAdminHistoryEntries(
   const patientPseudonymId = String(patient.patient_pseudonym_id);
 
   return [
-    ...languageRows.map((row: any) => ({
-      historyId: row.source_history_id
-        ? String(row.source_history_id)
-        : String(row.result_id),
-      sessionId: String(row.session_id),
-      patientKey: patientPseudonymId,
-      patientName: String(patient.full_name),
-      birthDate: patient.birth_date ? String(patient.birth_date) : "",
-      age: 0,
-      educationYears: 0,
-      place: "home",
-      trainingMode: (row.training_mode === "rehab" ? "rehab" : "self") as TrainingMode,
-      rehabStep: row.rehab_step == null ? undefined : Number(row.rehab_step),
-      completedAt: new Date(row.completed_at).getTime(),
-      aq: Number(row.aq ?? 0),
-      stepScores: (row.step_scores as TrainingHistoryEntry["stepScores"]) ?? {
-        step1: 0,
-        step2: 0,
-        step3: 0,
-        step4: 0,
-        step5: 0,
-        step6: 0,
-      },
-      stepDetails: (row.step_details as TrainingHistoryEntry["stepDetails"]) ?? {
-        step1: [],
-        step2: [],
-        step3: [],
-        step4: [],
-        step5: [],
-        step6: [],
-      },
-      articulationScores:
-        (row.articulation_scores as TrainingHistoryEntry["articulationScores"]) ??
-        undefined,
-      facialAnalysisSnapshot:
-        (row.facial_analysis_snapshot as TrainingHistoryEntry["facialAnalysisSnapshot"]) ??
-        undefined,
-      measurementQuality:
-        (row.measurement_quality as TrainingHistoryEntry["measurementQuality"]) ??
-        undefined,
-      stepVersionSnapshots:
-        (row.step_version_snapshots as TrainingHistoryEntry["stepVersionSnapshots"]) ??
-        undefined,
-    })),
+    ...languageRows.map((row: any) => {
+      const rawStepDetails =
+        row.step_details && typeof row.step_details === "object"
+          ? (row.step_details as Record<string, any>)
+          : {};
+
+      return {
+        historyId: row.source_history_id
+          ? String(row.source_history_id)
+          : String(row.result_id),
+        sessionId: String(row.session_id),
+        patientKey: patientPseudonymId,
+        patientName: String(patient.full_name),
+        birthDate: patient.birth_date ? String(patient.birth_date) : "",
+        age: 0,
+        educationYears: 0,
+        place: "home",
+        trainingMode: (row.training_mode === "rehab" ? "rehab" : "self") as TrainingMode,
+        rehabStep: row.rehab_step == null ? undefined : Number(row.rehab_step),
+        completedAt: new Date(row.completed_at).getTime(),
+        aq: Number(row.aq ?? 0),
+        stepScores: (row.step_scores as TrainingHistoryEntry["stepScores"]) ?? {
+          step1: 0,
+          step2: 0,
+          step3: 0,
+          step4: 0,
+          step5: 0,
+          step6: 0,
+        },
+        stepDetails: {
+          step1: Array.isArray(rawStepDetails.step1) ? rawStepDetails.step1 : [],
+          step2: Array.isArray(rawStepDetails.step2) ? rawStepDetails.step2 : [],
+          step3: Array.isArray(rawStepDetails.step3) ? rawStepDetails.step3 : [],
+          step4: Array.isArray(rawStepDetails.step4) ? rawStepDetails.step4 : [],
+          step5: Array.isArray(rawStepDetails.step5) ? rawStepDetails.step5 : [],
+          step6: Array.isArray(rawStepDetails.step6) ? rawStepDetails.step6 : [],
+        },
+        articulationScores:
+          (row.articulation_scores as TrainingHistoryEntry["articulationScores"]) ??
+          undefined,
+        facialAnalysisSnapshot:
+          (row.facial_analysis_snapshot as TrainingHistoryEntry["facialAnalysisSnapshot"]) ??
+          undefined,
+        measurementQuality:
+          (row.measurement_quality as TrainingHistoryEntry["measurementQuality"]) ??
+          undefined,
+        stepVersionSnapshots:
+          (row.step_version_snapshots as TrainingHistoryEntry["stepVersionSnapshots"]) ??
+          undefined,
+        vnv: (rawStepDetails.__meta?.vnv as TrainingHistoryEntry["vnv"]) ?? undefined,
+      };
+    }),
     ...singRows.map((row: any) => ({
       historyId: `history_sing_${String(row.result_id ?? new Date(row.completed_at).getTime())}`,
       sessionId: String(row.session_id),

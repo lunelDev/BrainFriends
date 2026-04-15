@@ -64,6 +64,7 @@ function sanitizeHistoryEntryForDatabase(
           step6: compactItems(historyEntry.stepDetails.step6),
         }
       : historyEntry.stepDetails,
+    vnv: historyEntry.vnv,
   };
 }
 

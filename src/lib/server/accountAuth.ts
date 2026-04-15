@@ -13,9 +13,10 @@ export const AUTH_COOKIE_NAME = "brainfriends_session";
 const SESSION_TTL_DAYS = 30;
 const BUILTIN_ADMIN_LOGIN_ID = "admin";
 const BUILTIN_ADMIN_PASSWORD = "0000";
+export type UserRole = "patient" | "admin" | "therapist";
 
 export type SignupAccountInput = {
-  userRole?: "patient" | "admin";
+  userRole?: UserRole;
   loginId: string;
   name: string;
   birthDate: string;
@@ -110,9 +111,15 @@ function calcDaysSinceOnset(onsetDate: string) {
   return diffMs < 0 ? 0 : Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
 }
 
+function normalizeUserRole(value: string | null | undefined): UserRole {
+  if (value === "admin") return "admin";
+  if (value === "therapist") return "therapist";
+  return "patient";
+}
+
 export function buildPatientProfile(row: {
   session_seed: string;
-  user_role?: "patient" | "admin" | null;
+  user_role?: UserRole | null;
   full_name: string;
   birth_date: string | null;
   sex: PatientProfile["gender"] | null;
@@ -126,7 +133,7 @@ export function buildPatientProfile(row: {
   const birthDate = row.birth_date ?? "";
   return {
     sessionId: row.session_seed || randomUUID(),
-    userRole: row.user_role === "admin" ? "admin" : "patient",
+    userRole: normalizeUserRole(row.user_role),
     name: row.full_name,
     birthDate,
     gender: row.sex ?? "U",
@@ -243,7 +250,7 @@ async function ensureBuiltinAdminAccount(client: any) {
 }
 
 export async function createAccount(input: SignupAccountInput) {
-  const userRole = "patient";
+  const userRole = normalizeUserRole(input.userRole);
   const loginId = normalizeLoginId(input.loginId);
   const name = normalizeName(input.name);
   const birthDate = normalizeBirthDate(input.birthDate);
@@ -263,11 +270,9 @@ export async function createAccount(input: SignupAccountInput) {
 
   if (
     userRole === "patient" &&
-    (
-      !input.onsetDate ||
+    (!input.onsetDate ||
       !input.educationYears ||
-      (input.gender !== "M" && input.gender !== "F")
-    )
+      (input.gender !== "M" && input.gender !== "F"))
   ) {
     throw new Error("invalid_signup_payload");
   }
@@ -595,7 +600,7 @@ export async function getAuthenticatedSessionContext(sessionToken: string) {
       userId: String(row.user_id),
       patientId: String(row.patient_id),
       patientPseudonymId: String(row.patient_pseudonym_id),
-      userRole: row.user_role === "admin" ? "admin" : "patient",
+      userRole: normalizeUserRole(row.user_role),
       patient: buildPatientProfile({
         session_seed: row.session_seed,
         user_role: row.user_role,

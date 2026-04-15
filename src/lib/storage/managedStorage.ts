@@ -1,42 +1,45 @@
-export type ManagedStorageScope = "local" | "session";
+import {
+  isManagedClientStorageKey,
+  MANAGED_LOCAL_STORAGE_KEYS,
+  MANAGED_LOCAL_STORAGE_PREFIXES,
+  MANAGED_SESSION_STORAGE_KEYS,
+  MANAGED_SESSION_STORAGE_PREFIXES,
+  type ClientStorageScope,
+} from "@/lib/security/storagePolicy";
 
-const LOCAL_KEYS = new Set([
-  "kwab_training_session",
-  "kwab_training_exit_progress",
-  "step1_data",
-  "step1_data__meta",
-  "step2_recorded_audios",
-  "step2_recorded_audios__meta",
-  "step3_data",
-  "step3_data__meta",
-  "step4_recorded_audios",
-  "step4_recorded_audios__meta",
-  "step5_recorded_data",
-  "step5_recorded_data__meta",
-  "step6_recorded_data",
-  "step6_recorded_data__meta",
-]);
+export type ManagedStorageScope = ClientStorageScope;
 
-const SESSION_KEYS = new Set([
-  "btt.trainingMode",
-  "btt.trialMode",
-  "brain-sing-result",
-]);
-
-const SESSION_PREFIXES = ["step3_protocol:", "step6_questions:"];
+export const LOCAL_MANAGED_KEYS = MANAGED_LOCAL_STORAGE_KEYS;
+export const SESSION_MANAGED_KEYS = MANAGED_SESSION_STORAGE_KEYS;
+export const LOCAL_MANAGED_PREFIXES = MANAGED_LOCAL_STORAGE_PREFIXES;
+export const SESSION_MANAGED_PREFIXES = MANAGED_SESSION_STORAGE_PREFIXES;
 
 export function isManagedStorageKey(
   scope: ManagedStorageScope,
   key: string,
 ) {
-  if (!key) return false;
-  if (scope === "local") {
-    return LOCAL_KEYS.has(key);
+  return isManagedClientStorageKey(scope, key);
+}
+
+export function filterManagedStorageDrafts(
+  drafts:
+    | Partial<Record<ManagedStorageScope, Record<string, string>>>
+    | null
+    | undefined,
+): Record<ManagedStorageScope, Record<string, string>> {
+  const sanitized = {
+    local: {} as Record<string, string>,
+    session: {} as Record<string, string>,
+  };
+
+  for (const scope of ["local", "session"] as const) {
+    const entries = Object.entries(drafts?.[scope] ?? {});
+    for (const [key, value] of entries) {
+      if (typeof value !== "string") continue;
+      if (!isManagedStorageKey(scope, key)) continue;
+      sanitized[scope][key] = value;
+    }
   }
 
-  if (SESSION_KEYS.has(key)) {
-    return true;
-  }
-
-  return SESSION_PREFIXES.some((prefix) => key.startsWith(prefix));
+  return sanitized;
 }

@@ -7,6 +7,14 @@ import {
   getAuthenticatedSessionContext,
 } from "@/lib/server/accountAuth";
 import { listTrainingDraftsForAuthenticatedUser } from "@/lib/server/trainingDraftsDb";
+import {
+  filterManagedStorageDrafts,
+  LOCAL_MANAGED_KEYS,
+  LOCAL_MANAGED_PREFIXES,
+  SESSION_MANAGED_KEYS,
+  SESSION_MANAGED_PREFIXES,
+} from "@/lib/storage/managedStorage";
+import { redactPatientForClient } from "@/lib/security/patientRedaction";
 
 const notoSansKr = Noto_Sans_KR({
   subsets: ["latin"],
@@ -34,41 +42,30 @@ function serializeDraftBootstrap(drafts: unknown) {
 function buildStorageBootstrapScript(patient: unknown, drafts: unknown) {
   const serializedPatient = serializePatientBootstrap(patient);
   const serializedDrafts = serializeDraftBootstrap(drafts);
+  const serializedLocalKeys = JSON.stringify(LOCAL_MANAGED_KEYS);
+  const serializedLocalPrefixes = JSON.stringify(LOCAL_MANAGED_PREFIXES);
+  const serializedSessionKeys = JSON.stringify(SESSION_MANAGED_KEYS);
+  const serializedSessionPrefixes = JSON.stringify(SESSION_MANAGED_PREFIXES);
   return `
     (() => {
       const patient = ${serializedPatient};
       const drafts = ${serializedDrafts};
+      const localManagedKeys = new Set(${serializedLocalKeys});
+      const localManagedPrefixes = ${serializedLocalPrefixes};
+      const sessionManagedKeys = new Set(${serializedSessionKeys});
+      const sessionManagedPrefixes = ${serializedSessionPrefixes};
       window.__BRAINFRIENDS_PATIENT__ = patient;
       window.__BRAINFRIENDS_DRAFTS__ = drafts;
 
       const isManagedKey = (scope, key) => {
         if (!key) return false;
         if (scope === "local") {
-          return [
-            "kwab_training_session",
-            "kwab_clinical_audit_trail",
-            "kwab_training_exit_progress",
-            "step1_data",
-            "step1_data__meta",
-            "step2_recorded_audios",
-            "step2_recorded_audios__meta",
-            "step3_data",
-            "step3_data__meta",
-            "step4_recorded_audios",
-            "step4_recorded_audios__meta",
-            "step5_recorded_data",
-            "step5_recorded_data__meta",
-            "step6_recorded_data",
-            "step6_recorded_data__meta",
-          ].includes(key);
+          return localManagedKeys.has(key) || localManagedPrefixes.some((prefix) => key.startsWith(prefix));
         }
-        if (scope === "local" && key.startsWith("kwab_training_history:")) {
+        if (sessionManagedKeys.has(key)) {
           return true;
         }
-        if (["btt.trainingMode", "btt.trialMode", "brain-sing-result", "brain-sing-last-song"].includes(key)) {
-          return true;
-        }
-        return key.startsWith("step3_protocol:") || key.startsWith("step6_questions:");
+        return sessionManagedPrefixes.some((prefix) => key.startsWith(prefix));
       };
 
       const hydrateStorage = (scope, storage, values) => {
@@ -152,12 +149,15 @@ export default async function RootLayout({
     ? await getAuthenticatedSessionContext(sessionToken).catch(() => null)
     : null;
   const sessionPatient = sessionContext?.patient ?? null;
-  const clientDrafts = sessionToken
+  const clientPatient = redactPatientForClient(sessionPatient);
+  const clientDrafts = filterManagedStorageDrafts(
+    sessionToken
     ? await listTrainingDraftsForAuthenticatedUser(sessionToken).catch(() => ({
         local: {},
         session: {},
       }))
-    : { local: {}, session: {} };
+    : { local: {}, session: {} },
+  );
 
   return (
     <html lang="ko" suppressHydrationWarning>
@@ -168,7 +168,7 @@ export default async function RootLayout({
       >
         <script
           dangerouslySetInnerHTML={{
-            __html: buildStorageBootstrapScript(sessionPatient, clientDrafts),
+            __html: buildStorageBootstrapScript(clientPatient, clientDrafts),
           }}
         />
         {children}

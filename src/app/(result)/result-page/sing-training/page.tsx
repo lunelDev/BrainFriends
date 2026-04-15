@@ -736,7 +736,7 @@ export default function SingTrainingResultPage() {
     setDbSaveState("saving");
 
     void persistToDatabase(patient, result).then(
-      ({ ranking, skipped, ok, error, nextResult }) => {
+      async ({ ranking, skipped, ok, error, nextResult }) => {
         if (cancelled) {
           return;
         }
@@ -760,6 +760,14 @@ export default function SingTrainingResultPage() {
           setMyRank(ranking.myRank);
         }
         setDbSaveState(skipped ? "local_only" : "saved");
+        try {
+          const { entries } = await fetchMyHistoryEntries();
+          if (!cancelled) {
+            setHistoryEntries(entries);
+          }
+        } catch (refreshError) {
+          console.error("[sing-result] failed to refresh server history", refreshError);
+        }
       },
     );
 

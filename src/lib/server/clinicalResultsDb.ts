@@ -83,7 +83,12 @@ export async function saveTrainingHistoryToDatabase(params: {
   );
   const completedAt = new Date(historyEntry.completedAt);
   const representativeSnapshot = pickRepresentativeSnapshot(historyEntry);
-  const safeStepDetails = sanitizeStepDetails(historyEntry.stepDetails);
+  const safeStepDetails = {
+    ...sanitizeStepDetails(historyEntry.stepDetails),
+    __meta: {
+      vnv: historyEntry.vnv ?? null,
+    },
+  };
 
   try {
     await client.query("BEGIN");

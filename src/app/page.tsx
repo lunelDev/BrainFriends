@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { PatientProfile } from "@/lib/patientStorage";
+import { redactPatientForClient } from "@/lib/security/patientRedaction";
 
 type LoginForm = {
   loginId: string;
@@ -12,7 +13,6 @@ type LoginForm = {
 
 export default function LoginPage() {
   const router = useRouter();
-  const isDevelopment = process.env.NODE_ENV === "development";
   const [form, setForm] = useState<LoginForm>({
     loginId: "",
     password: "",
@@ -31,7 +31,11 @@ export default function LoginPage() {
 
   const bootstrapPatient = (patient: PatientProfile) => {
     if (typeof window !== "undefined") {
-      window.__BRAINFRIENDS_PATIENT__ = patient;
+      window.__BRAINFRIENDS_PATIENT__ = redactPatientForClient({
+        id: patient.sessionId,
+        name: patient.name,
+        userRole: patient.userRole,
+      });
     }
   };
 
@@ -40,6 +44,9 @@ export default function LoginPage() {
       patient &&
         (patient.userRole === "admin" || patient.name === "관리자"),
     );
+
+  const isTherapistPatient = (patient: PatientProfile | null | undefined) =>
+    Boolean(patient && patient.userRole === "therapist");
 
   const requestPermissions = async () => {
     setIsRequestingPermissions(true);
@@ -60,6 +67,15 @@ export default function LoginPage() {
 
   const moveAfterPermission = async (patient: PatientProfile) => {
     bootstrapPatient(patient);
+
+    if (isTherapistPatient(patient)) {
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem("btt.trialMode");
+      }
+      router.replace("/therapist");
+      return;
+    }
+
     if (isAdminPatient(patient)) {
       if (typeof window !== "undefined") {
         window.sessionStorage.removeItem("btt.trialMode");
@@ -67,6 +83,7 @@ export default function LoginPage() {
       router.replace("/select-page/mode");
       return;
     }
+
     let hasSelfDiagnosisHistory = false;
 
     try {
@@ -99,6 +116,15 @@ export default function LoginPage() {
 
   const routeAfterAuth = (patient: PatientProfile) => {
     bootstrapPatient(patient);
+
+    if (isTherapistPatient(patient)) {
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem("btt.trialMode");
+      }
+      router.replace("/therapist");
+      return;
+    }
+
     setPendingPatient(patient);
     setShowPermissionModal(true);
   };
@@ -205,10 +231,10 @@ export default function LoginPage() {
             <h1 className="mt-4 text-4xl font-black leading-tight">
               언어 재활 훈련을
               <br />
-              계정 기반으로 시작합니다.
+              계정 기반으로 시작합니다
             </h1>
             <p className="mt-5 text-sm font-medium leading-7 text-slate-200">
-              회원가입 후 아이디와 비밀번호로 로그인합니다.
+              회원가입 후 등록한 아이디와 비밀번호로 로그인합니다.
             </p>
           </div>
           <div className="rounded-[28px] border border-white/10 bg-white/10 p-6 backdrop-blur">
@@ -216,7 +242,8 @@ export default function LoginPage() {
               Included
             </p>
             <p className="mt-3 text-sm font-semibold leading-7 text-slate-100">
-              사용자 기본정보 저장, 계정 인증, 세션 유지, 기존 훈련 화면 연동을 포함합니다.
+              사용자 기본정보 관리, 계정 인증, 세션 유지, 기존 훈련 화면
+              연동을 포함합니다.
             </p>
           </div>
         </section>
@@ -262,8 +289,12 @@ export default function LoginPage() {
               </Field>
             </div>
 
-            {notice ? <p className="mt-4 text-sm font-bold text-emerald-600">{notice}</p> : null}
-            {error ? <p className="mt-4 text-sm font-bold text-red-500">{error}</p> : null}
+            {notice ? (
+              <p className="mt-4 text-sm font-bold text-emerald-600">{notice}</p>
+            ) : null}
+            {error ? (
+              <p className="mt-4 text-sm font-bold text-red-500">{error}</p>
+            ) : null}
 
             <button
               type="button"
@@ -271,7 +302,7 @@ export default function LoginPage() {
               disabled={isSubmitting}
               className="mt-6 inline-flex h-13 w-full items-center justify-center rounded-2xl bg-orange-500 px-6 text-base font-black text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
-              {isSubmitting ? "로그인 중..." : "로그인"}
+              {isSubmitting ? "로그인 중.." : "로그인"}
             </button>
 
             <div className="mt-5 flex items-center justify-between gap-3 text-sm font-semibold text-slate-500">
@@ -311,14 +342,14 @@ export default function LoginPage() {
 
       {showFirstDiagnosisModal && pendingPatient ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/45 p-4 backdrop-blur-[2px]">
-          <div className="my-auto w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-orange-100 bg-white p-4 [@media(min-height:901px)]:p-6 shadow-2xl">
+          <div className="my-auto w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-orange-100 bg-white p-4 shadow-2xl [@media(min-height:901px)]:p-6">
             <p className="mb-2 text-[10px] font-black uppercase tracking-[0.25em] text-orange-500">
               First Diagnosis
             </p>
-            <h3 className="mb-2 text-lg [@media(min-height:901px)]:text-xl font-black text-slate-900">
-              최초 1회는 자가 진단이 필요합니다
+            <h3 className="mb-2 text-lg font-black text-slate-900 [@media(min-height:901px)]:text-xl">
+              최초 1회는 자가진단이 필요합니다.
             </h3>
-            <p className="mb-4 [@media(min-height:901px)]:mb-6 text-sm font-bold text-slate-600">
+            <p className="mb-4 text-sm font-bold text-slate-600 [@media(min-height:901px)]:mb-6">
               카메라와 마이크 권한을 확인한 뒤 자가진단을 시작합니다.
             </p>
 
@@ -350,15 +381,15 @@ export default function LoginPage() {
 
       {showPermissionModal && pendingPatient ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/45 p-4 backdrop-blur-[2px]">
-          <div className="my-auto w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-orange-100 bg-white p-4 [@media(min-height:901px)]:p-6 shadow-2xl">
+          <div className="my-auto w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-orange-100 bg-white p-4 shadow-2xl [@media(min-height:901px)]:p-6">
             <p className="mb-2 text-[10px] font-black uppercase tracking-[0.25em] text-orange-500">
               Device Permission
             </p>
-            <h3 className="mb-2 text-lg [@media(min-height:901px)]:text-xl font-black text-slate-900">
-              카메라와 마이크 권한을 확인합니다
+            <h3 className="mb-2 text-lg font-black text-slate-900 [@media(min-height:901px)]:text-xl">
+              카메라와 마이크 권한을 확인합니다.
             </h3>
-            <p className="mb-4 [@media(min-height:901px)]:mb-6 text-sm font-bold text-slate-600">
-              다음 페이지로 이동하기 전에 장치 권한이 필요합니다.
+            <p className="mb-4 text-sm font-bold text-slate-600 [@media(min-height:901px)]:mb-6">
+              다음 페이지로 이동하기 전에 기기 접근 권한이 필요합니다.
             </p>
 
             <div className="grid grid-cols-1 gap-2 [@media(min-height:901px)]:gap-3">
@@ -369,6 +400,13 @@ export default function LoginPage() {
                   const granted = await requestPermissions();
                   if (!granted) return;
                   setShowPermissionModal(false);
+                  if (isTherapistPatient(pendingPatient)) {
+                    if (typeof window !== "undefined") {
+                      window.sessionStorage.removeItem("btt.trialMode");
+                    }
+                    router.replace("/therapist");
+                    return;
+                  }
                   if (isAdminPatient(pendingPatient)) {
                     if (typeof window !== "undefined") {
                       window.sessionStorage.removeItem("btt.trialMode");
@@ -400,7 +438,7 @@ export default function LoginPage() {
                 disabled={isRequestingPermissions}
                 className="w-full rounded-2xl bg-orange-500 py-3.5 font-black text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-slate-400"
               >
-                {isRequestingPermissions ? "권한 확인 중..." : "권한 확인 후 계속"}
+                {isRequestingPermissions ? "권한 확인 중.." : "권한 확인 후 계속"}
               </button>
               <button
                 type="button"

@@ -23,6 +23,12 @@ import {
   appendClientClinicalAuditLog,
   buildClientStepAuditLog,
 } from "@/lib/audit/clientAuditTrail";
+import type { RequirementId } from "@/lib/vnv/requirements";
+import {
+  buildRequirementTraceabilitySummary,
+  type RequirementTraceabilitySummary,
+  type RuntimeValidationRecord,
+} from "@/lib/vnv/traceability";
 // ============================================================================
 // 1. Step별 결과 타입
 // ============================================================================
@@ -217,6 +223,7 @@ export interface TrainingSession {
 
   // 언어 점수 (실시간 계산)
   kwabScores?: KWABScores;
+  vnvRuntimeChecks?: RuntimeValidationRecord[];
 }
 
 // ============================================================================
@@ -240,6 +247,12 @@ export interface MeasurementQualitySnapshot {
     step6: MeasurementQualityLevel;
   };
   notes: string[];
+}
+
+export interface VnvSnapshot {
+  summary: RequirementTraceabilitySummary;
+  runtimeChecks: RuntimeValidationRecord[];
+  generatedAt: string;
 }
 
 export interface SingHistoryResult {
@@ -370,6 +383,7 @@ export interface TrainingHistoryEntry {
     step6?: VersionSnapshot;
   };
   measurementQuality?: MeasurementQualitySnapshot;
+  vnv?: VnvSnapshot;
 }
 
 export class SessionManager {
@@ -390,9 +404,40 @@ export class SessionManager {
         place,
         patientKey: SessionManager.getPatientKey(patient),
         startedAt: Date.now(),
+        vnvRuntimeChecks: [],
       };
       this.saveSession();
     }
+  }
+
+  private recordVnvCheckpoint(
+    requirementIds: RequirementId[],
+    checkpoint: string,
+    passed: boolean,
+    detail: string,
+  ) {
+    const record: RuntimeValidationRecord = {
+      requirementIds,
+      checkpoint,
+      status: passed ? "pass" : "warn",
+      detail,
+      recordedAt: new Date().toISOString(),
+    };
+
+    this.session.vnvRuntimeChecks = [
+      ...(this.session.vnvRuntimeChecks ?? []),
+      record,
+    ].slice(-100);
+  }
+
+  private buildVnvSnapshot(requirementIds: RequirementId[]): VnvSnapshot {
+    return {
+      summary: buildRequirementTraceabilitySummary(requirementIds),
+      runtimeChecks: (this.session.vnvRuntimeChecks ?? []).filter((record) =>
+        record.requirementIds.some((id) => requirementIds.includes(id)),
+      ),
+      generatedAt: new Date().toISOString(),
+    };
   }
 
   private appendStepAuditLog(
@@ -423,6 +468,12 @@ export class SessionManager {
   saveStep1Result(result: Step1Result) {
     this.session.step1 = result;
     this.updateKWABScores();
+    this.recordVnvCheckpoint(
+      ["SR-SESSION-003", "SR-SCORE-004"],
+      "step1_result_saved",
+      result.totalQuestions > 0,
+      `step1 correct=${result.correctAnswers}/${result.totalQuestions}`,
+    );
     this.saveSession();
     this.appendStepAuditLog(
       "step1",
@@ -441,6 +492,12 @@ export class SessionManager {
   saveStep2Result(result: Step2Result) {
     this.session.step2 = result;
     this.updateKWABScores();
+    this.recordVnvCheckpoint(
+      ["SR-SESSION-003"],
+      "step2_result_saved",
+      result.items.length > 0,
+      `step2 items=${result.items.length} pronunciation=${result.averagePronunciation}`,
+    );
     this.saveSession();
     this.appendStepAuditLog(
       "step2",
@@ -459,6 +516,12 @@ export class SessionManager {
   saveStep3Result(result: Step3Result) {
     this.session.step3 = result;
     this.updateKWABScores();
+    this.recordVnvCheckpoint(
+      ["SR-SESSION-003", "SR-SCORE-004"],
+      "step3_result_saved",
+      result.totalCount > 0,
+      `step3 correct=${result.correctCount}/${result.totalCount}`,
+    );
     this.saveSession();
     this.appendStepAuditLog(
       "step3",
@@ -477,6 +540,12 @@ export class SessionManager {
   saveStep4Result(result: Step4Result) {
     this.session.step4 = result;
     this.updateKWABScores();
+    this.recordVnvCheckpoint(
+      ["SR-SESSION-003", "SR-MEASURE-006"],
+      "step4_result_saved",
+      result.totalScenarios > 0,
+      `step4 scenarios=${result.totalScenarios} score=${result.score}`,
+    );
     this.saveSession();
     this.appendStepAuditLog(
       "step4",
@@ -495,6 +564,12 @@ export class SessionManager {
   saveStep5Result(result: Step5Result) {
     this.session.step5 = result;
     this.updateKWABScores();
+    this.recordVnvCheckpoint(
+      ["SR-SESSION-003", "SR-MEASURE-006"],
+      "step5_result_saved",
+      result.totalQuestions > 0,
+      `step5 correct=${result.correctAnswers}/${result.totalQuestions}`,
+    );
     this.saveSession();
     this.appendStepAuditLog(
       "step5",
@@ -516,6 +591,12 @@ export class SessionManager {
     this.session.step6 = result;
     this.session.completedAt = Date.now();
     this.updateKWABScores();
+    this.recordVnvCheckpoint(
+      ["SR-SESSION-003", "SR-HISTORY-005"],
+      "step6_result_saved",
+      result.totalTasks > 0,
+      `step6 completed=${result.completedTasks}/${result.totalTasks}`,
+    );
     this.saveSession();
     this.appendStepAuditLog(
       "step6",
@@ -538,6 +619,12 @@ export class SessionManager {
       this.session.sessionId = `session_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     }
     this.updateKWABScores();
+    this.recordVnvCheckpoint(
+      ["SR-HISTORY-005"],
+      "session_finalized",
+      true,
+      `mode=${mode}${rehabStep ? ` rehabStep=${rehabStep}` : ""}`,
+    );
     this.saveSession();
     this.saveHistoryEntry(mode, rehabStep);
   }
@@ -564,6 +651,126 @@ export class SessionManager {
       reading,
       writing,
     });
+    this.recordVnvCheckpoint(
+      ["SR-SCORE-004"],
+      "aq_recalculated",
+      Number.isFinite(Number(this.session.kwabScores?.aq ?? NaN)),
+      `aq=${Number(this.session.kwabScores?.aq ?? 0).toFixed(1)}`,
+    );
+  }
+
+  private buildSessionStorageSnapshot(): TrainingSession {
+    const sanitizeStep1 = (step: Step1Result | undefined) =>
+      step
+        ? {
+            ...step,
+            items: (step.items ?? []).map((item) => ({
+              question: item.question,
+              userAnswer: item.userAnswer,
+              correctAnswer: item.correctAnswer,
+              isCorrect: item.isCorrect,
+              responseTime: item.responseTime,
+            })),
+          }
+        : undefined;
+
+    const sanitizeStep2 = (step: Step2Result | undefined) =>
+      step
+        ? {
+            ...step,
+            items: (step.items ?? []).map((item) => ({
+              text: item.text,
+              isCorrect: item.isCorrect,
+              symmetryScore: item.symmetryScore,
+              pronunciationScore: item.pronunciationScore,
+              consonantAccuracy: item.consonantAccuracy,
+              vowelAccuracy: item.vowelAccuracy,
+              dataSource: item.dataSource,
+              audioLevel: item.audioLevel,
+            })),
+          }
+        : undefined;
+
+    const sanitizeStep3 = (step: Step3Result | undefined) =>
+      step
+        ? {
+            ...step,
+            items: (step.items ?? []).map((item: any) => ({
+              text: item?.text ?? null,
+              isCorrect: item?.isCorrect ?? null,
+            })),
+          }
+        : undefined;
+
+    const sanitizeStep4 = (step: Step4Result | undefined) =>
+      step
+        ? {
+            ...step,
+            items: (step.items ?? []).map((item) => ({
+              situation: item.situation,
+              prompt: item.prompt,
+              transcript: item.transcript,
+              isCorrect: item.isCorrect,
+              contentComponentScore: item.contentComponentScore,
+              fluencyComponentScore: item.fluencyComponentScore,
+              clarityComponentScore: item.clarityComponentScore,
+              responseStartComponentScore: item.responseStartComponentScore,
+              responseStartMs: item.responseStartMs,
+              speechDuration: item.speechDuration,
+              silenceRatio: item.silenceRatio,
+              averageAmplitude: item.averageAmplitude,
+              peakCount: item.peakCount,
+              kwabScore: item.kwabScore,
+              rawScore: item.rawScore,
+              consonantAccuracy: item.consonantAccuracy,
+              vowelAccuracy: item.vowelAccuracy,
+            })),
+          }
+        : undefined;
+
+    const sanitizeStep5 = (step: Step5Result | undefined) =>
+      step
+        ? {
+            ...step,
+            items: (step.items ?? []).map((item) => ({
+              text: item.text,
+              isCorrect: item.isCorrect,
+              readingScore: item.readingScore,
+              consonantAccuracy: item.consonantAccuracy,
+              vowelAccuracy: item.vowelAccuracy,
+              dataSource: item.dataSource,
+              totalTime: item.totalTime,
+              wordsPerMinute: item.wordsPerMinute,
+            })),
+          }
+        : undefined;
+
+    const sanitizeStep6 = (step: Step6Result | undefined) =>
+      step
+        ? {
+            ...step,
+            items: (step.items ?? []).map((item) => ({
+              word: item.word,
+              expectedStrokes: item.expectedStrokes,
+              userStrokes: item.userStrokes,
+              isCorrect: item.isCorrect,
+              shapeSimilarityPct: item.shapeSimilarityPct,
+              writingScore: item.writingScore,
+              userImage: "",
+              articulationWritingConsistency: item.articulationWritingConsistency,
+            })),
+          }
+        : undefined;
+
+    return {
+      ...this.session,
+      step1: sanitizeStep1(this.session.step1),
+      step2: sanitizeStep2(this.session.step2),
+      step3: sanitizeStep3(this.session.step3),
+      step4: sanitizeStep4(this.session.step4),
+      step5: sanitizeStep5(this.session.step5),
+      step6: sanitizeStep6(this.session.step6),
+    };
   }
 
   // ========================================================================
@@ -662,7 +869,10 @@ export class SessionManager {
 
   private saveSession() {
     if (typeof window !== "undefined") {
-      localStoreAdapter.setItem(this.storageKey, JSON.stringify(this.session));
+      localStoreAdapter.setItem(
+        this.storageKey,
+        JSON.stringify(this.buildSessionStorageSnapshot()),
+      );
     }
   }
 
@@ -783,12 +993,37 @@ export class SessionManager {
       }
     };
 
-    const step1Rows = readArray("step1_data");
-    const step2Rows = readArray("step2_recorded_audios");
-    const step3Rows = readArray("step3_data");
+    const step1Rows =
+      readArray("step1_data").length > 0
+        ? readArray("step1_data")
+        : Array.isArray(this.session.step1?.items)
+          ? this.session.step1.items
+          : [];
+    const step2Rows =
+      readArray("step2_recorded_audios").length > 0
+        ? readArray("step2_recorded_audios")
+        : Array.isArray(this.session.step2?.items)
+          ? this.session.step2.items
+          : [];
+    const step3Rows =
+      readArray("step3_data").length > 0
+        ? readArray("step3_data")
+        : Array.isArray(this.session.step3?.items)
+          ? this.session.step3.items
+          : [];
     const step4RowsRaw = readArray("step4_recorded_audios");
-    const step5Rows = readArray("step5_recorded_data");
-    const step6Rows = readArray("step6_recorded_data");
+    const step5Rows =
+      readArray("step5_recorded_data").length > 0
+        ? readArray("step5_recorded_data")
+        : Array.isArray(this.session.step5?.items)
+          ? this.session.step5.items
+          : [];
+    const step6Rows =
+      readArray("step6_recorded_data").length > 0
+        ? readArray("step6_recorded_data")
+        : Array.isArray(this.session.step6?.items)
+          ? this.session.step6.items
+          : [];
     const step4Rows =
       step4RowsRaw.length > 0
         ? step4RowsRaw
@@ -1020,6 +1255,18 @@ export class SessionManager {
       `overall=${measurementQuality.overall}`,
       ...Object.entries(measurementQuality.steps).map(([key, value]) => `${key}=${value}`),
     ];
+    const historyRequirementIds: RequirementId[] = [
+      "SR-SESSION-003",
+      "SR-SCORE-004",
+      "SR-HISTORY-005",
+      "SR-MEASURE-006",
+    ];
+    this.recordVnvCheckpoint(
+      ["SR-MEASURE-006"],
+      "measurement_quality_evaluated",
+      measurementQuality.overall !== "demo",
+      `overall=${measurementQuality.overall}`,
+    );
     const previousComparableEntry = SessionManager.getHistoryFor(this.session.patient as any)
       .sort((a, b) => b.completedAt - a.completedAt)
       .find((row) => {
@@ -1160,6 +1407,7 @@ export class SessionManager {
         longitudinalDelta,
       },
       measurementQuality,
+      vnv: this.buildVnvSnapshot(historyRequirementIds),
     };
   }
 

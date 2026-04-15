@@ -111,6 +111,8 @@ export async function POST(req: Request) {
         payload: {
           historyId: body.historyEntry.historyId,
           measurementQuality: body.historyEntry.measurementQuality?.overall ?? null,
+          requirementIds: body.historyEntry.vnv?.summary.requirementIds ?? [],
+          testCaseIds: body.historyEntry.vnv?.summary.testCaseIds ?? [],
         },
       }).catch(() => undefined);
     }
@@ -171,6 +173,8 @@ export async function POST(req: Request) {
           historyId: body.historyEntry.historyId,
           resultId: saved.resultId,
           aq: body.historyEntry.aq,
+          requirementIds: body.historyEntry.vnv?.summary.requirementIds ?? [],
+          testCaseIds: body.historyEntry.vnv?.summary.testCaseIds ?? [],
         },
       }).catch(() => undefined);
     }

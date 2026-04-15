@@ -27,6 +27,7 @@ import {
   persistTrainingHistoryToDatabase,
   syncTrainingMediaForHistory,
 } from "@/lib/client/clinicalResultsApi";
+import { collectHistoryMeasurementsForEvaluation } from "@/lib/ai/measurementCollector";
 import { fetchMyHistoryEntries } from "@/lib/client/historyApi";
 import {
   cancelSpeechPlayback,
@@ -294,6 +295,7 @@ function ResultContent() {
   const qualityUi = getMeasurementQualityUi(
     currentHistoryEntry?.measurementQuality?.overall,
   );
+  const vnvSummary = currentHistoryEntry?.vnv?.summary ?? null;
   const isServerExcluded = false;
   const isDemoResult = currentHistoryEntry?.measurementQuality?.overall === "demo";
 
@@ -382,6 +384,10 @@ function ResultContent() {
   // --- 데이터 불러오기 및 내보내기 로직 (보존) ---
   useEffect(() => {
     setIsMounted(true);
+    const managerSession =
+      patientProfile && place
+        ? new SessionManager(patientProfile as any, place).getSession()
+        : null;
     const backups = {
       step1: parseStoredArray("step1_data"),
       step2: parseStoredArray("step2_recorded_audios"),
@@ -391,14 +397,50 @@ function ResultContent() {
       step6: parseStoredArray("step6_recorded_data"),
     };
     setSessionData({
-      step1: { items: backups.step1 },
-      step2: { items: backups.step2 },
-      step3: { items: backups.step3 },
-      step4: { items: backups.step4 },
-      step5: { items: backups.step5 },
-      step6: { items: backups.step6 },
+      step1: {
+        ...(managerSession?.step1 ?? {}),
+        items:
+          backups.step1.length > 0
+            ? backups.step1
+            : managerSession?.step1?.items ?? [],
+      },
+      step2: {
+        ...(managerSession?.step2 ?? {}),
+        items:
+          backups.step2.length > 0
+            ? backups.step2
+            : managerSession?.step2?.items ?? [],
+      },
+      step3: {
+        ...(managerSession?.step3 ?? {}),
+        items:
+          backups.step3.length > 0
+            ? backups.step3
+            : managerSession?.step3?.items ?? [],
+      },
+      step4: {
+        ...(managerSession?.step4 ?? {}),
+        items:
+          backups.step4.length > 0
+            ? backups.step4
+            : managerSession?.step4?.items ?? [],
+      },
+      step5: {
+        ...(managerSession?.step5 ?? {}),
+        items:
+          backups.step5.length > 0
+            ? backups.step5
+            : managerSession?.step5?.items ?? [],
+      },
+      step6: {
+        ...(managerSession?.step6 ?? {}),
+        items:
+          backups.step6.length > 0
+            ? backups.step6
+            : managerSession?.step6?.items ?? [],
+      },
     });
-  }, []);
+  }, [patientProfile, place]);
 
   useEffect(() => {
     if (!patientProfile) return;
@@ -436,6 +478,16 @@ function ResultContent() {
       )
       .then(async (response) => {
         setDbSaveState(response.skipped ? "local_only" : "saved");
+        if (!response.skipped) {
+          await collectHistoryMeasurementsForEvaluation(currentHistoryEntry).catch(
+            (error) => {
+              console.error(
+                "[result-self] failed to collect evaluation samples",
+                error,
+              );
+            },
+          );
+        }
         try {
           const { entries } = await fetchMyHistoryEntries();
           setServerHistory(entries);
@@ -525,6 +577,7 @@ function ResultContent() {
       patient,
       place,
       trainingMode: currentTrainingMode,
+      vnv: currentHistoryEntry?.vnv ?? null,
       queryScores,
       derivedKwab,
       summaryScores: stepDetails,
@@ -721,6 +774,11 @@ function ResultContent() {
               <div className={`px-3 py-2 rounded-xl border text-[11px] sm:text-xs font-bold ${qualityUi.className}`}>
                 측정 품질 · {qualityUi.label}
               </div>
+              {vnvSummary ? (
+                <div className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-[11px] sm:text-xs font-bold text-slate-700">
+                  V&V · 요구사항 {vnvSummary.requirementIds.length}건 / 시험 {vnvSummary.testCaseIds.length}건
+                </div>
+              ) : null}
               <button
                 onClick={handleExportData}
                 className="px-3 sm:px-4 py-2 bg-white text-slate-900 border border-orange-200 rounded-xl text-[11px] sm:text-xs font-bold shadow-sm hover:bg-orange-50 active:scale-95 transition-all inline-flex items-center gap-1.5"

@@ -241,6 +241,8 @@ export function buildTrainingHistoryAuditLog(params: {
       step6_score: stepScores?.step6 ?? null,
       asymmetry_risk: historyEntry?.facialAnalysisSnapshot?.asymmetryRisk ?? null,
       articulation_gap: historyEntry?.facialAnalysisSnapshot?.articulationGap ?? null,
+      vnv_requirement_count: historyEntry?.vnv?.summary.requirementIds.length ?? null,
+      vnv_test_case_count: historyEntry?.vnv?.summary.testCaseIds.length ?? null,
     },
     final_scores: {
       aq: historyEntry?.aq ?? null,
@@ -251,6 +253,7 @@ export function buildTrainingHistoryAuditLog(params: {
       step4: stepScores?.step4 ?? null,
       step5: stepScores?.step5 ?? null,
       step6: stepScores?.step6 ?? null,
+      measurement_quality: historyEntry?.measurementQuality?.overall ?? null,
     },
     threshold_decision:
       thresholdObserved === null

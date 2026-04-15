@@ -23,6 +23,7 @@ import {
   persistTrainingHistoryToDatabase,
   syncTrainingMediaForHistory,
 } from "@/lib/client/clinicalResultsApi";
+import { collectHistoryMeasurementsForEvaluation } from "@/lib/ai/measurementCollector";
 import { fetchMyHistoryEntries } from "@/lib/client/historyApi";
 import { Database, Printer, ScanFace, TrendingUp } from "lucide-react";
 import {
@@ -167,6 +168,7 @@ function ResultRehabPage() {
   const qualityUi = getMeasurementQualityUi(
     latestStepRow?.measurementQuality?.overall,
   );
+  const vnvSummary = latestStepRow?.vnv?.summary ?? null;
   const isServerExcluded = false;
   const isDemoResult = latestStepRow?.measurementQuality?.overall === "demo";
 
@@ -179,8 +181,27 @@ function ResultRehabPage() {
 
     void syncTrainingMediaForHistory(patient, latestStepRow)
       .then(() => persistTrainingHistoryToDatabase(patient, latestStepRow))
-      .then((response) => {
+      .then(async (response) => {
         setDbSaveState(response.skipped ? "local_only" : "saved");
+        if (!response.skipped) {
+          await collectHistoryMeasurementsForEvaluation(latestStepRow).catch(
+            (error) => {
+              console.error(
+                "[result-rehab] failed to collect evaluation samples",
+                error,
+              );
+            },
+          );
+        }
+        try {
+          const { entries } = await fetchMyHistoryEntries();
+          setServerHistoryRows(entries);
+          setHistoryRows(
+            mergeHistoryRows(entries, liveHistoryEntry ? [liveHistoryEntry] : []),
+          );
+        } catch (refreshError) {
+          console.error("[result-rehab] failed to refresh server history", refreshError);
+        }
       })
       .catch((error) => {
         console.error("[result-rehab] failed to persist clinical result", error);
@@ -394,6 +415,7 @@ function ResultRehabPage() {
       place,
       trainingMode: "rehab",
       targetStep: safeStep,
+      vnv: latestStepRow.vnv ?? null,
       currentScore,
       latestHistoryEntry: latestStepRow,
       history: historyForStep,
@@ -538,6 +560,11 @@ function ResultRehabPage() {
             <div className={`px-3 py-2 rounded-xl border text-[11px] sm:text-xs font-bold inline-flex items-center ${qualityUi.className}`}>
               측정 품질 · {qualityUi.label}
             </div>
+            {vnvSummary ? (
+              <div className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-[11px] sm:text-xs font-bold text-slate-700">
+                V&V · 요구사항 {vnvSummary.requirementIds.length}건 / 시험 {vnvSummary.testCaseIds.length}건
+              </div>
+            ) : null}
             <button
               onClick={handleExportData}
               className="px-3 sm:px-4 py-2 bg-white text-slate-900 border border-sky-200 rounded-xl text-[11px] sm:text-xs font-bold shadow-sm hover:bg-sky-50 active:scale-95 transition-all inline-flex items-center gap-1.5"
