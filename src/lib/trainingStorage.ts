@@ -24,10 +24,10 @@ type StoreShape = {
 export function loadStore(): StoreShape {
   if (typeof window === "undefined") return { records: [] };
 
-  const raw = localStorage.getItem(KEY);
+  const raw = window.sessionStorage.getItem(KEY);
   if (!raw) {
     const init: StoreShape = { records: [] };
-    localStorage.setItem(KEY, JSON.stringify(init));
+    window.sessionStorage.setItem(KEY, JSON.stringify(init));
     return init;
   }
 
@@ -35,7 +35,7 @@ export function loadStore(): StoreShape {
     return JSON.parse(raw) as StoreShape;
   } catch {
     const init: StoreShape = { records: [] };
-    localStorage.setItem(KEY, JSON.stringify(init));
+    window.sessionStorage.setItem(KEY, JSON.stringify(init));
     return init;
   }
 }
@@ -43,7 +43,7 @@ export function loadStore(): StoreShape {
 export function appendRecord(record: Step1Record) {
   const store = loadStore();
   const next: StoreShape = { records: [...store.records, record] };
-  localStorage.setItem(KEY, JSON.stringify(next));
+  window.sessionStorage.setItem(KEY, JSON.stringify(next));
 }
 
 export function getRecords() {
@@ -52,5 +52,5 @@ export function getRecords() {
 
 export function clearRecords() {
   const next: StoreShape = { records: [] };
-  localStorage.setItem(KEY, JSON.stringify(next));
+  window.sessionStorage.setItem(KEY, JSON.stringify(next));
 }

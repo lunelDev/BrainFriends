@@ -19,7 +19,6 @@ import {
   getPlayableText,
   getResultSummarySizeClass,
   getSelfItemFeedback,
-  parseStoredArray,
   shouldShowPlayButton,
 } from "@/features/result/utils/resultHelpers";
 import { SelfAssessmentBlocks } from "@/features/result/components/SelfAssessmentBlocks";
@@ -388,56 +387,30 @@ function ResultContent() {
       patientProfile && place
         ? new SessionManager(patientProfile as any, place).getSession()
         : null;
-    const backups = {
-      step1: parseStoredArray("step1_data"),
-      step2: parseStoredArray("step2_recorded_audios"),
-      step3: parseStoredArray("step3_data"),
-      step4: parseStoredArray("step4_recorded_audios"),
-      step5: parseStoredArray("step5_recorded_data"),
-      step6: parseStoredArray("step6_recorded_data"),
-    };
     setSessionData({
       step1: {
         ...(managerSession?.step1 ?? {}),
-        items:
-          backups.step1.length > 0
-            ? backups.step1
-            : managerSession?.step1?.items ?? [],
+        items: managerSession?.step1?.items ?? [],
       },
       step2: {
         ...(managerSession?.step2 ?? {}),
-        items:
-          backups.step2.length > 0
-            ? backups.step2
-            : managerSession?.step2?.items ?? [],
+        items: managerSession?.step2?.items ?? [],
       },
       step3: {
         ...(managerSession?.step3 ?? {}),
-        items:
-          backups.step3.length > 0
-            ? backups.step3
-            : managerSession?.step3?.items ?? [],
+        items: managerSession?.step3?.items ?? [],
       },
       step4: {
         ...(managerSession?.step4 ?? {}),
-        items:
-          backups.step4.length > 0
-            ? backups.step4
-            : managerSession?.step4?.items ?? [],
+        items: managerSession?.step4?.items ?? [],
       },
       step5: {
         ...(managerSession?.step5 ?? {}),
-        items:
-          backups.step5.length > 0
-            ? backups.step5
-            : managerSession?.step5?.items ?? [],
+        items: managerSession?.step5?.items ?? [],
       },
       step6: {
         ...(managerSession?.step6 ?? {}),
-        items:
-          backups.step6.length > 0
-            ? backups.step6
-            : managerSession?.step6?.items ?? [],
+        items: managerSession?.step6?.items ?? [],
       },
     });
   }, [patientProfile, place]);
@@ -563,13 +536,13 @@ function ResultContent() {
       return text.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_");
     };
 
-    const rawStorageSnapshot = {
-      step1_data: parseStoredArray("step1_data"),
-      step2_recorded_audios: parseStoredArray("step2_recorded_audios"),
-      step3_data: parseStoredArray("step3_data"),
-      step4_recorded_audios: parseStoredArray("step4_recorded_audios"),
-      step5_recorded_data: parseStoredArray("step5_recorded_data"),
-      step6_recorded_data: parseStoredArray("step6_recorded_data"),
+    const sessionSnapshot = {
+      step1: sessionData?.step1?.items ?? [],
+      step2: sessionData?.step2?.items ?? [],
+      step3: sessionData?.step3?.items ?? [],
+      step4: sessionData?.step4?.items ?? [],
+      step5: sessionData?.step5?.items ?? [],
+      step6: sessionData?.step6?.items ?? [],
     };
 
     const exportPayload = {
@@ -605,7 +578,7 @@ function ResultContent() {
       {
         name: "storage-snapshot.json",
         data: new TextEncoder().encode(
-          JSON.stringify(rawStorageSnapshot, null, 2),
+          JSON.stringify(sessionSnapshot, null, 2),
         ),
       },
     ];

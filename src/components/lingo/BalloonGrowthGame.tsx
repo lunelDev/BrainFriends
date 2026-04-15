@@ -326,6 +326,7 @@ function SelectionModal({
 }
 
 export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { volume, isMicReady, error, start, stop } = useBalloonAudioInput();
   const [isAdminAccount, setIsAdminAccount] = useState(false);
@@ -828,7 +829,7 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
           <button
             type="button"
             className={`px-3 py-1.5 rounded-full font-black text-[11px] border ${
-              testVoiceBoost ? trainingButtonStyles.violet : trainingButtonStyles.slateSoft
+              testVoiceBoost ? trainingButtonStyles.orangeSoft : trainingButtonStyles.slateSoft
             }`}
             onMouseDown={() => setTestVoiceBoost(true)}
             onMouseUp={() => setTestVoiceBoost(false)}

@@ -48,6 +48,10 @@ import {
   isResumeMetaMatched,
   saveResumeMeta,
 } from "@/lib/trainingResume";
+import {
+  loadTransientStepStorage,
+  saveTransientStepStorage,
+} from "@/lib/security/transientStepStorage";
 
 export const dynamic = "force-dynamic";
 
@@ -114,6 +118,11 @@ const shouldDisplayStep4Transcript = (
 };
 
 const STEP4_STORAGE_KEY = "step4_recorded_audios";
+
+function formatSeconds(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "0초";
+  return `${value}초`;
+}
 
 function Step4Content() {
   const router = useRouter();
@@ -506,9 +515,7 @@ function Step4Content() {
       if (!isResumeMetaMatched(STEP4_STORAGE_KEY, stepSignature)) {
         throw new Error("step4-signature-mismatch");
       }
-      const raw = localStorage.getItem(STEP4_STORAGE_KEY) || "[]";
-      const parsed = JSON.parse(raw);
-      const saved = Array.isArray(parsed) ? parsed : [];
+      const saved = loadTransientStepStorage<any>(STEP4_STORAGE_KEY);
       if (saved.length > 0) {
         const sourceRows = saved.slice(-scenarios.length);
         const byIndex = new Map<number, Step4EvalResult>();
@@ -861,9 +868,7 @@ function Step4Content() {
         });
         try {
           const base64Audio = await toDataUrl(analysis.audioBlob);
-          const existing = JSON.parse(
-            localStorage.getItem(STEP4_STORAGE_KEY) || "[]",
-          );
+          const existing = loadTransientStepStorage<any>(STEP4_STORAGE_KEY);
           const displayTranscript = shouldDisplayStep4Transcript({
             transcript,
             matchedKeywords: matched,
@@ -929,7 +934,7 @@ function Step4Content() {
             .sort((a, b) => a[0] - b[0])
             .map((entry) => entry[1])
             .slice(0, scenarios.length);
-          localStorage.setItem(STEP4_STORAGE_KEY, JSON.stringify(next));
+          saveTransientStepStorage(STEP4_STORAGE_KEY, next);
           saveResumeMeta(STEP4_STORAGE_KEY, stepSignature, next.length);
           setSaveStatusText("녹음 저장 완료");
           updateRuntimeStatus({
@@ -1035,8 +1040,7 @@ function Step4Content() {
     }
 
     try {
-      const raw = localStorage.getItem(STEP4_STORAGE_KEY) || "[]";
-      const parsed = JSON.parse(raw);
+      const parsed = loadTransientStepStorage<any>(STEP4_STORAGE_KEY);
       if (Array.isArray(parsed)) {
         parsed.forEach((row: any, fallbackIndex: number) => {
           const resolvedIndex = Number.isFinite(Number(row?.index))
@@ -1184,7 +1188,7 @@ function Step4Content() {
         };
       });
 
-      localStorage.setItem(STEP4_STORAGE_KEY, JSON.stringify(demoItems));
+      saveTransientStepStorage(STEP4_STORAGE_KEY, demoItems);
       saveResumeMeta(STEP4_STORAGE_KEY, stepSignature, demoItems.length);
 
       const sessionManager = new SessionManager(patientProfile as any, place);

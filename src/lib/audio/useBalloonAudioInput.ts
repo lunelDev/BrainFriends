@@ -18,7 +18,7 @@ export function useBalloonAudioInput() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const dataArrayRef = useRef<Uint8Array | null>(null);
+  const dataArrayRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const smoothedVolumeRef = useRef(0);
 
@@ -74,7 +74,7 @@ export function useBalloonAudioInput() {
       analyser.smoothingTimeConstant = 0.18;
       source.connect(analyser);
 
-      const buffer = new Uint8Array(analyser.fftSize);
+      const buffer = new Uint8Array(analyser.fftSize) as Uint8Array<ArrayBuffer>;
 
       streamRef.current = stream;
       registerMediaStream(stream);

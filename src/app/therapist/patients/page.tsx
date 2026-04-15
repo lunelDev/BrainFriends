@@ -87,15 +87,15 @@ export default function TherapistPatientsPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-[11px] font-black uppercase tracking-[0.22em] text-emerald-600">
-              Patients
+              Users
             </p>
             <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-              Search patients before moving into report review.
+              Search users before moving into report review.
             </h2>
             <p className="mt-3 max-w-3xl text-sm font-medium leading-6 text-slate-600">
-              This is the therapist-side patient entry screen. It reuses the
+              This is the therapist-side user entry screen. It reuses the
               existing admin report source so therapist work can start from a
-              patient list instead of a patient-facing screen.
+              user list instead of a user-facing screen.
             </p>
           </div>
           <label className="block lg:min-w-[320px]">
@@ -105,14 +105,14 @@ export default function TherapistPatientsPage() {
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Name, patient code, login ID, pseudonym"
+              placeholder="Name, user code, login ID, pseudonym"
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700"
             />
           </label>
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          <SummaryCard label="Patients" value={String(patients.length)} />
+          <SummaryCard label="Users" value={String(patients.length)} />
           <SummaryCard label="Visible" value={String(filteredPatients.length)} />
           <SummaryCard label="Entry point" value="Admin Reports API" mono />
         </div>
@@ -124,13 +124,13 @@ export default function TherapistPatientsPage() {
             </p>
           ) : isLoading ? (
             <p className="text-sm font-bold text-slate-500">
-              Loading therapist patient list.
+              Loading therapist user list.
             </p>
           ) : error ? (
             <p className="text-sm font-bold text-red-500">{error}</p>
           ) : !filteredPatients.length ? (
             <p className="text-sm font-bold text-slate-500">
-              No patients matched the current search.
+              No users matched the current search.
             </p>
           ) : (
             filteredPatients.map((patient) => (
@@ -189,7 +189,7 @@ export default function TherapistPatientsPage() {
           Next UI
         </p>
         <ul className="mt-4 space-y-3 text-sm font-medium leading-6 text-slate-700">
-          <li>Bind patient selection to a dedicated therapist detail route</li>
+          <li>Bind user selection to a dedicated therapist detail route</li>
           <li>Show measured or partial quality badges per recent session</li>
           <li>Link directly to self, rehab, and sing result detail</li>
           <li>Add therapist memo and follow-up task slots</li>

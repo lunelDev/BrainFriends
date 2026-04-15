@@ -33,6 +33,10 @@ import {
   isResumeMetaMatched,
   saveResumeMeta,
 } from "@/lib/trainingResume";
+import {
+  loadTransientStepStorage,
+  saveTransientStepStorage,
+} from "@/lib/security/transientStepStorage";
 
 export const dynamic = "force-dynamic";
 const STEP6_STORAGE_KEY = "step6_recorded_data";
@@ -216,10 +220,7 @@ function Step6Content() {
       return { consonant: 0, vowel: 0 };
     }
     try {
-      const rawSession = localStorage.getItem("kwab_training_session");
-      const existingSession = rawSession ? JSON.parse(rawSession) : null;
-      const patientData = existingSession?.patient || patientProfile;
-      const sm = new SessionManager(patientData as any, place);
+      const sm = new SessionManager(patientProfile as any, place);
       const session = sm.getSession();
       const consonant =
         Number(session.step5?.averageConsonantAccuracy) ||
@@ -261,8 +262,7 @@ function Step6Content() {
     if (typeof window === "undefined" || questions.length === 0) return;
     try {
       if (!isResumeMetaMatched(STEP6_STORAGE_KEY, stepSignature)) return;
-      const raw = localStorage.getItem(STEP6_STORAGE_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
+      const parsed = loadTransientStepStorage<any>(STEP6_STORAGE_KEY);
       if (!Array.isArray(parsed) || parsed.length === 0) return;
       const byIndex = new Map<number, any>();
       parsed.slice(-questions.length).forEach((row: any, fallbackIndex: number) => {
@@ -396,9 +396,7 @@ function Step6Content() {
       userStrokeCount > 0 && isStrokeCorrect && isShapeCorrect;
 
     const persistStep6Entry = (entry: Record<string, unknown>) => {
-      const existingData = JSON.parse(
-        localStorage.getItem(STEP6_STORAGE_KEY) || "[]",
-      );
+      const existingData = loadTransientStepStorage<any>(STEP6_STORAGE_KEY);
       const maxItems = Math.max(5, questions.length || 5);
       const byIndex = new Map<number, any>();
       if (Array.isArray(existingData)) {
@@ -418,7 +416,7 @@ function Step6Content() {
       let saved = false;
       while (!saved) {
         try {
-          localStorage.setItem(STEP6_STORAGE_KEY, JSON.stringify(candidate));
+          saveTransientStepStorage(STEP6_STORAGE_KEY, candidate);
           saveResumeMeta(STEP6_STORAGE_KEY, stepSignature, candidate.length);
           saved = true;
         } catch (saveError) {
@@ -547,13 +545,8 @@ function Step6Content() {
       let step6QualityScore = 0;
       // SessionManager 통합 저장
       try {
-        const rawSession = localStorage.getItem("kwab_training_session");
-        const existingSession = rawSession ? JSON.parse(rawSession) : null;
-        const patientData = existingSession?.patient || patientProfile;
-        const sm = new SessionManager(patientData as any, place);
-        const recordedRows = JSON.parse(
-          localStorage.getItem(STEP6_STORAGE_KEY) || "[]",
-        );
+        const sm = new SessionManager(patientProfile as any, place);
+        const recordedRows = loadTransientStepStorage<any>(STEP6_STORAGE_KEY);
         const consistencyByWord = new Map<string, number>();
         const userStrokesByWord = new Map<string, number>();
         const correctnessByWord = new Map<string, boolean>();
@@ -657,9 +650,7 @@ function Step6Content() {
           isRehabMode && rehabTargetStep === 6 ? "rehab" : "self",
         );
       } catch (error) {
-        const fallbackRows = JSON.parse(
-          localStorage.getItem(STEP6_STORAGE_KEY) || "[]",
-        );
+        const fallbackRows = loadTransientStepStorage<any>(STEP6_STORAGE_KEY);
         const scoreRows = Array.isArray(fallbackRows) ? fallbackRows : [];
         const avgWritingScore = scoreRows.length
           ? scoreRows.reduce(
@@ -750,13 +741,10 @@ function Step6Content() {
         };
       });
 
-      localStorage.setItem(STEP6_STORAGE_KEY, JSON.stringify(demoItems));
+      saveTransientStepStorage(STEP6_STORAGE_KEY, demoItems);
       saveResumeMeta(STEP6_STORAGE_KEY, stepSignature, demoItems.length);
 
-      const rawSession = localStorage.getItem("kwab_training_session");
-      const existingSession = rawSession ? JSON.parse(rawSession) : null;
-      const patientData = existingSession?.patient || patientProfile;
-      const sessionManager = new SessionManager(patientData as any, place);
+      const sessionManager = new SessionManager(patientProfile as any, place);
       const step6Accuracy = Number(
         (
           demoItems.reduce((sum, item) => sum + Number(item.writingScore || 0), 0) /

@@ -47,12 +47,14 @@ export function saveResumeMeta(
     updatedAt: Date.now(),
     count: Number.isFinite(count) ? Math.max(0, count) : 0,
   };
-  localStorage.setItem(getMetaKey(storageKey), JSON.stringify(payload));
+  window.sessionStorage.setItem(getMetaKey(storageKey), JSON.stringify(payload));
 }
 
 export function isResumeMetaMatched(storageKey: string, signature: string) {
   if (typeof window === "undefined") return false;
-  const parsed = safeJsonParse(localStorage.getItem(getMetaKey(storageKey)));
+  const parsed = safeJsonParse(
+    window.sessionStorage.getItem(getMetaKey(storageKey)),
+  );
   return Boolean(
     parsed &&
       typeof parsed.signature === "string" &&
@@ -62,6 +64,5 @@ export function isResumeMetaMatched(storageKey: string, signature: string) {
 
 export function clearResumeMeta(storageKey: string) {
   if (typeof window === "undefined") return;
-  localStorage.removeItem(getMetaKey(storageKey));
+  window.sessionStorage.removeItem(getMetaKey(storageKey));
 }
-

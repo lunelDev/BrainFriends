@@ -38,6 +38,10 @@ import {
   isResumeMetaMatched,
   saveResumeMeta,
 } from "@/lib/trainingResume";
+import {
+  loadTransientStepStorage,
+  saveTransientStepStorage,
+} from "@/lib/security/transientStepStorage";
 
 export const dynamic = "force-dynamic";
 const STEP5_STORAGE_KEY = "step5_recorded_data";
@@ -459,9 +463,7 @@ function Step5Content() {
       if (!isResumeMetaMatched(STEP5_STORAGE_KEY, stepSignature)) {
         throw new Error("step5-signature-mismatch");
       }
-      const raw = localStorage.getItem(STEP5_STORAGE_KEY) || "[]";
-      const parsed = JSON.parse(raw);
-      const saved = Array.isArray(parsed) ? parsed : [];
+      const saved = loadTransientStepStorage<any>(STEP5_STORAGE_KEY);
       if (saved.length > 0) {
         const byIndex = new Map<number, ReadingMetrics>();
         saved
@@ -844,9 +846,7 @@ function Step5Content() {
           const reader = new FileReader();
           reader.onloadend = () => {
             try {
-              const existing = JSON.parse(
-                localStorage.getItem(STEP5_STORAGE_KEY) || "[]",
-              );
+              const existing = loadTransientStepStorage<any>(STEP5_STORAGE_KEY);
               const nextEntry = {
                 ...res,
                 index: currentIndex,
@@ -871,7 +871,7 @@ function Step5Content() {
                 .sort((a, b) => a[0] - b[0])
                 .map((entry) => entry[1])
                 .slice(0, texts.length);
-              localStorage.setItem(STEP5_STORAGE_KEY, JSON.stringify(next));
+              saveTransientStepStorage(STEP5_STORAGE_KEY, next);
               saveResumeMeta(STEP5_STORAGE_KEY, stepSignature, next.length);
               updateRuntimeStatus({
                 pageError: false,
@@ -1096,7 +1096,7 @@ function Step5Content() {
         ...res,
         timestamp: new Date().toLocaleTimeString(),
       }));
-      localStorage.setItem(STEP5_STORAGE_KEY, JSON.stringify(recordedPayload));
+      saveTransientStepStorage(STEP5_STORAGE_KEY, recordedPayload);
       saveResumeMeta(STEP5_STORAGE_KEY, stepSignature, recordedPayload.length);
 
       const sm = new SessionManager(patientProfile as any, place);

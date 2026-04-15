@@ -1,4 +1,8 @@
 import type { TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
+import type {
+  TherapistFollowUpState,
+  TherapistPatientNote,
+} from "@/lib/server/therapistNotes";
 
 export type TherapistPatientSummary = {
   patientId: string;
@@ -33,6 +37,11 @@ type TherapistReportDetailPayload = {
   ok: boolean;
   patient?: TherapistPatientDetail;
   entries?: TrainingHistoryEntry[];
+};
+
+type TherapistPatientNotePayload = {
+  ok: boolean;
+  note?: TherapistPatientNote | null;
 };
 
 export async function fetchTherapistReportsOverview() {
@@ -74,4 +83,49 @@ export async function fetchTherapistPatientDetail(patientId: string) {
     patient: payload.patient ?? null,
     entries: Array.isArray(payload.entries) ? payload.entries : [],
   };
+}
+
+export async function fetchTherapistPatientNote(patientId: string) {
+  const response = await fetch(
+    `/api/therapist/reports/note?patientId=${encodeURIComponent(patientId)}`,
+    {
+      cache: "no-store",
+    },
+  );
+  const payload = (await response.json().catch(() => null)) as
+    | TherapistPatientNotePayload
+    | null;
+
+  if (!response.ok || !payload?.ok) {
+    throw new Error(
+      (payload as { error?: string } | null)?.error ||
+        "failed_to_load_therapist_note",
+    );
+  }
+
+  return payload.note ?? null;
+}
+
+export async function saveTherapistPatientNote(input: {
+  patientId: string;
+  memo: string;
+  followUpState: TherapistFollowUpState;
+}) {
+  const response = await fetch("/api/therapist/reports/note", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | TherapistPatientNotePayload
+    | null;
+
+  if (!response.ok || !payload?.ok) {
+    throw new Error(
+      (payload as { error?: string } | null)?.error ||
+        "failed_to_save_therapist_note",
+    );
+  }
+
+  return payload.note ?? null;
 }

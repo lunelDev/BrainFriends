@@ -12,6 +12,17 @@ export class SecureBrowserStorage {
   ) {}
 
   private reportBlockedKey(key: string) {
+    if (typeof window !== "undefined") {
+      try {
+        const current = Number(window.sessionStorage.getItem("security.blockedWriteCount") ?? "0");
+        window.sessionStorage.setItem(
+          "security.blockedWriteCount",
+          String(Number.isFinite(current) ? current + 1 : 1),
+        );
+      } catch {
+        // ignore browser storage counter failures
+      }
+    }
     void appendSecurityAuditLog({
       eventType: "CLIENT_STORAGE_BLOCKED",
       detail: `${this.scope}:${key}`,

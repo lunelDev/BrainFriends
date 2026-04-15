@@ -137,6 +137,47 @@ function DemoResultBadge() {
   );
 }
 
+function getMeasurementQualityUi(quality?: string | null) {
+  if (quality === "measured") {
+    return {
+      label: "측정 완료",
+      description: "실측 데이터가 충분해 결과 신뢰도가 높습니다.",
+      badgeClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    };
+  }
+  if (quality === "partial") {
+    return {
+      label: "부분 측정",
+      description: "일부 데이터만 확보되어 참고용으로 해석하는 것이 좋습니다.",
+      badgeClass: "border-amber-200 bg-amber-50 text-amber-700",
+    };
+  }
+  return {
+    label: "시연 데이터",
+    description: "시연용 결과로 저장되어 경향 확인 중심으로 보는 것이 좋습니다.",
+    badgeClass: "border-slate-200 bg-slate-100 text-slate-700",
+  };
+}
+
+function getSelfNextAction(params: {
+  scoreDelta: number | null;
+  improvedMetrics: number;
+  quality?: string | null;
+}) {
+  const { scoreDelta, improvedMetrics, quality } = params;
+
+  if (quality !== "measured") {
+    return "카메라와 마이크 상태를 다시 확인한 뒤 같은 훈련을 한 번 더 진행해 보세요.";
+  }
+  if (scoreDelta !== null && scoreDelta > 0) {
+    return "지금 흐름이 좋습니다. 다음 자가진단 전에 언어 재활 훈련을 이어서 진행해 보세요.";
+  }
+  if (improvedMetrics >= 4) {
+    return "상세 항목은 안정적으로 유지되고 있습니다. 오늘 결과를 저장하고 다음 목표를 설정해 보세요.";
+  }
+  return "반응 속도와 발음 정확도를 중심으로 같은 단계 훈련을 한 번 더 반복해 보세요.";
+}
+
 function ReportContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -785,6 +826,20 @@ function ReportContent() {
     () => getEstimatedKpiSummary(estimatedKpiMetrics),
     [estimatedKpiMetrics],
   );
+  const selectedMeasurementQuality = selected?.measurementQuality?.overall ?? "demo";
+  const measurementQualityUi = useMemo(
+    () => getMeasurementQualityUi(selectedMeasurementQuality),
+    [selectedMeasurementQuality],
+  );
+  const selfNextAction = useMemo(
+    () =>
+      getSelfNextAction({
+        scoreDelta: selfScoreDelta,
+        improvedMetrics: estimatedKpiSummary.passCount,
+        quality: selectedMeasurementQuality,
+      }),
+    [estimatedKpiSummary.passCount, selectedMeasurementQuality, selfScoreDelta],
+  );
 
   const selectionCheckedClass =
     modeFilter === "rehab"
@@ -1400,6 +1455,79 @@ function ReportContent() {
                   검사일시:{" "}
                   {new Date(selected.completedAt).toLocaleString("ko-KR")}
                 </p>
+              </section>
+
+              <section className="grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_0.8fr]">
+                <div className="rounded-3xl border border-orange-100 bg-white p-5 shadow-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center rounded-full bg-orange-100 px-3 py-1 text-[11px] font-black text-orange-700">
+                      오늘의 성장 요약
+                    </span>
+                    <span
+                      className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-black ${measurementQualityUi.badgeClass}`}
+                    >
+                      {measurementQualityUi.label}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="rounded-2xl bg-orange-50 px-4 py-4">
+                      <p className="text-xs font-black text-orange-700">현재 AQ</p>
+                      <p className="mt-2 text-3xl font-black text-slate-900">
+                        {selfCurrentScore.toFixed(1)}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 px-4 py-4">
+                      <p className="text-xs font-black text-slate-500">이전 대비</p>
+                      <p className="mt-2 text-3xl font-black text-slate-900">
+                        {selfScoreDelta === null
+                          ? "기록 없음"
+                          : `${selfScoreDelta > 0 ? "+" : ""}${selfScoreDelta.toFixed(1)}`}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl bg-emerald-50 px-4 py-4">
+                      <p className="text-xs font-black text-emerald-700">안정 지표</p>
+                      <p className="mt-2 text-3xl font-black text-slate-900">
+                        {estimatedKpiSummary.passCount}개
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-4 rounded-2xl border border-orange-100 bg-orange-50/50 px-4 py-4">
+                    <p className="text-xs font-black text-orange-700">다음 권장 행동</p>
+                    <p className="mt-2 text-sm font-semibold leading-6 text-slate-700">
+                      {selfNextAction}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="flex items-center gap-2 text-slate-900">
+                    <Sparkles className="h-4 w-4 text-orange-500" />
+                    <h3 className="text-sm font-black">이번 결과 한눈에 보기</h3>
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-slate-600">
+                    {measurementQualityUi.description}
+                  </p>
+                  <div className="mt-4 space-y-3">
+                    <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                      <span className="text-sm font-bold text-slate-600">좋아진 항목</span>
+                      <span className="text-base font-black text-slate-900">
+                        {estimatedKpiSummary.passCount}개
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                      <span className="text-sm font-bold text-slate-600">추가 확인 항목</span>
+                      <span className="text-base font-black text-slate-900">
+                        {estimatedKpiSummary.failCount}개
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                      <span className="text-sm font-bold text-slate-600">보류 항목</span>
+                      <span className="text-base font-black text-slate-900">
+                        {estimatedKpiSummary.pendingCount}개
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </section>
 
               <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">

@@ -7,7 +7,16 @@ import {
 } from '@/lib/client/mediaStreamRegistry';
 import { createPreferredAudioStream } from '@/lib/media/audioPreferences';
 
-function clamp(value, min, max) {
+type CompatibleAudioContextConstructor =
+  | typeof AudioContext
+  | (new () => AudioContext);
+
+type AudioAnalyzerWindow = Window &
+  typeof globalThis & {
+    webkitAudioContext?: CompatibleAudioContextConstructor;
+  };
+
+function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
@@ -16,11 +25,11 @@ export function useAudioAnalyzer() {
   const [isMicReady, setIsMicReady] = useState(false);
   const [error, setError] = useState('');
 
-  const audioContextRef = useRef(null);
-  const analyserRef = useRef(null);
-  const streamRef = useRef(null);
-  const dataArrayRef = useRef(null);
-  const animationFrameRef = useRef(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const dataArrayRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
 
   const stop = useCallback(() => {
     if (animationFrameRef.current) {
@@ -30,12 +39,12 @@ export function useAudioAnalyzer() {
 
     if (streamRef.current) {
       unregisterMediaStream(streamRef.current);
-      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current.getTracks().forEach((track: MediaStreamTrack) => track.stop());
       streamRef.current = null;
     }
 
     if (audioContextRef.current) {
-      audioContextRef.current.close();
+      void audioContextRef.current.close();
       audioContextRef.current = null;
     }
 
@@ -52,7 +61,12 @@ export function useAudioAnalyzer() {
 
       const stream = await createPreferredAudioStream(preferredAudioInputId);
 
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as AudioAnalyzerWindow).webkitAudioContext;
+      if (!AudioContextClass) {
+        throw new Error('AudioContext is not supported');
+      }
       const context = new AudioContextClass();
       if (context.state === 'suspended') {
         await context.resume();
@@ -62,7 +76,7 @@ export function useAudioAnalyzer() {
       analyser.fftSize = 2048;
       source.connect(analyser);
 
-      const buffer = new Uint8Array(analyser.fftSize);
+      const buffer = new Uint8Array(analyser.fftSize) as Uint8Array<ArrayBuffer>;
 
       streamRef.current = stream;
       registerMediaStream(stream);

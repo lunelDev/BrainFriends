@@ -193,7 +193,7 @@ export default function TherapistResultsPage() {
         <ul className="mt-4 space-y-3 text-sm font-medium leading-6 text-slate-700">
           <li>Prefer measured data for clinical interpretation</li>
           <li>Check V&V-linked entries before export or audit follow-up</li>
-          <li>Use Admin Reports for full patient detail and media review</li>
+          <li>Use Admin Reports for full user detail and media review</li>
           <li>Use System view for failed-save and usage-event investigation</li>
         </ul>
 

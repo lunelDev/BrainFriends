@@ -1,0 +1,133 @@
+{
+  "exportType": "brainfriends-vnv-deterministic-run",
+  "generatedAt": "2026-04-15T06:31:01.955Z",
+  "runDate": "2026-04-15",
+  "runTime": "06:31:01",
+  "summary": {
+    "totalCases": 9,
+    "passedCases": 9,
+    "failedCases": 0
+  },
+  "cases": [
+    {
+      "testCaseId": "TC-SCORE-001",
+      "requirementIds": [
+        "SR-SCORE-004"
+      ],
+      "area": "score",
+      "passed": true,
+      "inputSummary": "고정된 KWAB 입력 fixture",
+      "expected": "AQ=77.62",
+      "actual": "AQ=77.62",
+      "detail": "AQ=77.62",
+      "executedAt": "2026-04-15T06:31:01.955Z"
+    },
+    {
+      "testCaseId": "TC-MQ-001",
+      "requirementIds": [
+        "SR-MEASURE-006"
+      ],
+      "area": "measurement",
+      "passed": true,
+      "inputSummary": "step4 transcript 포함 fixture",
+      "expected": "overall=measured, step4=measured",
+      "actual": "overall=measured, step4=measured",
+      "detail": "overall=measured, step4=measured",
+      "executedAt": "2026-04-15T06:31:01.955Z"
+    },
+    {
+      "testCaseId": "TC-HIST-001",
+      "requirementIds": [
+        "SR-SESSION-003",
+        "SR-HISTORY-005"
+      ],
+      "area": "history",
+      "passed": true,
+      "inputSummary": "50건 기존 history + 동일 세션 신규 결과",
+      "expected": "latest row preserved, single session retained, 50 rows max",
+      "actual": "rows=50, latestAQ=88",
+      "detail": "rows=50, latestAQ=88",
+      "executedAt": "2026-04-15T06:31:01.955Z"
+    },
+    {
+      "testCaseId": "TC-LOGIN-THERAPIST-001",
+      "requirementIds": [
+        "SR-LOGIN-001"
+      ],
+      "area": "routing",
+      "passed": true,
+      "inputSummary": "therapist/admin/patient role fixture",
+      "expected": "roles route to therapist, mode, or step-1",
+      "actual": "therapist/admin/patient routes resolved as expected",
+      "detail": "therapist/admin/patient routes resolved as expected",
+      "executedAt": "2026-04-15T06:31:01.955Z"
+    },
+    {
+      "testCaseId": "TC-STORAGE-001",
+      "requirementIds": [
+        "SR-SESSION-003",
+        "SR-HISTORY-005"
+      ],
+      "area": "storage",
+      "passed": true,
+      "inputSummary": "history entry with raw media payloads",
+      "expected": "raw media fields removed from compact history",
+      "actual": "compact history strips raw media fields as expected",
+      "detail": "compact history strips raw media fields as expected",
+      "executedAt": "2026-04-15T06:31:01.955Z"
+    },
+    {
+      "testCaseId": "TC-PERM-001",
+      "requirementIds": [
+        "SR-PERMISSION-002"
+      ],
+      "area": "permissions",
+      "passed": true,
+      "inputSummary": "camera/microphone denied fixture",
+      "expected": "permission_required route and blocked flow",
+      "actual": "permission_required, blocked=false",
+      "detail": "permission_required, blocked=false",
+      "executedAt": "2026-04-15T06:31:01.955Z"
+    },
+    {
+      "testCaseId": "TC-SAVE-FAIL-001",
+      "requirementIds": [
+        "SR-HISTORY-005"
+      ],
+      "area": "storage",
+      "passed": true,
+      "inputSummary": "quota exceeded save fixture",
+      "expected": "compact history fallback with retry flag",
+      "actual": "compact_history, retry=true",
+      "detail": "compact_history, retry=true",
+      "executedAt": "2026-04-15T06:31:01.955Z"
+    },
+    {
+      "testCaseId": "TC-SESS-RESTORE-001",
+      "requirementIds": [
+        "SR-SESSION-003"
+      ],
+      "area": "session",
+      "passed": true,
+      "inputSummary": "signature-matched resume fixture",
+      "expected": "transient restore with resumeIndex=4",
+      "actual": "source=transient, resumeIndex=4",
+      "detail": "source=transient, resumeIndex=4",
+      "executedAt": "2026-04-15T06:31:01.955Z"
+    },
+    {
+      "testCaseId": "TC-STEP-FALLBACK-001",
+      "requirementIds": [
+        "SR-SESSION-003",
+        "SR-HISTORY-005"
+      ],
+      "area": "fallback",
+      "passed": true,
+      "inputSummary": "server miss + transient/session/legacy available",
+      "expected": "transient fallback selected before summary/local",
+      "actual": "source=transient",
+      "detail": "source=transient",
+      "executedAt": "2026-04-15T06:31:01.955Z"
+    }
+  ]
+}

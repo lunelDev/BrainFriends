@@ -27,6 +27,10 @@ import {
   isResumeMetaMatched,
   saveResumeMeta,
 } from "@/lib/trainingResume";
+import {
+  loadTransientStepStorage,
+  saveTransientStepStorage,
+} from "@/lib/security/transientStepStorage";
 
 let GLOBAL_SPEECH_LOCK: Record<number, boolean> = {};
 const STEP_RESPONSE_BONUS_THRESHOLD_MS = 6000;
@@ -148,8 +152,7 @@ function Step1Content() {
     if (typeof window === "undefined" || trainingData.length === 0) return;
     try {
       if (!isResumeMetaMatched(STEP1_STORAGE_KEY, stepSignature)) return;
-      const raw = localStorage.getItem(STEP1_STORAGE_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
+      const parsed = loadTransientStepStorage<any>(STEP1_STORAGE_KEY);
       if (!Array.isArray(parsed) || parsed.length === 0) return;
       if (parsed.length >= trainingData.length) return;
 
@@ -237,7 +240,7 @@ function Step1Content() {
           timestamp: new Date().toLocaleTimeString(),
         }));
 
-        localStorage.setItem("step1_data", JSON.stringify(formattedForResult));
+        saveTransientStepStorage("step1_data", formattedForResult);
         saveResumeMeta(STEP1_STORAGE_KEY, stepSignature, formattedForResult.length);
         // 2. ✅ SessionManager용 데이터 (question 필드 사용)
         const formattedForSession = results.map((r) => ({
@@ -375,7 +378,7 @@ function Step1Content() {
           responseTime: r.responseTime,
           timestamp: new Date().toLocaleTimeString(),
         }));
-        localStorage.setItem(STEP1_STORAGE_KEY, JSON.stringify(progressForStorage));
+        saveTransientStepStorage(STEP1_STORAGE_KEY, progressForStorage);
         saveResumeMeta(STEP1_STORAGE_KEY, stepSignature, progressForStorage.length);
       } catch (error) {
       }

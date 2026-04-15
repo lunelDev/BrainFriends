@@ -29,6 +29,11 @@ import {
   type RequirementTraceabilitySummary,
   type RuntimeValidationRecord,
 } from "@/lib/vnv/traceability";
+import {
+  buildMeasurementQualitySnapshot,
+  compactHistoryEntryForStorage,
+  mergeHistoryEntriesForStorage,
+} from "@/lib/vnv/deterministicChecks";
 // ============================================================================
 // 1. Step별 결과 타입
 // ============================================================================
@@ -983,53 +988,24 @@ export class SessionManager {
     const aq = this.session.kwabScores?.aq;
     if (aq === undefined || aq === null) return null;
 
-    const readArray = (key: string) => {
-      try {
-        const raw = localStoreAdapter.getItem(key);
-        const parsed = raw ? JSON.parse(raw) : [];
-        return Array.isArray(parsed) ? parsed : [];
-      } catch {
-        return [];
-      }
-    };
-
-    const step1Rows =
-      readArray("step1_data").length > 0
-        ? readArray("step1_data")
-        : Array.isArray(this.session.step1?.items)
-          ? this.session.step1.items
-          : [];
-    const step2Rows =
-      readArray("step2_recorded_audios").length > 0
-        ? readArray("step2_recorded_audios")
-        : Array.isArray(this.session.step2?.items)
-          ? this.session.step2.items
-          : [];
-    const step3Rows =
-      readArray("step3_data").length > 0
-        ? readArray("step3_data")
-        : Array.isArray(this.session.step3?.items)
-          ? this.session.step3.items
-          : [];
-    const step4RowsRaw = readArray("step4_recorded_audios");
-    const step5Rows =
-      readArray("step5_recorded_data").length > 0
-        ? readArray("step5_recorded_data")
-        : Array.isArray(this.session.step5?.items)
-          ? this.session.step5.items
-          : [];
-    const step6Rows =
-      readArray("step6_recorded_data").length > 0
-        ? readArray("step6_recorded_data")
-        : Array.isArray(this.session.step6?.items)
-          ? this.session.step6.items
-          : [];
-    const step4Rows =
-      step4RowsRaw.length > 0
-        ? step4RowsRaw
-        : Array.isArray(this.session.step4?.items)
-          ? this.session.step4!.items
-          : [];
+    const step1Rows = Array.isArray(this.session.step1?.items)
+      ? this.session.step1.items
+      : [];
+    const step2Rows = Array.isArray(this.session.step2?.items)
+      ? this.session.step2.items
+      : [];
+    const step3Rows = Array.isArray(this.session.step3?.items)
+      ? this.session.step3.items
+      : [];
+    const step4Rows = Array.isArray(this.session.step4?.items)
+      ? this.session.step4.items
+      : [];
+    const step5Rows = Array.isArray(this.session.step5?.items)
+      ? this.session.step5.items
+      : [];
+    const step6Rows = Array.isArray(this.session.step6?.items)
+      ? this.session.step6.items
+      : [];
 
     const avg = (arr: number[]) =>
       arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
@@ -1228,33 +1204,11 @@ export class SessionManager {
       return "demo";
     };
 
-    const measurementQuality: MeasurementQualitySnapshot = {
-      steps: {
-        step1: deriveStepQuality(1),
-        step2: deriveStepQuality(2),
-        step3: deriveStepQuality(3),
-        step4: deriveStepQuality(4),
-        step5: deriveStepQuality(5),
-        step6: deriveStepQuality(6),
-      },
-      overall: "demo",
-      notes: [],
-    };
-
-    const activeQualities = mode === "rehab" && normalizedRehabStep
-      ? [measurementQuality.steps[`step${normalizedRehabStep}` as keyof typeof measurementQuality.steps]]
-      : Object.values(measurementQuality.steps);
-    if (activeQualities.every((level) => level === "measured")) {
-      measurementQuality.overall = "measured";
-    } else if (activeQualities.some((level) => level === "measured" || level === "partial")) {
-      measurementQuality.overall = "partial";
-    } else {
-      measurementQuality.overall = "demo";
-    }
-    measurementQuality.notes = [
-      `overall=${measurementQuality.overall}`,
-      ...Object.entries(measurementQuality.steps).map(([key, value]) => `${key}=${value}`),
-    ];
+    const measurementQuality = buildMeasurementQualitySnapshot({
+      stepDetails,
+      mode,
+      rehabStep: normalizedRehabStep,
+    });
     const historyRequirementIds: RequirementId[] = [
       "SR-SESSION-003",
       "SR-SCORE-004",
@@ -1428,10 +1382,7 @@ export class SessionManager {
       existing = [];
     }
 
-    const withoutSameSession = existing.filter((e) => e.sessionId !== entry.sessionId);
-    const next = [...withoutSameSession, entry]
-      .sort((a, b) => a.completedAt - b.completedAt)
-      .slice(-50);
+    const next = mergeHistoryEntriesForStorage(existing, entry);
 
     const isQuotaExceededError = (error: unknown) => {
       if (error instanceof DOMException) {
@@ -1443,32 +1394,6 @@ export class SessionManager {
       return false;
     };
 
-    const compactRow = (row: any) => {
-      const compactItems = (items: any[]) =>
-        (Array.isArray(items) ? items : []).map((item) => ({
-          ...item,
-          audioUrl: undefined,
-          userImage: undefined,
-          cameraFrameImage: undefined,
-          cameraFrameFrames: undefined,
-          imageData: undefined,
-        }));
-      return {
-        ...row,
-        stepDetails: row?.stepDetails
-          ? {
-              ...row.stepDetails,
-              step1: compactItems(row.stepDetails.step1),
-              step2: compactItems(row.stepDetails.step2),
-              step3: compactItems(row.stepDetails.step3),
-              step4: compactItems(row.stepDetails.step4),
-              step5: compactItems(row.stepDetails.step5),
-              step6: compactItems(row.stepDetails.step6),
-            }
-          : row?.stepDetails,
-      };
-    };
-
     try {
       localStoreAdapter.setItem(historyKey, JSON.stringify(next));
     } catch (error) {
@@ -1476,7 +1401,7 @@ export class SessionManager {
         console.warn("[SessionManager] history save failed", error);
         return;
       }
-      const compacted = next.map((row) => compactRow(row)).slice(-20);
+      const compacted = next.map((row) => compactHistoryEntryForStorage(row)).slice(-20);
       try {
         localStoreAdapter.setItem(historyKey, JSON.stringify(compacted));
       } catch (retryError) {

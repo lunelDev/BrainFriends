@@ -17,6 +17,7 @@ const SAFE_SESSION_KEYS = [
   "session.progress.place",
   "session.temp.uiNotice",
   "brain-sing-result",
+  "security.blockedWriteCount",
 ];
 
 export const SAFE_LOCAL_STORAGE_KEYS = new Set(SAFE_LOCAL_KEYS);
@@ -29,6 +30,7 @@ export const ALLOWED_LOCAL_STORAGE_PREFIXES = ["kwab_training_session:"];
 export const ALLOWED_SESSION_STORAGE_PREFIXES = [
   "step3_protocol:",
   "step6_questions:",
+  "step_review:",
 ];
 
 export const MANAGED_LOCAL_STORAGE_PREFIXES = [
@@ -38,6 +40,7 @@ export const MANAGED_LOCAL_STORAGE_PREFIXES = [
 export const MANAGED_SESSION_STORAGE_PREFIXES = [
   "step3_protocol:",
   "step6_questions:",
+  "step_review:",
 ];
 
 export function isAllowedClientStorageKey(

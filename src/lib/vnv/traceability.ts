@@ -35,6 +35,36 @@ export const TRACEABILITY_MATRIX: TraceabilityRecord[] = [
     testCaseId: "TC-PERM-001",
   },
   {
+    requirementId: "SR-PERMISSION-002",
+    moduleName: "src/app/page.tsx",
+    functionName: "requestPermissions / cancel flow",
+    testCaseId: "TC-PERM-CANCEL-001",
+  },
+  {
+    requirementId: "SR-SESSION-003",
+    moduleName: "src/lib/trainingResume.ts",
+    functionName: "isResumeMetaMatched / saveResumeMeta",
+    testCaseId: "TC-SESS-RESTORE-001",
+  },
+  {
+    requirementId: "SR-HISTORY-005",
+    moduleName: "src/lib/kwab/SessionManager.ts",
+    functionName: "saveHistoryEntry / compactHistoryEntryForStorage",
+    testCaseId: "TC-SAVE-FAIL-001",
+  },
+  {
+    requirementId: "SR-HISTORY-005",
+    moduleName: "src/lib/client/clinicalResultsApi.ts",
+    functionName: "persist retry handling",
+    testCaseId: "TC-SAVE-RETRY-001",
+  },
+  {
+    requirementId: "SR-SESSION-003",
+    moduleName: "src/features/result/utils/resultHelpers.ts",
+    functionName: "server/transient/session fallback resolution",
+    testCaseId: "TC-STEP-FALLBACK-001",
+  },
+  {
     requirementId: "SR-SESSION-003",
     moduleName: "src/lib/kwab/SessionManager.ts",
     functionName: "saveSession / loadSession / getResumePath",
@@ -51,6 +81,12 @@ export const TRACEABILITY_MATRIX: TraceabilityRecord[] = [
     moduleName: "src/lib/kwab/SessionManager.ts",
     functionName: "buildHistoryEntry / saveHistoryEntry",
     testCaseId: "TC-HIST-001",
+  },
+  {
+    requirementId: "SR-HISTORY-005",
+    moduleName: "src/app/(result)/result-page/*",
+    functionName: "server-first result refetch reconciliation",
+    testCaseId: "TC-RESULT-REFETCH-001",
   },
   {
     requirementId: "SR-MEASURE-006",

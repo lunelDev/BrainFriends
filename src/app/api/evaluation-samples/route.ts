@@ -1,8 +1,10 @@
-import { mkdir, appendFile } from "fs/promises";
-import path from "path";
 import { NextResponse } from "next/server";
 import type { SpeechFaceMeasurement } from "@/lib/ai/measurementTypes";
 import type { ModelGovernanceRecord } from "@/lib/ai/modelGovernance";
+import {
+  appendEvaluationSamplesToFile,
+  saveEvaluationSamplesToDatabase,
+} from "@/lib/server/evaluationSamplesDb";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,24 +39,33 @@ export async function POST(req: Request) {
     );
   }
 
-  const evaluationDir = path.join(process.cwd(), "data", "evaluation");
-  const evaluationPath = path.join(evaluationDir, "evaluation-samples.ndjson");
-  await mkdir(evaluationDir, { recursive: true });
-
-  const records = samples.map((sample) =>
-    JSON.stringify({
+  try {
+    const saved = await saveEvaluationSamplesToDatabase({
       historyId: body.historyId,
       sessionId: body.sessionId,
+      samples,
       governance: body.governance ?? null,
-      sample,
-      recordedAt: new Date().toISOString(),
-    }),
-  );
+    });
 
-  await appendFile(evaluationPath, `${records.join("\n")}\n`, "utf8");
+    return NextResponse.json({
+      ok: true,
+      accepted: saved.accepted,
+      storageTarget: saved.storageTarget,
+    });
+  } catch (dbError) {
+    console.warn("[evaluation-samples] database save failed; falling back to file", dbError);
 
-  return NextResponse.json({
-    ok: true,
-    accepted: samples.length,
-  });
+    const saved = await appendEvaluationSamplesToFile({
+      historyId: body.historyId,
+      sessionId: body.sessionId,
+      samples,
+      governance: body.governance ?? null,
+    });
+
+    return NextResponse.json({
+      ok: true,
+      accepted: saved.accepted,
+      storageTarget: saved.storageTarget,
+    });
+  }
 }

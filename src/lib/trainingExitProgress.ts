@@ -11,6 +11,54 @@ type ExitProgressByPlace = Record<
   }
 >;
 
+function readExitProgressMap(storage: Storage | null): ExitProgressByPlace {
+  if (!storage) return {};
+
+  try {
+    const raw = storage.getItem(EXIT_PROGRESS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      return parsed as ExitProgressByPlace;
+    }
+  } catch {
+    // ignore broken or missing storage state
+  }
+
+  return {};
+}
+
+function getPreferredStorage() {
+  if (typeof window === "undefined") return null;
+  return window.sessionStorage;
+}
+
+function getLegacyStorage() {
+  if (typeof window === "undefined") return null;
+  return window.localStorage;
+}
+
+function getExitProgressMap() {
+  const preferred = getPreferredStorage();
+  const current = readExitProgressMap(preferred);
+  if (Object.keys(current).length > 0) {
+    return current;
+  }
+
+  const legacy = getLegacyStorage();
+  const legacyValue = readExitProgressMap(legacy);
+  if (Object.keys(legacyValue).length > 0 && preferred) {
+    try {
+      preferred.setItem(EXIT_PROGRESS_KEY, JSON.stringify(legacyValue));
+      legacy?.removeItem(EXIT_PROGRESS_KEY);
+    } catch {
+      // ignore migration failures
+    }
+  }
+
+  return legacyValue;
+}
+
 export function saveTrainingExitProgress(place: string, currentStep: number) {
   if (typeof window === "undefined") return;
 
@@ -18,18 +66,10 @@ export function saveTrainingExitProgress(place: string, currentStep: number) {
     ? Math.max(1, Math.floor(currentStep))
     : 1;
 
-  let existing: ExitProgressByPlace = {};
-  try {
-    const raw = localStorage.getItem(EXIT_PROGRESS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === "object") {
-        existing = parsed as ExitProgressByPlace;
-      }
-    }
-  } catch {
-    existing = {};
-  }
+  const storage = getPreferredStorage();
+  if (!storage) return;
+
+  const existing = getExitProgressMap();
 
   existing[place] = {
     currentStep: safeStep,
@@ -37,7 +77,13 @@ export function saveTrainingExitProgress(place: string, currentStep: number) {
     updatedAt: Date.now(),
   };
 
-  localStorage.setItem(EXIT_PROGRESS_KEY, JSON.stringify(existing));
+  storage.setItem(EXIT_PROGRESS_KEY, JSON.stringify(existing));
+
+  try {
+    getLegacyStorage()?.removeItem(EXIT_PROGRESS_KEY);
+  } catch {
+    // no-op
+  }
 }
 
 export function getTrainingExitProgress(place: string): {
@@ -48,10 +94,7 @@ export function getTrainingExitProgress(place: string): {
   if (typeof window === "undefined") return null;
 
   try {
-    const raw = localStorage.getItem(EXIT_PROGRESS_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as ExitProgressByPlace;
-    const progress = parsed?.[place];
+    const progress = getExitProgressMap()?.[place];
     if (!progress) return null;
     return progress;
   } catch {
@@ -63,13 +106,15 @@ export function clearTrainingExitProgress(place: string) {
   if (typeof window === "undefined") return;
 
   try {
-    const raw = localStorage.getItem(EXIT_PROGRESS_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw) as ExitProgressByPlace;
+    const storage = getPreferredStorage();
+    if (!storage) return;
+
+    const parsed = getExitProgressMap();
     if (!parsed || typeof parsed !== "object") return;
 
     delete parsed[place];
-    localStorage.setItem(EXIT_PROGRESS_KEY, JSON.stringify(parsed));
+    storage.setItem(EXIT_PROGRESS_KEY, JSON.stringify(parsed));
+    getLegacyStorage()?.removeItem(EXIT_PROGRESS_KEY);
   } catch {
     // no-op
   }

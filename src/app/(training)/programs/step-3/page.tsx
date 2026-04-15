@@ -41,6 +41,10 @@ import {
   isResumeMetaMatched,
   saveResumeMeta,
 } from "@/lib/trainingResume";
+import {
+  loadTransientStepStorage,
+  saveTransientStepStorage,
+} from "@/lib/security/transientStepStorage";
 
 export const dynamic = "force-dynamic";
 const STEP3_TOTAL_QUESTIONS = 10;
@@ -433,8 +437,7 @@ function Step3Content() {
     if (typeof window === "undefined" || protocol.length === 0) return;
     try {
       if (!isResumeMetaMatched(STEP3_STORAGE_KEY, stepSignature)) return;
-      const raw = localStorage.getItem(STEP3_STORAGE_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
+      const parsed = loadTransientStepStorage<any>(STEP3_STORAGE_KEY);
       if (!Array.isArray(parsed) || parsed.length === 0) return;
       if (parsed.length >= protocol.length) return;
 
@@ -645,7 +648,7 @@ function Step3Content() {
     setAnalysisResults(updatedResults);
 
     // ✅ Result 페이지용 백업 저장 (실시간, 최대 10개)
-    localStorage.setItem(STEP3_STORAGE_KEY, JSON.stringify(updatedResults));
+    saveTransientStepStorage(STEP3_STORAGE_KEY, updatedResults);
     saveResumeMeta(STEP3_STORAGE_KEY, stepSignature, updatedResults.length);
     setTimeout(() => {
       if (currentIndex < protocol.length - 1) {
@@ -738,7 +741,7 @@ function Step3Content() {
         };
       });
 
-      localStorage.setItem(STEP3_STORAGE_KEY, JSON.stringify(demoResults));
+      saveTransientStepStorage(STEP3_STORAGE_KEY, demoResults);
       saveResumeMeta(STEP3_STORAGE_KEY, stepSignature, demoResults.length);
 
       const totalCount = Math.max(1, demoResults.length);

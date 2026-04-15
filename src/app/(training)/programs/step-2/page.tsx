@@ -47,6 +47,11 @@ import {
   isResumeMetaMatched,
   saveResumeMeta,
 } from "@/lib/trainingResume";
+import {
+  loadTransientStepStorage,
+  removeTransientStepStorage,
+  saveTransientStepStorage,
+} from "@/lib/security/transientStepStorage";
 
 export const dynamic = "force-dynamic";
 
@@ -618,9 +623,7 @@ function Step2Content() {
       if (!isResumeMetaMatched(STEP2_AUDIO_STORAGE_KEY, stepSignature)) {
         throw new Error("step2-signature-mismatch");
       }
-      const raw = localStorage.getItem(STEP2_AUDIO_STORAGE_KEY) || "[]";
-      const parsed = JSON.parse(raw);
-      const saved = Array.isArray(parsed) ? parsed : [];
+      const saved = loadTransientStepStorage<any>(STEP2_AUDIO_STORAGE_KEY);
       if (saved.length > 0) {
         const byIndex = new Map<number, any>();
         saved
@@ -888,7 +891,7 @@ function Step2Content() {
           };
         });
 
-      localStorage.setItem(STEP2_AUDIO_STORAGE_KEY, JSON.stringify(demoItems));
+      saveTransientStepStorage(STEP2_AUDIO_STORAGE_KEY, demoItems);
       saveResumeMeta(STEP2_AUDIO_STORAGE_KEY, stepSignature, demoItems.length);
 
       const sessionManager = new SessionManager(patientProfile as any, place);
@@ -1119,10 +1122,7 @@ function Step2Content() {
                 const base64Audio = reader.result as string;
                 let existing: any[] = [];
                 try {
-                  const raw =
-                    localStorage.getItem(STEP2_AUDIO_STORAGE_KEY) || "[]";
-                  const parsed = JSON.parse(raw);
-                  existing = Array.isArray(parsed) ? parsed : [];
+                  existing = loadTransientStepStorage<any>(STEP2_AUDIO_STORAGE_KEY);
                 } catch {
                   existing = [];
                 }
@@ -1160,10 +1160,7 @@ function Step2Content() {
 
                 while (!saved) {
                   try {
-                    localStorage.setItem(
-                      STEP2_AUDIO_STORAGE_KEY,
-                      JSON.stringify(candidate),
-                    );
+                    saveTransientStepStorage(STEP2_AUDIO_STORAGE_KEY, candidate);
                     saveResumeMeta(
                       STEP2_AUDIO_STORAGE_KEY,
                       stepSignature,
@@ -1193,7 +1190,7 @@ function Step2Content() {
                       continue;
                     }
 
-                    localStorage.removeItem(STEP2_AUDIO_STORAGE_KEY);
+                    removeTransientStepStorage(STEP2_AUDIO_STORAGE_KEY);
                     clearResumeMeta(STEP2_AUDIO_STORAGE_KEY);
                     candidate = [{ ...nextEntry, audioUrl: undefined }];
                   }

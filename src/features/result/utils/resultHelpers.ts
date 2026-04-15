@@ -336,9 +336,22 @@ export function aqSeverityLabel(aq: number) {
 
 export function parseStoredArray(key: string) {
   try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
+    const transient = loadTransientStepStorage(key);
+    if (Array.isArray(transient) && transient.length > 0) {
+      return transient;
+    }
+
+    if (typeof window === "undefined") return [];
+
+    const sessionRaw = window.sessionStorage.getItem(key);
+    if (sessionRaw) {
+      const parsed = JSON.parse(sessionRaw);
+      return Array.isArray(parsed) ? parsed : [];
+    }
+
+    const legacyRaw = window.localStorage.getItem(key);
+    if (!legacyRaw) return [];
+    const parsed = JSON.parse(legacyRaw);
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -498,3 +511,4 @@ export function getSelfItemFeedback(stepId: number, item: any) {
     improve: "핵심 단어를 천천히 반복 연습해 보세요.",
   };
 }
+import { loadTransientStepStorage } from "@/lib/security/transientStepStorage";

@@ -325,6 +325,18 @@ function ResultRehabPage() {
       need: trendText,
     };
   }, [delta, detailComparisons, improvedCount, safeStep]);
+  const nextActionText = useMemo(() => {
+    if (delta === null) {
+      return "같은 단계 훈련을 한 번 더 수행해 기준 기록을 먼저 만들어 보세요.";
+    }
+    if (delta >= 5) {
+      return "현재 강점을 유지하면서 다음 단계 확장 훈련을 이어가세요.";
+    }
+    if (delta >= 0) {
+      return "지금 수준을 유지하며 같은 단계 반복 훈련을 1회 더 권장합니다.";
+    }
+    return "이전 기록보다 낮아져 같은 단계 재훈련과 발화 시작 연습을 권장합니다.";
+  }, [delta]);
 
   const stepResultCards = useMemo(
     () => buildStepResultCards(safeStep, latestStepRow, detailKey),
@@ -625,6 +637,51 @@ function ResultRehabPage() {
           <p className="text-xs sm:text-sm opacity-90 mt-2">
             이전 동일 훈련 기록과 비교해 변화량을 확인하세요.
           </p>
+        </section>
+
+        <section className="print-compact-card rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-sky-600">
+                현재 상태
+              </p>
+              <p className="mt-2 text-sm font-bold leading-6 text-slate-800">
+                {rehabImpression.summary}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                측정 품질
+              </p>
+              <p className="mt-2 text-lg font-black text-slate-900">
+                {qualityUi.label}
+              </p>
+              <p className="mt-1 text-sm font-medium text-slate-600">
+                개선 지표 {improvedCount}개
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                변화 요약
+              </p>
+              <p className="mt-2 text-lg font-black text-slate-900">
+                {delta === null
+                  ? "기준 기록 필요"
+                  : `${delta > 0 ? "+" : ""}${delta.toFixed(1)}점`}
+              </p>
+              <p className="mt-1 text-sm font-medium text-slate-600">
+                {rehabImpression.strength}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-amber-700">
+                다음 권장 행동
+              </p>
+              <p className="mt-2 text-sm font-bold leading-6 text-slate-800">
+                {nextActionText}
+              </p>
+            </div>
+          </div>
         </section>
 
         <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">

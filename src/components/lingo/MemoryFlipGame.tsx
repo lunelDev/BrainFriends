@@ -301,6 +301,28 @@ type MemoryCard = {
   result: "pending" | "success" | "fail";
 };
 
+type BrowserSpeechRecognitionInstance = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives?: number;
+  onstart: (() => void) | null;
+  onresult: ((event: unknown) => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
+type BrowserSpeechRecognitionConstructor =
+  new () => BrowserSpeechRecognitionInstance;
+
+type BrowserSpeechWindow = Window &
+  typeof globalThis & {
+    SpeechRecognition?: BrowserSpeechRecognitionConstructor;
+    webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
+  };
+
 function normalizeCategoryText(text: string) {
   return text
     .trim()
@@ -392,7 +414,8 @@ function resolveSpokenCategoryKey(
 
 function buildRecognition() {
   if (typeof window === "undefined") return null;
-  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  const speechWindow = window as BrowserSpeechWindow;
+  return speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition || null;
 }
 
 const CATEGORY_VISUALS: Record<GameModeWordHunterCategoryKey, string> = {
@@ -1026,14 +1049,17 @@ export default function MemoryFlipGame({ onBack }: { onBack?: () => void }) {
   }
 
   function revealCategory(targetWord: string, result: "success" | "fail" | "skip") {
-    const nextCards = cardsRef.current.map((card) => {
+    const nextCards: MemoryCard[] = cardsRef.current.map((card) => {
       if (card.word === targetWord) {
         return {
           ...card,
           revealed: result !== "skip",
           solved: result === "success",
           completed: true,
-          result: result === "skip" ? "pending" : result,
+          result:
+            result === "skip"
+              ? "pending"
+              : (result as "success" | "fail"),
         };
       }
       return card;

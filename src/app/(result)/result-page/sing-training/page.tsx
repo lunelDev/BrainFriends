@@ -853,6 +853,13 @@ export default function SingTrainingResultPage() {
     lyricAccuracyScore == null ? "미측정" : `${lyricAccuracyScore.toFixed(1)}점`;
   const hasMeasuredSpeech =
     consonantScore != null && vowelScore != null && lyricAccuracyScore != null;
+  const nextActionText = !isMeasuredResult
+    ? "측정 가능한 환경에서 같은 곡을 다시 진행해 기준 결과를 확보하세요."
+    : result.score >= 90
+      ? "현재 강점을 유지하면서 새로운 곡으로 확장 훈련을 시도해 보세요."
+      : result.score >= 75
+        ? "같은 곡을 1회 더 반복해 자음·모음 정확도를 안정화해 보세요."
+        : "짧은 구간 반복과 천천히 따라 부르기로 발화 정확도를 먼저 높이는 것이 좋습니다.";
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f5fbf8_0%,#eef8f3_100%)] px-4 py-6 sm:px-6 sm:py-8">
@@ -924,6 +931,32 @@ export default function SingTrainingResultPage() {
               title="내 최고 기록"
               value={myRank && hasDbRanking ? `${myRank.score}점` : "--"}
               helper={myRank && hasDbRanking ? `현재 순위 ${myRank.rank}위` : "랭킹 집계 전"}
+            />
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+            <SummaryCard
+              title="측정 품질"
+              value={isMeasuredResult ? "실측 완료" : "참고용 결과"}
+              helper={
+                isMeasuredResult
+                  ? "measured-only 평가 기준 포함"
+                  : result.measurementReason || "실측 기준 미충족"
+              }
+            />
+            <SummaryCard
+              title="안면 변화 참고"
+              value={
+                baselineComparisonDelta == null
+                  ? "비교 불가"
+                  : `${baselineComparisonDelta.toFixed(1)}`
+              }
+              helper="직전 baseline 대비 변화량"
+            />
+            <SummaryCard
+              title="다음 권장 행동"
+              value={isMeasuredResult ? "반복 또는 확장" : "재측정 권장"}
+              helper={nextActionText}
             />
           </div>
 

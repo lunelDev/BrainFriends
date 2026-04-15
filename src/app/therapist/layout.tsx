@@ -17,11 +17,11 @@ export default function TherapistLayout({
                 Therapist Console
               </p>
               <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
-                Patient-facing flow stays simple. Clinical review lives here.
+                User flow stays simple. Clinical review lives here.
               </h1>
               <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-slate-600">
-                This shell separates therapist work from the patient journey.
-                Use it for patient lookup, result review, quality checks, and
+                This shell separates therapist work from the user journey.
+                Use it for user lookup, result review, quality checks, and
                 system-level follow-up.
               </p>
             </div>
