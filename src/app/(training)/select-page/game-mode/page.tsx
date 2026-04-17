@@ -270,40 +270,38 @@ export default function SelectGameModePage() {
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto flex-1 w-full max-w-[960px] px-5 pb-16 pt-10 sm:px-6 lg:px-8">
+      <main className="relative z-10 mx-auto flex-1 w-full max-w-[960px] px-5 pb-10 pt-6 sm:px-6 lg:px-8">
         <section className="text-center">
-          <p className={`${gameModeTitleFont.className} text-[11px] tracking-[0.38em] text-[#a29bfe]`}>
+          <p className={`${gameModeTitleFont.className} text-[10px] tracking-[0.32em] text-[#a29bfe]`}>
             BRAINFRIENDS GAME MODE
           </p>
-          <div className="mt-4 flex items-start justify-center gap-3 sm:gap-4">
+          <div className="mt-2 flex items-baseline justify-center gap-2 sm:gap-3">
             <span
-              className={`${gameModeTitleFont.className} mt-1 text-[10px] tracking-[0.22em] text-white/95 drop-shadow-[0_0_10px_rgba(116,185,255,0.8)] sm:text-[12px]`}
+              className={`${gameModeTitleFont.className} text-[10px] tracking-[0.22em] text-white/95 drop-shadow-[0_0_10px_rgba(116,185,255,0.8)]`}
             >
               KR
             </span>
             <h1
-              className={`${gameModeTitleFont.className} text-[18px] font-black leading-[1.8] text-white [text-shadow:0_0_10px_rgba(255,255,255,0.95),0_0_26px_rgba(162,155,254,0.95),0_0_56px_rgba(116,185,255,0.5)] sm:text-[22px]`}
+              className={`${gameModeTitleFont.className} text-[16px] font-black leading-[1.3] text-white [text-shadow:0_0_10px_rgba(255,255,255,0.95),0_0_26px_rgba(162,155,254,0.95)] sm:text-[18px]`}
             >
-              KOREA STYLE ROADMAP
-              <br />
-              LEVEL SELECT
+              KOREA STYLE ROADMAP · LEVEL SELECT
             </h1>
           </div>
-          <p className="mt-4 text-sm tracking-[0.18em] text-slate-400">
+          <p className="mt-1 text-[11px] tracking-[0.18em] text-slate-400">
             각 레벨은 다른 게임과 다른 난이도로 구성됩니다.
           </p>
         </section>
 
-        <section className="mt-8 flex flex-wrap justify-center gap-3">
+        <section className="mt-4 flex flex-wrap justify-center gap-x-3 gap-y-1">
           {(["association_clear", "word_select", "word_assemble", "tetris", "memory", "sentence_build", "tongue_twister", "balloon"] as GameModeNodeGameType[]).map(
             (gameType) => {
               const game = CORE_GAME_CARD_CONFIG[gameType];
               return (
                 <div
                   key={gameType}
-                  className="flex items-center gap-2 text-xs font-bold text-slate-200"
+                  className="flex items-center gap-1.5 text-[11px] font-bold text-slate-200"
                 >
-                  <span className={`h-5 w-5 rounded-[4px] border-2 ${game.borderClass}`} />
+                  <span className={`h-3 w-3 rounded-[3px] border ${game.borderClass}`} />
                   {game.label}
                 </div>
               );
@@ -312,22 +310,22 @@ export default function SelectGameModePage() {
         </section>
 
         <p
-          className={`${gameModeTitleFont.className} mt-6 text-center text-[11px] tracking-[0.24em] text-[#93a7d8] [text-shadow:0_0_10px_rgba(116,185,255,0.45)]`}
+          className={`${gameModeTitleFont.className} mt-3 text-center text-[10px] tracking-[0.24em] text-[#93a7d8] [text-shadow:0_0_10px_rgba(116,185,255,0.45)]`}
         >
           ▼ SCROLL TO EXPLORE ▼
         </p>
 
-        <section className="mt-10 space-y-10">
+        <section className="mt-6 space-y-6">
           {levelsByZone.map(({ zoneLabel, levels }) => (
             <div key={zoneLabel}>
-              <div className="relative mb-6 text-center">
+              <div className="relative mb-4 text-center">
                 <div className="absolute left-0 right-0 top-1/2 h-px bg-[#2a2a5a]" />
                 <span className={`relative bg-[#0a0a1a] px-4 text-[10px] tracking-[0.28em] text-slate-500 ${gameModeTitleFont.className}`}>
                   {zoneLabel}
                 </span>
               </div>
 
-              <div className="space-y-8">
+              <div className="space-y-4">
                 {levels.map((level, index) => {
                   const isUnlocked = isAdminAccount || level.id <= unlockedThroughStage;
                   const isCleared = hasPlayedAnyStageGame(
@@ -350,7 +348,7 @@ export default function SelectGameModePage() {
                       onClick={() => {
                         router.push(`/select-page/game-mode/stage/${level.id}`);
                       }}
-                      className="group relative block w-full overflow-hidden rounded-[18px] border-2 border-[#2a2a5a] bg-[#12122a] p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_12px_40px_rgba(0,0,0,0.45)]"
+                      className="group relative block w-full overflow-hidden rounded-[14px] border-2 border-[#2a2a5a] bg-[#12122a] p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(0,0,0,0.45)]"
                       style={{
                         boxShadow: isUnlocked
                           ? "0 10px 30px rgba(0,0,0,0.28)"
@@ -363,7 +361,7 @@ export default function SelectGameModePage() {
                       />
                       {index < levels.length - 1 ? (
                         <div
-                          className="absolute bottom-[-32px] left-12 h-8 w-[2px]"
+                          className="absolute bottom-[-16px] left-8 h-4 w-[2px]"
                           style={{
                             background: `linear-gradient(to bottom, ${level.accentColor}, transparent)`,
                           }}
@@ -374,49 +372,49 @@ export default function SelectGameModePage() {
                         <div className="absolute inset-0 bg-[#0a0a1ab8]" />
                       ) : null}
 
-                      <div className="relative flex items-start gap-4">
+                      <div className="relative flex items-center gap-3">
                         <div
-                          className="shrink-0 rounded-[10px] px-3 py-2 font-mono text-[10px] font-black text-black"
+                          className="shrink-0 rounded-[8px] px-2 py-1 font-mono text-[10px] font-black text-black"
                           style={{ background: level.accentColor }}
                         >
                           {level.badge}
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h2 className="text-2xl font-black text-white">
+                            <h2 className="text-lg font-black text-white">
                               {getCompactLevelTitle(level.title)}{" "}
                               <span>{LEVEL_EMOJI_BY_ID[level.id] ?? "🎮"}</span>
                             </h2>
                             {level.isBoss ? (
-                              <span className="rounded-[4px] bg-[linear-gradient(135deg,#ff6b6b,#ff8e53)] px-2 py-1 font-mono text-[8px] tracking-[0.15em] text-white">
+                              <span className="rounded-[4px] bg-[linear-gradient(135deg,#ff6b6b,#ff8e53)] px-1.5 py-0.5 font-mono text-[8px] tracking-[0.15em] text-white">
                                 {level.bossLabel ?? "BOSS"}
                               </span>
                             ) : null}
+                            <p className="truncate text-[11px] text-slate-400">
+                              {LEVEL_CITY_SUBTITLE_BY_ID[level.id] ?? level.description}
+                            </p>
                           </div>
-                          <p className="mt-1 text-xs text-slate-400">
-                            {LEVEL_CITY_SUBTITLE_BY_ID[level.id] ?? level.description}
-                          </p>
                         </div>
-                        <div className="ml-auto flex items-center gap-3">
-                          <div className="text-lg">
+                        <div className="ml-auto flex items-center gap-2">
+                          <div className="text-sm">
                             {"⭐".repeat(level.stars)}
                             <span className="text-slate-700">
                               {"☆".repeat(5 - level.stars)}
                             </span>
                           </div>
                           <div
-                            className={`flex h-11 w-11 items-center justify-center rounded-full border ${
+                            className={`flex h-8 w-8 items-center justify-center rounded-full border ${
                               isUnlocked
                                 ? "border-white/20 bg-white/10 text-white"
                                 : "border-slate-600 bg-slate-700/60 text-slate-300"
                             }`}
                           >
-                            {isUnlocked ? <Flag className="h-5 w-5" /> : <Lock className="h-5 w-5" />}
+                            {isUnlocked ? <Flag className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
                           </div>
                         </div>
                       </div>
 
-                      <div className="relative mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-8">
+                      <div className="relative mt-3 grid gap-2 grid-cols-2 sm:grid-cols-4 lg:grid-cols-8">
                         {(
                           [
                             ["association_clear", associationClearPreview],
@@ -434,22 +432,20 @@ export default function SelectGameModePage() {
                           return (
                             <div
                               key={`${level.id}-${gameType}`}
-                              className={`rounded-[10px] border-2 p-3 ${card.borderClass}`}
+                              className={`rounded-[8px] border p-1.5 ${card.borderClass}`}
+                              title={card.description}
                             >
                               <p
-                                className={`mb-2 flex items-center gap-1.5 text-[10px] font-bold tracking-[0.08em] ${card.labelClass}`}
+                                className={`mb-1 flex items-center gap-1 text-[9px] font-bold tracking-[0.04em] ${card.labelClass}`}
                               >
-                                <Icon className="h-3.5 w-3.5" />
+                                <Icon className="h-3 w-3" />
                                 {card.label}
                               </p>
-                              <p className="mb-3 text-[11px] leading-5 text-slate-400">
-                                {card.description}
-                              </p>
-                              <div className="flex flex-wrap gap-1.5">
-                                {previewItems.map((chip) => (
+                              <div className="flex flex-wrap gap-1">
+                                {previewItems.slice(0, 2).map((chip) => (
                                   <span
                                     key={chip}
-                                    className={`rounded-[4px] px-2 py-1 text-[11px] font-bold ${card.chipClass}`}
+                                    className={`rounded-[3px] px-1 py-0.5 text-[9px] font-bold ${card.chipClass}`}
                                   >
                                     {chip}
                                   </span>
@@ -460,13 +456,13 @@ export default function SelectGameModePage() {
                         })}
                       </div>
 
-                      <div className="relative mt-5 flex min-h-[52px] items-end gap-[3px] border-t border-[#2a2a5a] pt-4">
-                        {level.previewHeights.map((height, previewIndex) => (
+                      <div className="relative mt-3 flex min-h-[28px] items-end gap-[2px] border-t border-[#2a2a5a] pt-2">
+                        {level.previewHeights.slice(0, 10).map((height, previewIndex) => (
                           <div
                             key={`${level.id}-preview-${previewIndex}`}
-                            className="w-3 rounded-[2px] opacity-85"
+                            className="w-2 rounded-[2px] opacity-80"
                             style={{
-                              height,
+                              height: `min(${height}, 24px)`,
                               background:
                                 previewIndex % 4 === 0
                                   ? "#FF6B6B"
@@ -484,8 +480,8 @@ export default function SelectGameModePage() {
                       </div>
 
                       {isCleared ? (
-                        <div className="absolute right-5 top-5 flex h-8 w-8 items-center justify-center rounded-full border-2 border-[#fff4ce] bg-[#ffb300] text-[#5c3a00] shadow-md">
-                          <Flag className="h-4 w-4" />
+                        <div className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full border-2 border-[#fff4ce] bg-[#ffb300] text-[#5c3a00] shadow-md">
+                          <Flag className="h-3 w-3" />
                         </div>
                       ) : null}
                     </button>

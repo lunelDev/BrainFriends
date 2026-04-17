@@ -297,6 +297,21 @@ function ResultContent() {
   const vnvSummary = currentHistoryEntry?.vnv?.summary ?? null;
   const isServerExcluded = false;
   const isDemoResult = currentHistoryEntry?.measurementQuality?.overall === "demo";
+  const selfAssessmentNextActionText = useMemo(() => {
+    if (qualityUi.label === "참고용") {
+      return "측정 품질을 높이기 위해 같은 환경에서 다시 한 번 평가해 보세요.";
+    }
+    if (qualityUi.label === "일부 측정") {
+      return "부족한 문항을 다시 확인해 결과 신뢰도를 높여보세요.";
+    }
+    return "강점은 유지하고 낮은 영역 중심으로 다음 훈련을 이어가세요.";
+  }, [qualityUi.label]);
+  const selfAssessmentStatusText = useMemo(() => {
+    const aq = Number(derivedKwab?.aq ?? 0);
+    const severity = aqSeverityLabel(aq);
+    if (!normalComparison) return `${severity} · 기준 비교 전`;
+    return `${severity} · 정상군 대비 ${normalComparison.diff >= 0 ? "+" : ""}${normalComparison.diff.toFixed(1)}`;
+  }, [derivedKwab?.aq, normalComparison]);
 
   const previousHistory = useMemo(() => {
     if (!patientForHistory) return [];
@@ -831,6 +846,53 @@ function ResultContent() {
                   자가진단 평가 결과를 기준으로 강점 영역과 집중 중재 영역을
                   확인하세요.
                 </p>
+              </section>
+
+              <section className="no-print rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3">
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-orange-600">
+                      현재 상태
+                    </p>
+                    <p className="mt-2 text-sm font-bold leading-6 text-slate-800">
+                      {selfAssessmentStatusText}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                      측정 품질
+                    </p>
+                    <p className="mt-2 text-lg font-black text-slate-900">
+                      {qualityUi.label}
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-slate-600">
+                      {qualityUi.label === "실측 완료"
+                        ? "실측 기준 충족"
+                        : qualityUi.label === "일부 측정"
+                          ? "일부 문항 보완 필요"
+                          : "참고용 결과"}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                      현재 AQ
+                    </p>
+                    <p className="mt-2 text-lg font-black text-slate-900">
+                      {derivedKwab?.aq || "0.0"}점
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-slate-600">
+                      {clinicalImpression?.strength || "강점 영역을 확인하세요."}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3">
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-amber-700">
+                      다음 권장 행동
+                    </p>
+                    <p className="mt-2 text-sm font-bold leading-6 text-slate-800">
+                      {selfAssessmentNextActionText}
+                    </p>
+                  </div>
+                </div>
               </section>
 
               <section className="no-print grid grid-cols-1 md:grid-cols-4 gap-3">

@@ -9,6 +9,7 @@ import {
   saveTherapistPatientNote,
   type TherapistFollowUpState,
 } from "@/lib/server/therapistNotes";
+import { canTherapistAccessPatient } from "@/lib/server/therapistReportsDb";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,13 +51,18 @@ export async function GET(req: Request) {
     if (!canAccessTherapistConsole(context.userRole)) {
       return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
     }
+    if (!(await canTherapistAccessPatient(token, patientId))) {
+      return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+    }
 
     const note = await getTherapistPatientNote(patientId);
     return NextResponse.json({ ok: true, note });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "failed_to_load_therapist_note";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    const status =
+      message === "unauthorized" ? 401 : message === "forbidden" ? 403 : 500;
+    return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
 
@@ -83,6 +89,9 @@ export async function POST(req: Request) {
     if (!canAccessTherapistConsole(context.userRole)) {
       return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
     }
+    if (!(await canTherapistAccessPatient(token, patientId))) {
+      return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+    }
 
     const note = await saveTherapistPatientNote({
       patientId,
@@ -94,6 +103,8 @@ export async function POST(req: Request) {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "failed_to_save_therapist_note";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    const status =
+      message === "unauthorized" ? 401 : message === "forbidden" ? 403 : 500;
+    return NextResponse.json({ ok: false, error: message }, { status });
   }
 }

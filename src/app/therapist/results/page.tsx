@@ -124,6 +124,12 @@ export default function TherapistResultsPage() {
       (entry) => entry.measurementQuality?.overall === "demo",
     ).length;
     const vnvLinkedCount = entries.filter((entry) => entry.vnv?.summary).length;
+    const failedCount = entries.filter(
+      (entry) => getEntrySaveState(entry) === "failed",
+    ).length;
+    const savedCount = entries.filter(
+      (entry) => getEntrySaveState(entry) === "saved",
+    ).length;
 
     return {
       filtered,
@@ -132,8 +138,49 @@ export default function TherapistResultsPage() {
       partialCount,
       demoCount,
       vnvLinkedCount,
+      failedCount,
+      savedCount,
     };
-  }, [entries]);
+  }, [entries, modeFilter, qualityFilter, saveStateFilter, search]);
+
+  const activeFilters = useMemo(() => {
+    const items: string[] = [];
+    if (search.trim()) items.push(`검색: ${search.trim()}`);
+    if (qualityFilter !== "all") {
+      items.push(
+        `측정 품질: ${
+          qualityFilter === "measured"
+            ? "측정 완료"
+            : qualityFilter === "partial"
+              ? "부분 측정"
+              : "시연"
+        }`,
+      );
+    }
+    if (modeFilter !== "all") {
+      items.push(
+        `훈련 모드: ${
+          modeFilter === "self"
+            ? "자가진단"
+            : modeFilter === "rehab"
+              ? "재활"
+              : "노래"
+        }`,
+      );
+    }
+    if (saveStateFilter !== "all") {
+      items.push(
+        `저장 상태: ${
+          saveStateFilter === "saved"
+            ? "저장 완료"
+            : saveStateFilter === "failed"
+              ? "저장 실패"
+              : "저장 제외"
+        }`,
+      );
+    }
+    return items;
+  }, [modeFilter, qualityFilter, saveStateFilter, search]);
 
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
@@ -154,7 +201,7 @@ export default function TherapistResultsPage() {
           <SummaryCard label="전체 결과" value={String(entries.length)} />
           <SummaryCard label="현재 표시" value={String(summary.filtered.length)} />
           <SummaryCard label="측정 완료" value={String(summary.measuredCount)} />
-          <SummaryCard label="검증 연결" value={String(summary.vnvLinkedCount)} />
+          <SummaryCard label="저장 실패" value={String(summary.failedCount)} />
         </div>
 
         <div className="mt-6 grid gap-3 rounded-[24px] border border-slate-200 bg-slate-50 p-4 md:grid-cols-2 xl:grid-cols-4">
@@ -216,6 +263,42 @@ export default function TherapistResultsPage() {
           </label>
         </div>
 
+        <div className="mt-4 flex flex-col gap-3 rounded-[24px] border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+              현재 필터 상태
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {activeFilters.length ? (
+                activeFilters.map((item) => (
+                  <span
+                    key={item}
+                    className="inline-flex rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-[11px] font-black text-violet-700"
+                  >
+                    {item}
+                  </span>
+                ))
+              ) : (
+                <span className="text-sm font-medium text-slate-500">
+                  현재 모든 결과를 표시 중입니다.
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSearch("");
+              setQualityFilter("all");
+              setModeFilter("all");
+              setSaveStateFilter("all");
+            }}
+            className="inline-flex h-11 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-black text-slate-700 transition hover:bg-slate-100"
+          >
+            필터 초기화
+          </button>
+        </div>
+
         <div className="mt-6 space-y-4">
           {isForbidden ? (
             <p className="text-sm font-bold text-slate-500">
@@ -228,9 +311,52 @@ export default function TherapistResultsPage() {
           ) : error ? (
             <p className="text-sm font-bold text-red-500">{error}</p>
           ) : !summary.recent.length ? (
-            <p className="text-sm font-bold text-slate-500">
-              현재 필터 조건에 맞는 저장 결과가 없습니다.
-            </p>
+            <div className="rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-6">
+              <p className="text-base font-black text-slate-900">
+                현재 필터 조건에 맞는 저장 결과가 없습니다.
+              </p>
+              <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+                필터를 초기화하거나, 저장 실패/측정 완료 조건만 따로 확인해 보세요.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setQualityFilter("all");
+                    setModeFilter("all");
+                    setSaveStateFilter("all");
+                  }}
+                  className="rounded-full bg-slate-900 px-4 py-2 text-xs font-black text-white transition hover:bg-slate-800"
+                >
+                  전체 보기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setQualityFilter("measured");
+                    setModeFilter("all");
+                    setSaveStateFilter("all");
+                  }}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-100"
+                >
+                  측정 완료 보기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setQualityFilter("all");
+                    setModeFilter("all");
+                    setSaveStateFilter("failed");
+                  }}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-100"
+                >
+                  저장 실패 보기
+                </button>
+              </div>
+            </div>
           ) : (
             summary.recent.map((entry) => {
               const quality = entry.measurementQuality?.overall ?? "unknown";
@@ -312,6 +438,13 @@ export default function TherapistResultsPage() {
           <p className="mt-2 text-sm font-medium leading-6 text-slate-700">
             측정 완료 {summary.measuredCount} · 부분 측정 {summary.partialCount} · 시연{" "}
             {summary.demoCount}
+          </p>
+        </div>
+        <div className="mt-4 rounded-[24px] border border-violet-200 bg-white p-4">
+          <p className="text-sm font-black text-slate-900">저장 상태 요약</p>
+          <p className="mt-2 text-sm font-medium leading-6 text-slate-700">
+            저장 완료 {summary.savedCount} · 저장 실패 {summary.failedCount} · 검증 연결{" "}
+            {summary.vnvLinkedCount}
           </p>
         </div>
         <div className="mt-4 rounded-[24px] border border-violet-200 bg-white p-4">

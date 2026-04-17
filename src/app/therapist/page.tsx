@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import {
   Activity,
   AlertTriangle,
+  BadgeCheck,
   CheckCircle2,
   Clock3,
   Filter,
@@ -11,12 +12,16 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
-import { AUTH_COOKIE_NAME } from "@/lib/server/accountAuth";
 import {
-  getAdminPatientReportDetail,
-  listAdminPatientReportSummaries,
-  listAdminReportValidationSample,
-} from "@/lib/server/adminReportsDb";
+  AUTH_COOKIE_NAME,
+  getAuthenticatedSessionContext,
+} from "@/lib/server/accountAuth";
+import {
+  getTherapistPatientReportDetail,
+  listTherapistColleagueSummaries,
+  listTherapistPatientReportSummaries,
+  listTherapistReportValidationSample,
+} from "@/lib/server/therapistReportsDb";
 
 function formatDateTime(value?: string | null) {
   if (!value) return "기록 없음";
@@ -90,23 +95,30 @@ export default async function TherapistOverviewPage() {
   const cookieStore = await cookies();
   const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
 
-  let patients: Awaited<ReturnType<typeof listAdminPatientReportSummaries>> = [];
-  let validationSampleEntries: Awaited<ReturnType<typeof listAdminReportValidationSample>> = [];
-  let featuredPatientDetail: Awaited<ReturnType<typeof getAdminPatientReportDetail>> | null = null;
+  let patients: Awaited<ReturnType<typeof listTherapistPatientReportSummaries>> = [];
+  let validationSampleEntries: Awaited<ReturnType<typeof listTherapistReportValidationSample>> = [];
+  let featuredPatientDetail: Awaited<ReturnType<typeof getTherapistPatientReportDetail>> | null = null;
+  let therapistColleagues: Awaited<ReturnType<typeof listTherapistColleagueSummaries>> = [];
+  const context = token
+    ? await getAuthenticatedSessionContext(token).catch(() => null)
+    : null;
+  const isAdminPreview = context?.userRole === "admin";
 
   if (token) {
     try {
-      [patients, validationSampleEntries] = await Promise.all([
-        listAdminPatientReportSummaries(token),
-        listAdminReportValidationSample(token),
+      [patients, validationSampleEntries, therapistColleagues] = await Promise.all([
+        listTherapistPatientReportSummaries(token),
+        listTherapistReportValidationSample(token),
+        listTherapistColleagueSummaries(token),
       ]);
       if (patients[0]?.patientId) {
-        featuredPatientDetail = await getAdminPatientReportDetail(token, patients[0].patientId);
+        featuredPatientDetail = await getTherapistPatientReportDetail(token, patients[0].patientId);
       }
     } catch {
       patients = [];
       validationSampleEntries = [];
       featuredPatientDetail = null;
+      therapistColleagues = [];
     }
   }
 
@@ -597,6 +609,115 @@ export default async function TherapistOverviewPage() {
               <p className="text-sm font-black text-slate-500">즉시 조치</p>
               <p className="mt-2 text-sm font-medium leading-6 text-slate-700">
                 저장 실패 확인, 보안·검증 점검, 결과 내보내기 등 운영자 액션을 메인 화면과 결과 화면에서 바로 실행합니다.
+              </p>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+        <article className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">
+                치료사 리스트
+              </p>
+              <h3 className="mt-2 text-xl font-black text-slate-950">
+                {isAdminPreview ? "등록된 치료사 계정" : "같은 기관 치료사 목록"}
+              </h3>
+            </div>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-black text-slate-700">
+              {therapistColleagues.length}명
+            </span>
+          </div>
+          <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
+            {isAdminPreview
+              ? "관리자 미리보기에서는 등록된 치료사 계정을 확인합니다."
+              : "치료사 계정에서는 같은 기관에 소속된 치료사만 표시합니다."}
+          </p>
+
+          <div className="mt-5 overflow-hidden rounded-[24px] border border-slate-200">
+            <div className="grid grid-cols-[1fr_0.8fr_0.7fr_0.7fr] gap-3 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+              <span>치료사</span>
+              <span>소속 / 로그인</span>
+              <span>담당 사용자</span>
+              <span>최근 로그인</span>
+            </div>
+            {therapistColleagues.length ? (
+              therapistColleagues.map((therapist) => (
+                <div
+                  key={therapist.therapistUserId}
+                  className="grid grid-cols-[1fr_0.8fr_0.7fr_0.7fr] gap-3 border-t border-slate-200 px-4 py-4 text-sm"
+                >
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-black text-slate-950">{therapist.therapistName}</p>
+                      {context?.userId === therapist.therapistUserId ? (
+                        <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-black text-sky-700">
+                          나
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 text-xs font-medium text-slate-500">
+                      {therapist.organizationId || "기관 정보 없음"}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="font-semibold text-slate-700">
+                      {therapist.organizationName ?? "기관 정보 없음"}
+                    </p>
+                    <div className="text-xs font-bold text-slate-500">
+                      {therapist.loginId || "로그인 ID 없음"}
+                    </div>
+                    <div className="flex items-center gap-1 text-xs font-bold text-slate-500">
+                      <BadgeCheck className="h-3.5 w-3.5 text-emerald-600" />
+                      {therapist.approvalState === "pending"
+                        ? "승인 대기"
+                        : therapist.approvalState === "approved"
+                          ? "승인 완료"
+                          : "상태 확인"}
+                    </div>
+                  </div>
+                  <div className="font-semibold text-slate-700">
+                    {therapist.assignedPatientCount}명
+                  </div>
+                  <div className="font-semibold text-slate-700">
+                    {formatDateTime(therapist.lastLoginAt)}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="px-4 py-8 text-sm font-semibold text-slate-500">
+                {isAdminPreview
+                  ? "현재 표시할 치료사 계정이 없습니다."
+                  : "같은 기관에서 표시할 치료사 목록이 없습니다."}
+              </div>
+            )}
+          </div>
+        </article>
+
+        <aside className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <div className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-indigo-600" />
+            <h3 className="text-xl font-black text-slate-950">치료사 협업 포인트</h3>
+          </div>
+          <div className="mt-5 space-y-3">
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-sm font-black text-slate-500">표시 범위</p>
+              <p className="mt-2 text-sm font-medium leading-6 text-slate-700">
+                치료사 콘솔에서는 같은 기관 소속 치료사 정보만 확인하고, 사용자 데이터는 담당 배정 기준으로만 조회합니다.
+              </p>
+            </div>
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-sm font-black text-slate-500">확인 항목</p>
+              <p className="mt-2 text-sm font-medium leading-6 text-slate-700">
+                로그인 상태, 승인 상태, 담당 사용자 수를 함께 보면서 치료사 운영 현황을 확인합니다.
+              </p>
+            </div>
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-sm font-black text-slate-500">다음 단계</p>
+              <p className="mt-2 text-sm font-medium leading-6 text-slate-700">
+                이후에는 기관 관리자 기준의 치료사 승인과 사용자 배정 관리까지 연결하는 것이 맞습니다.
               </p>
             </div>
           </div>

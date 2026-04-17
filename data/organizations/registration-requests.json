@@ -1,0 +1,17 @@
+[
+  {
+    "id": "fc838182-2cf3-4dea-a25a-12551b278c6a",
+    "organizationName": "울산대학병원",
+    "businessNumber": "111-11-11111",
+    "representativeName": "대표",
+    "organizationPhone": "123123123213",
+    "address": "ㅁㄴㅇㅁㄴ",
+    "contactName": "ㅁㄴㅇㅁㄴㅇ",
+    "contactPhone": "123123",
+    "contactEmail": "ajdjkl@gmail.com",
+    "status": "approved",
+    "createdAt": "2026-04-17T05:33:07.422Z",
+    "reviewedAt": "2026-04-17T05:37:19.223Z",
+    "reviewedBy": "550d0236-1618-4213-bd6a-603d0eb08809"
+  }
+]

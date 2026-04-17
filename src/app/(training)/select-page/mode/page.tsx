@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronRight, Flame, Mic, Sparkles, Trophy } from "lucide-react";
+import { ChevronRight, Sparkles, Trophy } from "lucide-react";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import {
   SessionManager,
@@ -153,6 +153,8 @@ export default function ModeSelectPage() {
   const { patient, ageGroup, isLoading } = useTrainingSession();
   const [isMounted, setIsMounted] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [showFirstDiagnosisModal, setShowFirstDiagnosisModal] = useState(false);
+  const [pendingModeTitle, setPendingModeTitle] = useState("자가 진단");
 
   useEffect(() => {
     setIsMounted(true);
@@ -188,6 +190,18 @@ export default function ModeSelectPage() {
       singCount: countByMode(historyEntries, "sing"),
     };
   }, [historyEntries, patient]);
+
+  const isFirstTraining = historyEntries.length === 0;
+
+  const moveToSelectedMode = (path: string, title: string) => {
+    if (isFirstTraining) {
+      setPendingModeTitle(title);
+      setShowFirstDiagnosisModal(true);
+      return;
+    }
+
+    router.push(path);
+  };
 
   const logout = async () => {
     setIsLoggingOut(true);
@@ -243,26 +257,23 @@ export default function ModeSelectPage() {
           <div className="flex flex-wrap items-center gap-2">
             {patient?.userRole === "admin" ? (
               <>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-2 text-xs font-black text-slate-700">
-                    현재 관리자
-                  </span>
-                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700">
-                    사용자 화면 미리보기
-                  </span>
+                <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-2 text-xs font-black text-slate-700">
+                  관리자 모드
+                </span>
+                <div className="inline-flex rounded-full border border-slate-200 bg-slate-100 p-1">
+                  <button
+                    onClick={() => router.push("/select-page/mode")}
+                    className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-black text-white transition hover:bg-indigo-700"
+                  >
+                    사용자 화면
+                  </button>
+                  <button
+                    onClick={() => router.push("/therapist")}
+                    className="rounded-full px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-white"
+                  >
+                    치료사 화면
+                  </button>
                 </div>
-                <button
-                  onClick={() => router.push("/select-page/mode")}
-                  className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-black text-white transition hover:bg-indigo-700"
-                >
-                  사용자 화면
-                </button>
-                <button
-                  onClick={() => router.push("/therapist")}
-                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
-                >
-                  치료사 화면
-                </button>
               </>
             ) : patient?.userRole === "therapist" ? (
               <button
@@ -274,12 +285,18 @@ export default function ModeSelectPage() {
             ) : null}
             {patient?.userRole === "admin" ? (
               <button
-                onClick={() => router.push("/tools/admin-reports")}
+                onClick={() => router.push("/admin")}
                 className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
               >
-                관리자 리포트
+                관리자 화면
               </button>
             ) : null}
+            <button
+              onClick={() => router.push("/mypage")}
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
+            >
+              내 재활 관리
+            </button>
             <button
               onClick={logout}
               className="rounded-full bg-slate-900 px-4 py-2 text-sm font-black text-white transition hover:bg-slate-800"
@@ -291,14 +308,22 @@ export default function ModeSelectPage() {
       </header>
 
       <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-6 sm:px-6 sm:py-8">
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <section className="mb-4 flex flex-wrap gap-2">
+          <Pill subtle>연속 훈련 {dashboard.streakDays}일</Pill>
+          <Pill subtle>측정 품질 {dashboard.quality.label}</Pill>
+          <Pill subtle>자가진단 {dashboard.selfCount}건</Pill>
+          <Pill subtle>재활 {dashboard.rehabCount}건</Pill>
+          <Pill subtle>노래 훈련 {dashboard.singCount}건</Pill>
+        </section>
+
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             icon={<Sparkles className="h-5 w-5 text-indigo-500" />}
             label="오늘의 훈련"
             value={`${dashboard.todayTrainings}`}
             hint="오늘 완료한 기록"
             actionLabel="훈련 시작하기"
-            onClick={() => router.push("/select-page/self-assessment")}
+            onClick={() => moveToSelectedMode("/select-page/self-assessment", "자가 진단")}
           />
           <MetricCard
             icon={<Trophy className="h-5 w-5 text-amber-500" />}
@@ -311,24 +336,11 @@ export default function ModeSelectPage() {
             }
           />
           <MetricCard
-            icon={<Flame className="h-5 w-5 text-rose-500" />}
-            label="연속 훈련"
-            value={`${dashboard.streakDays}d`}
-            hint="꾸준히 이어가고 있어요"
-          />
-          <MetricCard
             icon={<ChevronRight className="h-5 w-5 text-sky-500" />}
             label="다음 목표"
             value={dashboard.nextGoal}
-            hint="지금 필요한 다음 단계"
+            hint="지금 가장 먼저 볼 목표"
             compact
-          />
-          <MetricCard
-            icon={<Mic className="h-5 w-5 text-emerald-500" />}
-            label="측정 품질"
-            value={dashboard.quality.label}
-            hint={dashboard.quality.description}
-            badgeClass={dashboard.quality.badgeClass}
           />
           <MetricCard
             icon={<Sparkles className="h-5 w-5 text-violet-500" />}
@@ -363,6 +375,11 @@ export default function ModeSelectPage() {
             </div>
 
             <div className="mt-6 space-y-4">
+              {isFirstTraining ? (
+                <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm font-bold text-amber-800">
+                  최초 이용 시에는 모든 훈련에 앞서 자가진단을 먼저 진행합니다.
+                </div>
+              ) : null}
               {MODE_CARDS.map((card) => {
                 const modeCount =
                   card.key === "rehab"
@@ -377,7 +394,7 @@ export default function ModeSelectPage() {
                   <button
                     key={card.key}
                     type="button"
-                    onClick={() => router.push(card.onSelect)}
+                    onClick={() => moveToSelectedMode(card.onSelect, card.title)}
                     className="group grid w-full gap-4 overflow-hidden rounded-[28px] border border-slate-200 bg-slate-50 p-4 text-left transition hover:-translate-y-0.5 hover:bg-white hover:shadow-sm md:grid-cols-[180px_minmax(0,1fr)_auto]"
                   >
                     <div
@@ -446,11 +463,11 @@ export default function ModeSelectPage() {
                     {formatAq(dashboard.latest.aq)}
                   </p>
                   <p className="mt-2 text-sm font-medium text-slate-600">
-                    측정 품질은 {dashboard.quality.label}이며, 최근 AQ를 기준으로 다음 목표를 추천합니다.
+                    측정 품질은 {dashboard.quality.label}이며, 다음 목표는 {dashboard.nextGoal}입니다.
                   </p>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Link
-                      href="/training/report"
+                      href="/report"
                       className="rounded-full bg-slate-900 px-4 py-2 text-sm font-black text-white transition hover:bg-slate-800"
                     >
                       결과 보러 가기
@@ -471,15 +488,50 @@ export default function ModeSelectPage() {
                 빠른 요약
               </p>
               <div className="mt-4 grid gap-3">
-                <SummaryRow label="자가 진단 기록" value={`${dashboard.selfCount}건`} />
-                <SummaryRow label="언어 재활 기록" value={`${dashboard.rehabCount}건`} />
-                <SummaryRow label="노래 훈련 기록" value={`${dashboard.singCount}건`} />
+                <SummaryRow label="연속 훈련" value={`${dashboard.streakDays}일`} />
+                <SummaryRow label="측정 품질" value={dashboard.quality.label} />
                 <SummaryRow label="다음 목표" value={dashboard.nextGoal} />
               </div>
             </section>
           </aside>
         </section>
       </main>
+
+      {showFirstDiagnosisModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md rounded-[32px] border border-amber-100 bg-white p-6 shadow-2xl">
+            <p className="text-[11px] font-black uppercase tracking-[0.24em] text-orange-500">
+              First Diagnosis
+            </p>
+            <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+              최초 1회는 자가진단이 필요합니다.
+            </h2>
+            <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
+              {pendingModeTitle}을(를) 시작하기 전에 현재 상태를 확인하기 위한
+              자가진단을 먼저 진행합니다.
+            </p>
+            <div className="mt-6 flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowFirstDiagnosisModal(false);
+                  router.push("/select-page/self-assessment");
+                }}
+                className="rounded-full bg-slate-900 px-5 py-3 text-sm font-black text-white transition hover:bg-slate-800"
+              >
+                자가진단 시작
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowFirstDiagnosisModal(false)}
+                className="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-700 transition hover:bg-slate-50"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

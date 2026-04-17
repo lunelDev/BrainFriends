@@ -918,6 +918,42 @@ export default function SingTrainingResultPage() {
           </div>
 
           <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <SummaryCard
+              title="현재 상태"
+              value={isMeasuredResult ? "측정 완료" : "추가 확인 필요"}
+              helper={
+                isMeasuredResult
+                  ? "발화와 안면 반응을 기반으로 결과를 확인했습니다."
+                  : result.measurementReason || "측정 데이터가 충분하지 않습니다."
+              }
+            />
+            <SummaryCard
+              title="측정 품질"
+              value={isMeasuredResult ? "실측 완료" : "참고용 결과"}
+              helper={
+                isMeasuredResult
+                  ? "measured-only 평가 기준 포함"
+                  : result.measurementReason || "실측 기준 미충족"
+              }
+            />
+            <SummaryCard
+              title="이번 결과"
+              value={scoreLabel}
+              helper={
+                baselineComparisonDelta == null
+                  ? "직전 baseline 비교 전"
+                  : `baseline 대비 ${baselineComparisonDelta > 0 ? "+" : ""}${baselineComparisonDelta.toFixed(1)}`
+              }
+              accent="primary"
+            />
+            <SummaryCard
+              title="다음 권장 행동"
+              value={isMeasuredResult ? "반복 또는 확장" : "재측정 권장"}
+              helper={nextActionText}
+            />
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <SummaryCard title="이번 결과" value={scoreLabel} accent="primary" />
             <SummaryCard title="자음 정확도" value={consonantLabel} />
             <SummaryCard title="모음 정확도" value={vowelLabel} />
@@ -931,32 +967,6 @@ export default function SingTrainingResultPage() {
               title="내 최고 기록"
               value={myRank && hasDbRanking ? `${myRank.score}점` : "--"}
               helper={myRank && hasDbRanking ? `현재 순위 ${myRank.rank}위` : "랭킹 집계 전"}
-            />
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-            <SummaryCard
-              title="측정 품질"
-              value={isMeasuredResult ? "실측 완료" : "참고용 결과"}
-              helper={
-                isMeasuredResult
-                  ? "measured-only 평가 기준 포함"
-                  : result.measurementReason || "실측 기준 미충족"
-              }
-            />
-            <SummaryCard
-              title="안면 변화 참고"
-              value={
-                baselineComparisonDelta == null
-                  ? "비교 불가"
-                  : `${baselineComparisonDelta.toFixed(1)}`
-              }
-              helper="직전 baseline 대비 변화량"
-            />
-            <SummaryCard
-              title="다음 권장 행동"
-              value={isMeasuredResult ? "반복 또는 확장" : "재측정 권장"}
-              helper={nextActionText}
             />
           </div>
 

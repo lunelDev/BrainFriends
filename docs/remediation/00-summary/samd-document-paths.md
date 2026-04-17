@@ -11,9 +11,12 @@
 - [시험기관 사전 문의 1페이지 요약본](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/test-lab-inquiry-one-pager.md)
 - [제출용 핵심 문서 인덱스](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/submission-pack-index.md)
 - [SaMD 준비 부족 항목 체크리스트](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/samd-gap-checklist.md)
+- [시료 버전 고정 및 해시 생성 가이드](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/submission-version-guide.md)
+- [시험 환경 설명서](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/submission-test-environment.md)
 
 ## 2. SW V&V
 
+- [SW V&V 시험 계획서](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/01-sw-vnv/sw-vnv-test-plan.md)
 - [SW V&V 제출 개요](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/01-sw-vnv/sw-vnv-submission-outline.md)
 - [SW V&V 현재 운영본 결과서](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/01-sw-vnv/sw-vnv-current-test-report.md)
 - [SW V&V 시험 결과서 템플릿](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/01-sw-vnv/sw-vnv-test-report-template.md)
@@ -30,6 +33,7 @@
 
 ## 4. AI 성능평가
 
+- [AI 성능평가 Gold-Label 정의서](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/03-ai-evaluation/ai-gold-label-definition.md)
 - [AI 성능평가 제출 개요](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/03-ai-evaluation/ai-evaluation-submission-outline.md)
 - [AI 성능평가 현재 운영본 보고서](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/03-ai-evaluation/ai-evaluation-current-report.md)
 - [AI 평가 데이터셋 정의서](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/03-ai-evaluation/ai-evaluation-dataset-definition.md)

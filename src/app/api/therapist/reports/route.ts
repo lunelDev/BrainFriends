@@ -2,10 +2,10 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { AUTH_COOKIE_NAME, getAuthenticatedSessionContext } from "@/lib/server/accountAuth";
 import {
-  getAdminPatientReportDetail,
-  listAdminPatientReportSummaries,
-  listAdminReportValidationSample,
-} from "@/lib/server/adminReportsDb";
+  getTherapistPatientReportDetail,
+  listTherapistPatientReportSummaries,
+  listTherapistReportValidationSample,
+} from "@/lib/server/therapistReportsDb";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,13 +34,13 @@ export async function GET(req: Request) {
     }
 
     if (patientId) {
-      const result = await getAdminPatientReportDetail(token, patientId);
+      const result = await getTherapistPatientReportDetail(token, patientId);
       return NextResponse.json({ ok: true, ...result });
     }
 
     const [patients, validationSampleEntries] = await Promise.all([
-      listAdminPatientReportSummaries(token),
-      listAdminReportValidationSample(token),
+      listTherapistPatientReportSummaries(token),
+      listTherapistReportValidationSample(token),
     ]);
 
     return NextResponse.json({ ok: true, patients, validationSampleEntries });

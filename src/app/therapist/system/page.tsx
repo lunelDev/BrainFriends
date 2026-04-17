@@ -23,6 +23,11 @@ const SYSTEM_LINKS = [
     body: "공개 회원가입 흐름과 분리된 치료사 계정 생성 경로입니다.",
   },
   {
+    title: "기관 관리",
+    href: "/therapist/system/organizations",
+    body: "기관 등록과 목록 관리를 관리자 화면에서 분리해 운영합니다.",
+  },
+  {
     title: "AI 평가셋 모니터링",
     href: "/therapist/system/evaluation",
     body: "dataset / model / analysis version 비교와 샘플 품질 분포를 확인합니다.",

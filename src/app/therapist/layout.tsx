@@ -5,6 +5,7 @@ import {
   AUTH_COOKIE_NAME,
   getAuthenticatedSessionContext,
 } from "@/lib/server/accountAuth";
+import { TherapistLogoutButton } from "./_components/TherapistLogoutButton";
 import { TherapistShellNav } from "./_components/TherapistShellNav";
 
 export default async function TherapistLayout({
@@ -39,44 +40,44 @@ export default async function TherapistLayout({
             <div className="flex flex-wrap gap-2">
               {isAdmin ? (
                 <>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-black text-slate-700">
-                      현재 관리자
-                    </span>
-                    <span className="rounded-full border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-black text-violet-700">
-                      치료사 화면 미리보기
-                    </span>
+                  <span className="rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-black text-slate-700">
+                    관리자 모드
+                  </span>
+                  <div className="inline-flex rounded-full border border-slate-200 bg-slate-100 p-1">
+                    <Link
+                      href="/select-page/mode"
+                      className="rounded-full px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-white"
+                    >
+                      사용자 화면
+                    </Link>
+                    <Link
+                      href="/therapist"
+                      className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-black text-white transition hover:bg-indigo-700"
+                    >
+                      치료사 화면
+                    </Link>
                   </div>
-                  <Link
-                    href="/select-page/mode"
-                    className="rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-black text-indigo-700 transition hover:bg-indigo-100"
-                  >
-                    사용자 화면
-                  </Link>
-                  <Link
-                    href="/therapist"
-                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
-                  >
-                    치료사 화면
-                  </Link>
                 </>
               ) : null}
-              <Link
-                href="/tools/admin-reports"
-                className="rounded-full bg-sky-600 px-4 py-2 text-sm font-black text-white transition hover:bg-sky-700"
-              >
-                관리자 리포트
-              </Link>
-              <Link
-                href="/tools/training-usage-admin"
-                className="rounded-full bg-slate-900 px-4 py-2 text-sm font-black text-white transition hover:bg-slate-800"
-              >
-                사용량 관리
-              </Link>
             </div>
           </div>
 
           <div className="mt-6 border-t border-slate-200 pt-6">
+            <div className="mb-4 flex flex-wrap gap-2">
+              <Link
+                href="/admin"
+                className="rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-black text-sky-700 transition hover:bg-sky-100"
+              >
+                관리자 화면
+              </Link>
+              <Link
+                href="/tools/training-usage-admin"
+                className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
+              >
+                사용량 관리
+              </Link>
+              <TherapistLogoutButton />
+            </div>
             <TherapistShellNav />
           </div>
         </section>

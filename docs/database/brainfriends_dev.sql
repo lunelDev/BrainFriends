@@ -1,3 +1,12 @@
+CREATE TABLE IF NOT EXISTS organizations (
+  organization_id UUID PRIMARY KEY,
+  organization_name VARCHAR(150) NOT NULL,
+  organization_code VARCHAR(50) NOT NULL UNIQUE,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS patient_pii (
   patient_id UUID PRIMARY KEY,
   patient_code VARCHAR(50) NOT NULL UNIQUE,
@@ -9,6 +18,9 @@ CREATE TABLE IF NOT EXISTS patient_pii (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE patient_pii
+  ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organizations(organization_id);
 
 CREATE TABLE IF NOT EXISTS patient_intake_profiles (
   patient_id UUID PRIMARY KEY REFERENCES patient_pii(patient_id),
@@ -34,6 +46,12 @@ CREATE TABLE IF NOT EXISTS app_users (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE app_users
+  ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organizations(organization_id);
+
+ALTER TABLE app_users
+  ADD COLUMN IF NOT EXISTS approval_state VARCHAR(20) NOT NULL DEFAULT 'approved';
+
 CREATE TABLE IF NOT EXISTS auth_sessions (
   session_id UUID PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES app_users(user_id),
@@ -42,6 +60,18 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS therapist_patient_assignments (
+  assignment_id UUID PRIMARY KEY,
+  organization_id UUID REFERENCES organizations(organization_id),
+  therapist_user_id UUID NOT NULL REFERENCES app_users(user_id) ON DELETE CASCADE,
+  patient_id UUID NOT NULL REFERENCES patient_pii(patient_id) ON DELETE CASCADE,
+  assigned_by UUID REFERENCES app_users(user_id),
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (therapist_user_id, patient_id)
 );
 
 CREATE TABLE IF NOT EXISTS patient_pseudonym_map (

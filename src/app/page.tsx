@@ -23,7 +23,6 @@ export default function LoginPage() {
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
-  const [showFirstDiagnosisModal, setShowFirstDiagnosisModal] = useState(false);
   const [pendingPatient, setPendingPatient] = useState<PatientProfile | null>(
     null,
   );
@@ -65,8 +64,16 @@ export default function LoginPage() {
     }
   };
 
-  const moveAfterPermission = async (patient: PatientProfile) => {
+  const moveAfterPermission = (patient: PatientProfile) => {
     bootstrapPatient(patient);
+
+    if (isAdminPatient(patient)) {
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem("btt.trialMode");
+      }
+      router.replace("/admin");
+      return;
+    }
 
     if (isTherapistPatient(patient)) {
       if (typeof window !== "undefined") {
@@ -76,46 +83,26 @@ export default function LoginPage() {
       return;
     }
 
-    if (isAdminPatient(patient)) {
-      if (typeof window !== "undefined") {
-        window.sessionStorage.removeItem("btt.trialMode");
-      }
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem("btt.trialMode");
+      setPendingPatient(null);
       router.replace("/select-page/mode");
       return;
     }
 
-    let hasSelfDiagnosisHistory = false;
-
-    try {
-      const response = await fetch("/api/onboarding/status", {
-        cache: "no-store",
-      });
-      const payload = await response.json().catch(() => null);
-      if (response.ok && payload?.ok) {
-        hasSelfDiagnosisHistory = Boolean(payload.hasSelfAssessmentHistory);
-      }
-    } catch {
-      setError("사용자 이력을 확인하지 못했습니다. 다시 시도해 주세요.");
-      return;
-    }
-
-    if (typeof window !== "undefined") {
-      if (hasSelfDiagnosisHistory) {
-        window.sessionStorage.removeItem("btt.trialMode");
-        router.replace("/select-page/mode");
-        return;
-      }
-
-      setPendingPatient(patient);
-      setShowFirstDiagnosisModal(true);
-      return;
-    }
-
-    router.replace(hasSelfDiagnosisHistory ? "/select-page/mode" : "/");
+    router.replace("/select-page/mode");
   };
 
   const routeAfterAuth = (patient: PatientProfile) => {
     bootstrapPatient(patient);
+
+    if (isAdminPatient(patient)) {
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem("btt.trialMode");
+      }
+      router.replace("/admin");
+      return;
+    }
 
     if (isTherapistPatient(patient)) {
       if (typeof window !== "undefined") {
@@ -128,23 +115,17 @@ export default function LoginPage() {
     setPendingPatient(patient);
     setShowPermissionModal(true);
   };
-
-  const startFirstDiagnosis = (patient: PatientProfile) => {
-    bootstrapPatient(patient);
-    if (typeof window !== "undefined") {
-      window.sessionStorage.setItem("btt.trialMode", "1");
-    }
-    setPendingPatient(null);
-    setShowFirstDiagnosisModal(false);
-    router.replace("/programs/step-1?place=home");
-  };
-
   useEffect(() => {
     if (
       typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("created") === "1"
     ) {
-      setNotice("회원가입이 완료되었습니다. 로그인해 주세요.");
+      const params = new URLSearchParams(window.location.search);
+      setNotice(
+        params.get("role") === "therapist"
+          ? "치료사 가입 신청이 접수되었습니다. 확인 후 로그인해 주세요."
+          : "회원가입이 완료되었습니다. 로그인해 주세요.",
+      );
     }
   }, []);
 
@@ -340,45 +321,6 @@ export default function LoginPage() {
         }
       `}</style>
 
-      {showFirstDiagnosisModal && pendingPatient ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/45 p-4 backdrop-blur-[2px]">
-          <div className="my-auto w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-orange-100 bg-white p-4 shadow-2xl [@media(min-height:901px)]:p-6">
-            <p className="mb-2 text-[10px] font-black uppercase tracking-[0.25em] text-orange-500">
-              First Diagnosis
-            </p>
-            <h3 className="mb-2 text-lg font-black text-slate-900 [@media(min-height:901px)]:text-xl">
-              최초 1회는 자가진단이 필요합니다.
-            </h3>
-            <p className="mb-4 text-sm font-bold text-slate-600 [@media(min-height:901px)]:mb-6">
-              카메라와 마이크 권한을 확인한 뒤 자가진단을 시작합니다.
-            </p>
-
-            <div className="grid grid-cols-1 gap-2 [@media(min-height:901px)]:gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  startFirstDiagnosis(pendingPatient);
-                }}
-                disabled={isRequestingPermissions}
-                className="w-full rounded-2xl bg-[#0B1A3A] py-3.5 font-black text-white transition hover:bg-[#09152f] disabled:cursor-not-allowed disabled:bg-slate-400"
-              >
-                자가진단 시작
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowFirstDiagnosisModal(false);
-                  setPendingPatient(null);
-                }}
-                className="w-full py-2 text-xs font-bold text-slate-500"
-              >
-                취소
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       {showPermissionModal && pendingPatient ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/45 p-4 backdrop-blur-[2px]">
           <div className="my-auto w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-orange-100 bg-white p-4 shadow-2xl [@media(min-height:901px)]:p-6">
@@ -411,29 +353,10 @@ export default function LoginPage() {
                     if (typeof window !== "undefined") {
                       window.sessionStorage.removeItem("btt.trialMode");
                     }
-                    router.replace("/select-page/mode");
+                    router.replace("/admin");
                     return;
                   }
-                  let hasSelfDiagnosisHistory = false;
-                  try {
-                    const response = await fetch("/api/onboarding/status", {
-                      cache: "no-store",
-                    });
-                    const payload = await response.json().catch(() => null);
-                    if (response.ok && payload?.ok) {
-                      hasSelfDiagnosisHistory = Boolean(
-                        payload.hasSelfAssessmentHistory,
-                      );
-                    }
-                  } catch {
-                    setError("사용자 이력을 확인하지 못했습니다. 다시 시도해 주세요.");
-                    return;
-                  }
-                  if (!hasSelfDiagnosisHistory) {
-                    setShowFirstDiagnosisModal(true);
-                    return;
-                  }
-                  void moveAfterPermission(pendingPatient);
+                  moveAfterPermission(pendingPatient);
                 }}
                 disabled={isRequestingPermissions}
                 className="w-full rounded-2xl bg-orange-500 py-3.5 font-black text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-slate-400"

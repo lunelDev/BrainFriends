@@ -7,6 +7,7 @@ import {
 } from "crypto";
 import type { PatientProfile } from "@/lib/patientStorage";
 import { getDbPool } from "@/lib/server/postgres";
+import { getAvailableOrganizationById } from "@/lib/server/organizationCatalogDb";
 import { upsertPatientIdentity } from "@/lib/server/patientIdentityDb";
 
 export const AUTH_COOKIE_NAME = "brainfriends_session";
@@ -17,6 +18,9 @@ export type UserRole = "patient" | "admin" | "therapist";
 
 export type SignupAccountInput = {
   userRole?: UserRole;
+  organizationId?: string;
+  therapistUserId?: string;
+  approvalState?: "approved" | "pending";
   loginId: string;
   name: string;
   birthDate: string;
@@ -115,6 +119,64 @@ function normalizeUserRole(value: string | null | undefined): UserRole {
   if (value === "admin") return "admin";
   if (value === "therapist") return "therapist";
   return "patient";
+}
+
+async function tableExists(client: any, tableName: string) {
+  const result = await client.query(
+    `SELECT to_regclass($1) IS NOT NULL AS exists`,
+    [`public.${tableName}`],
+  );
+  return Boolean(result.rows[0]?.exists);
+}
+
+async function columnExists(client: any, tableName: string, columnName: string) {
+  const result = await client.query(
+    `
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = $1
+          AND column_name = $2
+      ) AS exists
+    `,
+    [tableName, columnName],
+  );
+  return Boolean(result.rows[0]?.exists);
+}
+
+async function ensureOrganizationRecord(client: any, organizationId: string) {
+  if (!(await tableExists(client, "organizations"))) {
+    return null;
+  }
+
+  const organization = await getAvailableOrganizationById(organizationId);
+  if (!organization) {
+    throw new Error("invalid_organization");
+  }
+
+  await client.query(
+    `
+      INSERT INTO organizations (
+        organization_id,
+        organization_name,
+        organization_code,
+        is_active,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, TRUE, NOW(), NOW())
+      ON CONFLICT (organization_id) DO UPDATE
+      SET
+        organization_name = EXCLUDED.organization_name,
+        organization_code = EXCLUDED.organization_code,
+        is_active = TRUE,
+        updated_at = NOW()
+    `,
+    [organization.id, organization.name, organization.code],
+  );
+
+  return organization;
 }
 
 export function buildPatientProfile(row: {
@@ -251,6 +313,9 @@ async function ensureBuiltinAdminAccount(client: any) {
 
 export async function createAccount(input: SignupAccountInput) {
   const userRole = normalizeUserRole(input.userRole);
+  const organizationId = String(input.organizationId ?? "").trim() || null;
+  const therapistUserId = String(input.therapistUserId ?? "").trim() || null;
+  const approvalState = input.approvalState === "pending" ? "pending" : "approved";
   const loginId = normalizeLoginId(input.loginId);
   const name = normalizeName(input.name);
   const birthDate = normalizeBirthDate(input.birthDate);
@@ -272,7 +337,8 @@ export async function createAccount(input: SignupAccountInput) {
     userRole === "patient" &&
     (!input.onsetDate ||
       !input.educationYears ||
-      (input.gender !== "M" && input.gender !== "F"))
+      (input.gender !== "M" && input.gender !== "F") ||
+      !therapistUserId)
   ) {
     throw new Error("invalid_signup_payload");
   }
@@ -322,6 +388,44 @@ export async function createAccount(input: SignupAccountInput) {
 
     const { patientId } = await upsertPatientIdentity(client, patientProfile);
     const userId = randomUUID();
+    const canStoreOrganizationId = await columnExists(
+      client,
+      "app_users",
+      "organization_id",
+    );
+    const canStoreApprovalState = await columnExists(
+      client,
+      "app_users",
+      "approval_state",
+    );
+    const canUseAssignmentsTable = await tableExists(
+      client,
+      "therapist_patient_assignments",
+    );
+
+    if (organizationId && canStoreOrganizationId) {
+      await ensureOrganizationRecord(client, organizationId);
+    }
+
+    if (userRole === "patient" && therapistUserId) {
+      const therapistCheck = await client.query(
+        `
+          SELECT
+            u.user_id::text AS user_id
+          FROM app_users u
+          WHERE u.user_id = $1::uuid
+            AND u.user_role = 'therapist'
+            ${canStoreOrganizationId ? "AND u.organization_id = $2::uuid" : ""}
+            ${canStoreApprovalState ? "AND COALESCE(u.approval_state, 'approved') = 'approved'" : ""}
+          LIMIT 1
+        `,
+        canStoreOrganizationId ? [therapistUserId, organizationId] : [therapistUserId],
+      );
+
+      if (!therapistCheck.rowCount) {
+        throw new Error("invalid_therapist");
+      }
+    }
 
     await client.query(
       `
@@ -358,29 +462,72 @@ export async function createAccount(input: SignupAccountInput) {
       ],
     );
 
+    const userColumns = [
+      "user_id",
+      "patient_id",
+      "user_role",
+      "login_id",
+      "login_key_hash",
+      "password_hash",
+    ];
+    const userValues: Array<string | null> = [
+      userId,
+      patientId,
+      userRole,
+      loginId,
+      loginKeyHash,
+      hashPassword(input.password),
+    ];
+
+    if (canStoreOrganizationId) {
+      userColumns.push("organization_id");
+      userValues.push(organizationId);
+    }
+    if (canStoreApprovalState) {
+      userColumns.push("approval_state");
+      userValues.push(approvalState);
+    }
+
+    const placeholders = userValues.map((_, index) => `$${index + 1}`).join(", ");
     await client.query(
       `
         INSERT INTO app_users (
-          user_id,
-          patient_id,
-          user_role,
-          login_id,
-          login_key_hash,
-          password_hash,
-          created_at,
-          updated_at
+          ${userColumns.join(", ")}
         )
-        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+        VALUES (${placeholders})
       `,
-      [
-        userId,
-        patientId,
-        userRole,
-        loginId,
-        loginKeyHash,
-        hashPassword(input.password),
-      ],
+      userValues,
     );
+
+    if (userRole === "patient" && therapistUserId && canUseAssignmentsTable) {
+      const updated = await client.query(
+        `
+          UPDATE therapist_patient_assignments
+          SET
+            is_active = TRUE,
+            assigned_at = NOW()
+          WHERE therapist_user_id = $1::uuid
+            AND patient_id = $2::uuid
+        `,
+        [therapistUserId, patientId],
+      );
+
+      if (!updated.rowCount) {
+        await client.query(
+          `
+            INSERT INTO therapist_patient_assignments (
+              assignment_id,
+              therapist_user_id,
+              patient_id,
+              is_active,
+              assigned_at
+            )
+            VALUES ($1, $2::uuid, $3::uuid, TRUE, NOW())
+          `,
+          [randomUUID(), therapistUserId, patientId],
+        );
+      }
+    }
 
     await client.query("COMMIT");
     return { userId, patientId };

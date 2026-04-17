@@ -14,7 +14,18 @@ export async function POST(req: Request) {
   }
 
   try {
+    const userRole =
+      body.userRole === "therapist" || body.userRole === "admin"
+        ? body.userRole
+        : "patient";
+
     const created = await createAccount({
+      userRole,
+      organizationId: body.organizationId ? String(body.organizationId) : undefined,
+      therapistUserId: body.therapistUserId
+        ? String(body.therapistUserId)
+        : undefined,
+      approvalState: userRole === "therapist" ? "pending" : "approved",
       loginId: String(body.loginId ?? ""),
       name: String(body.name ?? ""),
       birthDate: String(body.birthDate ?? ""),
@@ -32,7 +43,6 @@ export async function POST(req: Request) {
           ? body.hemianopsia
           : undefined,
     });
-
     return NextResponse.json({ ok: true, created });
   } catch (error) {
     const message =
@@ -40,6 +50,8 @@ export async function POST(req: Request) {
     const status =
       message === "invalid_signup_payload"
         ? 400
+        : message === "invalid_organization"
+          ? 400
         : message === "account_already_exists"
           ? 409
           : 500;
