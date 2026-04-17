@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
 import { fetchTherapistReportsOverview } from "@/lib/client/therapistReportsApi";
 
@@ -17,19 +18,33 @@ function formatDate(value: number) {
 
 function formatMode(entry: TrainingHistoryEntry) {
   if (entry.trainingMode === "rehab") {
-    return `rehab${entry.rehabStep ? ` step ${entry.rehabStep}` : ""}`;
+    return `재활${entry.rehabStep ? ` Step ${entry.rehabStep}` : ""}`;
   }
   if (entry.trainingMode === "sing") {
-    return "sing";
+    return "노래";
   }
-  return "self";
+  return "자가진단";
+}
+
+function getEntrySaveState(entry: TrainingHistoryEntry) {
+  const value = (entry as TrainingHistoryEntry & { dbSaveState?: string }).dbSaveState;
+  return value ?? "unknown";
 }
 
 export default function TherapistResultsPage() {
+  const searchParams = useSearchParams();
   const [entries, setEntries] = useState<TrainingHistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isForbidden, setIsForbidden] = useState(false);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState(searchParams.get("query") ?? "");
+  const [qualityFilter, setQualityFilter] = useState(
+    searchParams.get("quality") ?? "all",
+  );
+  const [modeFilter, setModeFilter] = useState(searchParams.get("mode") ?? "all");
+  const [saveStateFilter, setSaveStateFilter] = useState(
+    searchParams.get("saveState") ?? "all",
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -49,7 +64,7 @@ export default function TherapistResultsPage() {
           setIsForbidden(true);
           return;
         }
-        setError("Failed to load therapist result summary.");
+        setError("치료사 결과 요약을 불러오지 못했습니다.");
       })
       .finally(() => {
         if (!cancelled) {
@@ -62,8 +77,43 @@ export default function TherapistResultsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    setSearch(searchParams.get("query") ?? "");
+    setQualityFilter(searchParams.get("quality") ?? "all");
+    setModeFilter(searchParams.get("mode") ?? "all");
+    setSaveStateFilter(searchParams.get("saveState") ?? "all");
+  }, [searchParams]);
+
   const summary = useMemo(() => {
-    const recent = entries.slice(0, 12);
+    const query = search.trim().toLowerCase();
+    const filtered = entries.filter((entry) => {
+      const quality = entry.measurementQuality?.overall ?? "unknown";
+      const saveState = getEntrySaveState(entry);
+      const matchesQuery =
+        !query ||
+        [
+          entry.patientName,
+          entry.historyId,
+          formatMode(entry),
+          entry.trainingMode,
+          entry.rehabStep != null ? `step ${entry.rehabStep}` : "",
+        ]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(query));
+      const matchesQuality =
+        qualityFilter === "all" || quality === qualityFilter;
+      const matchesMode =
+        modeFilter === "all" ||
+        (modeFilter === "self" && entry.trainingMode === "self") ||
+        (modeFilter === "rehab" && entry.trainingMode === "rehab") ||
+        (modeFilter === "sing" && entry.trainingMode === "sing");
+      const matchesSaveState =
+        saveStateFilter === "all" || saveState === saveStateFilter;
+
+      return matchesQuery && matchesQuality && matchesMode && matchesSaveState;
+    });
+
+    const recent = filtered.slice(0, 12);
     const measuredCount = entries.filter(
       (entry) => entry.measurementQuality?.overall === "measured",
     ).length;
@@ -76,6 +126,7 @@ export default function TherapistResultsPage() {
     const vnvLinkedCount = entries.filter((entry) => entry.vnv?.summary).length;
 
     return {
+      filtered,
       recent,
       measuredCount,
       partialCount,
@@ -88,38 +139,97 @@ export default function TherapistResultsPage() {
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
       <article className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <p className="text-[11px] font-black uppercase tracking-[0.22em] text-violet-600">
-          Results
+          측정·안면 분석
         </p>
         <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-          Review recent saved outputs, quality status, and traceability.
+          최근 결과, 측정 품질, 추적성을 한 번에 검토합니다.
         </h2>
         <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
-          This therapist view reuses the existing validation sample feed so you
-          can see which results are measured, which ones already carry V&V
-          metadata, and where to continue deeper review.
+          이 화면에서는 최근 저장 결과 중 어떤 항목이 measured인지, 어떤 결과에 V&amp;V
+          메타데이터가 연결됐는지, 어디서부터 후속 검토를 시작해야 하는지를 먼저
+          파악합니다.
         </p>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-4">
-          <SummaryCard label="Entries" value={String(entries.length)} />
-          <SummaryCard label="Measured" value={String(summary.measuredCount)} />
-          <SummaryCard label="Partial" value={String(summary.partialCount)} />
-          <SummaryCard label="V&V linked" value={String(summary.vnvLinkedCount)} />
+          <SummaryCard label="전체 결과" value={String(entries.length)} />
+          <SummaryCard label="현재 표시" value={String(summary.filtered.length)} />
+          <SummaryCard label="측정 완료" value={String(summary.measuredCount)} />
+          <SummaryCard label="검증 연결" value={String(summary.vnvLinkedCount)} />
+        </div>
+
+        <div className="mt-6 grid gap-3 rounded-[24px] border border-slate-200 bg-slate-50 p-4 md:grid-cols-2 xl:grid-cols-4">
+          <label className="block">
+            <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+              검색
+            </span>
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="사용자 이름, 모드, 히스토리 ID"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+              측정 품질
+            </span>
+            <select
+              value={qualityFilter}
+              onChange={(event) => setQualityFilter(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700"
+            >
+              <option value="all">전체</option>
+              <option value="measured">측정 완료</option>
+              <option value="partial">부분 측정</option>
+              <option value="demo">시연</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+              훈련 모드
+            </span>
+            <select
+              value={modeFilter}
+              onChange={(event) => setModeFilter(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700"
+            >
+              <option value="all">전체</option>
+              <option value="self">자가진단</option>
+              <option value="rehab">재활</option>
+              <option value="sing">노래</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+              저장 상태
+            </span>
+            <select
+              value={saveStateFilter}
+              onChange={(event) => setSaveStateFilter(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700"
+            >
+              <option value="all">전체</option>
+              <option value="saved">저장 완료</option>
+              <option value="failed">저장 실패</option>
+              <option value="skipped">저장 제외</option>
+            </select>
+          </label>
         </div>
 
         <div className="mt-6 space-y-4">
           {isForbidden ? (
             <p className="text-sm font-bold text-slate-500">
-          Therapist-console access is currently required for this view.
+              현재 이 화면은 치료사 또는 관리자 권한이 필요합니다.
             </p>
           ) : isLoading ? (
             <p className="text-sm font-bold text-slate-500">
-              Loading therapist result summary.
+              결과 요약을 불러오는 중입니다.
             </p>
           ) : error ? (
             <p className="text-sm font-bold text-red-500">{error}</p>
           ) : !summary.recent.length ? (
             <p className="text-sm font-bold text-slate-500">
-              No recent validation entries were found.
+              현재 필터 조건에 맞는 저장 결과가 없습니다.
             </p>
           ) : (
             summary.recent.map((entry) => {
@@ -157,10 +267,10 @@ export default function TherapistResultsPage() {
                         </Badge>
                       </div>
                       <p className="mt-2 text-sm font-semibold text-slate-600">
-                        completed {formatDate(entry.completedAt)}
+                        완료 시각 {formatDate(entry.completedAt)}
                       </p>
                       <p className="mt-1 text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
-                        V&V requirements {requirementCount} · test cases {testCaseCount}
+                        요구사항 {requirementCount}건 · 시험 케이스 {testCaseCount}건
                       </p>
                     </div>
 
@@ -169,13 +279,13 @@ export default function TherapistResultsPage() {
                         href="/tools/admin-reports"
                         className="rounded-full bg-violet-700 px-4 py-2 text-sm font-black text-white transition hover:bg-violet-800"
                       >
-                        Open reports
+                        관리자 리포트
                       </Link>
                       <Link
                         href="/therapist/system"
                         className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
                       >
-                        Check system
+                        시스템 점검
                       </Link>
                     </div>
                   </div>
@@ -188,21 +298,50 @@ export default function TherapistResultsPage() {
 
       <aside className="rounded-[32px] border border-slate-200 bg-violet-50 p-6 shadow-sm sm:p-8">
         <p className="text-[11px] font-black uppercase tracking-[0.22em] text-violet-700">
-          Current focus
+          검토 포인트
         </p>
         <ul className="mt-4 space-y-3 text-sm font-medium leading-6 text-slate-700">
-          <li>Prefer measured data for clinical interpretation</li>
-          <li>Check V&V-linked entries before export or audit follow-up</li>
-          <li>Use Admin Reports for full user detail and media review</li>
-          <li>Use System view for failed-save and usage-event investigation</li>
+          <li>임상 해석이나 보고에는 측정 완료 결과를 우선 사용합니다.</li>
+          <li>내보내기 전에는 V&amp;V가 연결된 결과인지 먼저 확인합니다.</li>
+          <li>관리자 리포트는 전체 사용자 정보와 미디어 검토가 필요할 때 사용합니다.</li>
+          <li>저장 실패나 이벤트 조사에는 시스템 점검 화면을 사용합니다.</li>
         </ul>
 
         <div className="mt-6 rounded-[24px] border border-violet-200 bg-white p-4">
-          <p className="text-sm font-black text-slate-900">Quality distribution</p>
+          <p className="text-sm font-black text-slate-900">품질 분포</p>
           <p className="mt-2 text-sm font-medium leading-6 text-slate-700">
-            measured {summary.measuredCount} · partial {summary.partialCount} · demo{" "}
+            측정 완료 {summary.measuredCount} · 부분 측정 {summary.partialCount} · 시연{" "}
             {summary.demoCount}
           </p>
+        </div>
+        <div className="mt-4 rounded-[24px] border border-violet-200 bg-white p-4">
+          <p className="text-sm font-black text-slate-900">빠른 액션</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href="/therapist/results?saveState=failed"
+              className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-100"
+            >
+              저장 실패만 보기
+            </Link>
+            <Link
+              href="/therapist/results?quality=measured"
+              className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-100"
+            >
+              측정 완료만 보기
+            </Link>
+            <a
+              href="/api/therapist/system/vnv-export"
+              className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-100"
+            >
+              V&amp;V 내보내기
+            </a>
+            <a
+              href="/api/therapist/system/ai-evaluation-export"
+              className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-100"
+            >
+              AI 평가 내보내기
+            </a>
+          </div>
         </div>
       </aside>
     </section>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { fetchTherapistReportsOverview } from "@/lib/client/therapistReportsApi";
 
 type PatientSummary = {
@@ -19,7 +20,7 @@ type PatientSummary = {
 };
 
 function formatDate(value: string | null) {
-  if (!value) return "No recent activity";
+  if (!value) return "최근 활동 없음";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("ko-KR", {
@@ -29,8 +30,9 @@ function formatDate(value: string | null) {
 }
 
 export default function TherapistPatientsPage() {
+  const searchParams = useSearchParams();
   const [patients, setPatients] = useState<PatientSummary[]>([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(searchParams.get("query") ?? "");
   const [isLoading, setIsLoading] = useState(true);
   const [isForbidden, setIsForbidden] = useState(false);
   const [error, setError] = useState("");
@@ -53,7 +55,7 @@ export default function TherapistPatientsPage() {
           setIsForbidden(true);
           return;
         }
-        setError("Failed to load therapist patient list.");
+        setError("치료사 사용자 목록을 불러오지 못했습니다.");
       })
       .finally(() => {
         if (!cancelled) {
@@ -65,6 +67,10 @@ export default function TherapistPatientsPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    setSearch(searchParams.get("query") ?? "");
+  }, [searchParams]);
 
   const filteredPatients = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -87,50 +93,50 @@ export default function TherapistPatientsPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-[11px] font-black uppercase tracking-[0.22em] text-emerald-600">
-              Users
+              사용자/훈련 이력
             </p>
             <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-              Search users before moving into report review.
+              사용자 상태를 먼저 확인하고 필요한 화면으로 바로 이동합니다.
             </h2>
             <p className="mt-3 max-w-3xl text-sm font-medium leading-6 text-slate-600">
-              This is the therapist-side user entry screen. It reuses the
-              existing admin report source so therapist work can start from a
-              user list instead of a user-facing screen.
+              치료사 화면에서는 사용자 목록을 출발점으로 두고, 최근 활동과 훈련 모드,
+              바로가기 버튼을 한 번에 보여줍니다. 세부 분석은 사용자 상세와 결과
+              분석 화면으로 이어집니다.
             </p>
           </div>
           <label className="block lg:min-w-[320px]">
             <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-              Search
+              검색
             </span>
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Name, user code, login ID, pseudonym"
+              placeholder="사용자 이름, 사용자 코드, 로그인 ID, 가명 ID"
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700"
             />
           </label>
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          <SummaryCard label="Users" value={String(patients.length)} />
-          <SummaryCard label="Visible" value={String(filteredPatients.length)} />
-          <SummaryCard label="Entry point" value="Admin Reports API" mono />
+          <SummaryCard label="전체 사용자" value={String(patients.length)} />
+          <SummaryCard label="현재 표시" value={String(filteredPatients.length)} />
+          <SummaryCard label="연결 데이터" value="치료사 리포트 개요" mono />
         </div>
 
         <div className="mt-6 space-y-4">
           {isForbidden ? (
             <p className="text-sm font-bold text-slate-500">
-              Admin access is currently required for this view.
+              현재 이 화면은 치료사 또는 관리자 권한이 필요합니다.
             </p>
           ) : isLoading ? (
             <p className="text-sm font-bold text-slate-500">
-              Loading therapist user list.
+              사용자 목록을 불러오는 중입니다.
             </p>
           ) : error ? (
             <p className="text-sm font-bold text-red-500">{error}</p>
           ) : !filteredPatients.length ? (
             <p className="text-sm font-bold text-slate-500">
-              No users matched the current search.
+              현재 검색 조건에 맞는 사용자가 없습니다.
             </p>
           ) : (
             filteredPatients.map((patient) => (
@@ -148,11 +154,11 @@ export default function TherapistPatientsPage() {
                       <Badge mono>{patient.patientPseudonymId}</Badge>
                     </div>
                     <p className="mt-2 text-sm font-semibold text-slate-600">
-                      login {patient.loginId ?? "-"} · last activity{" "}
+                      로그인 ID {patient.loginId ?? "-"} · 최근 활동{" "}
                       {formatDate(patient.latestActivityAt)}
                     </p>
                     <p className="mt-1 text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
-                      self {patient.selfAssessmentCount} · rehab {patient.rehabCount} · sing{" "}
+                      자가진단 {patient.selfAssessmentCount} · 재활 {patient.rehabCount} · 노래{" "}
                       {patient.singCount}
                     </p>
                   </div>
@@ -162,19 +168,19 @@ export default function TherapistPatientsPage() {
                       href={`/therapist/patients/${patient.patientId}`}
                       className="rounded-full bg-slate-900 px-4 py-2 text-sm font-black text-white transition hover:bg-slate-800"
                     >
-                      Open detail
+                      상세 보기
                     </Link>
                     <Link
                       href="/tools/admin-reports"
                       className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-black text-white transition hover:bg-emerald-700"
                     >
-                      Open reports
+                      관리자 리포트
                     </Link>
                     <Link
                       href="/therapist/results"
                       className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
                     >
-                      Review results
+                      결과 분석
                     </Link>
                   </div>
                 </div>
@@ -186,13 +192,13 @@ export default function TherapistPatientsPage() {
 
       <aside className="rounded-[32px] border border-slate-200 bg-emerald-50 p-6 shadow-sm sm:p-8">
         <p className="text-[11px] font-black uppercase tracking-[0.22em] text-emerald-700">
-          Next UI
+          운영 포인트
         </p>
         <ul className="mt-4 space-y-3 text-sm font-medium leading-6 text-slate-700">
-          <li>Bind user selection to a dedicated therapist detail route</li>
-          <li>Show measured or partial quality badges per recent session</li>
-          <li>Link directly to self, rehab, and sing result detail</li>
-          <li>Add therapist memo and follow-up task slots</li>
+          <li>사용자 선택 후 상세 화면에서 AQ 추이와 최근 세션을 함께 확인합니다.</li>
+          <li>측정 품질, 저장 상태, V&amp;V 연결 상태는 결과 분석 화면에서 이어서 확인합니다.</li>
+          <li>치료사 메모와 follow-up 상태는 상세 화면에서 바로 기록합니다.</li>
+          <li>관리자 리포트는 원본 운영 데이터와 미디어 검토가 필요할 때만 사용합니다.</li>
         </ul>
       </aside>
     </section>

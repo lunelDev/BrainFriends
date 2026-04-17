@@ -40,6 +40,8 @@ UI/UX 고도화보다 먼저 SW V&V, 사이버보안, AI 성능평가 대응 구
 
 - [SW V&V 개요](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/01-sw-vnv/sw-vnv-submission-outline.md)
 - [시험기관 사전 문의 1페이지 요약본](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/test-lab-inquiry-one-pager.md)
+- [시험기관 선정 기준표](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/test-lab-selection-criteria.md)
+- [시험기관 공통 문의 질문 리스트](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/test-lab-question-list.md)
 - [SaMD 준비 부족 항목 체크리스트](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/samd-gap-checklist.md)
 - [SaMD 관련 문서 경로 정리](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/samd-document-paths.md)
 - [사이버보안 저장 현황](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/02-cybersecurity/cybersecurity-storage-inventory.md)

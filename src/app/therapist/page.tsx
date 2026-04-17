@@ -5,12 +5,15 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock3,
+  Filter,
   Microscope,
+  Search,
   TrendingUp,
   Users,
 } from "lucide-react";
 import { AUTH_COOKIE_NAME } from "@/lib/server/accountAuth";
 import {
+  getAdminPatientReportDetail,
   listAdminPatientReportSummaries,
   listAdminReportValidationSample,
 } from "@/lib/server/adminReportsDb";
@@ -43,6 +46,13 @@ function getSaveStateClass(entry: any) {
   return "bg-slate-100 text-slate-700 border-slate-200";
 }
 
+function getQualityLabel(quality?: string | null) {
+  if (quality === "measured") return "측정 완료";
+  if (quality === "partial") return "부분 측정";
+  if (quality === "demo") return "시연 데이터";
+  return "확인 필요";
+}
+
 const QUICK_LINKS = [
   {
     title: "사용자 기록 보기",
@@ -64,12 +74,25 @@ const QUICK_LINKS = [
   },
 ];
 
+const RESULT_FILTER_LINKS = [
+  { label: "저장 실패 보기", href: "/therapist/results" },
+  { label: "measured 결과 보기", href: "/therapist/results" },
+  { label: "보안·검증 현황", href: "/therapist/system" },
+];
+
+const OPERATION_EXPORT_LINKS = [
+  { label: "V&V 증적 내보내기", href: "/api/therapist/system/vnv-export" },
+  { label: "AI 평가 내보내기", href: "/api/therapist/system/ai-evaluation-export" },
+  { label: "치료사 화면 열기", href: "/therapist/system" },
+];
+
 export default async function TherapistOverviewPage() {
   const cookieStore = await cookies();
   const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
 
   let patients: Awaited<ReturnType<typeof listAdminPatientReportSummaries>> = [];
   let validationSampleEntries: Awaited<ReturnType<typeof listAdminReportValidationSample>> = [];
+  let featuredPatientDetail: Awaited<ReturnType<typeof getAdminPatientReportDetail>> | null = null;
 
   if (token) {
     try {
@@ -77,9 +100,13 @@ export default async function TherapistOverviewPage() {
         listAdminPatientReportSummaries(token),
         listAdminReportValidationSample(token),
       ]);
+      if (patients[0]?.patientId) {
+        featuredPatientDetail = await getAdminPatientReportDetail(token, patients[0].patientId);
+      }
     } catch {
       patients = [];
       validationSampleEntries = [];
+      featuredPatientDetail = null;
     }
   }
 
@@ -103,6 +130,30 @@ export default async function TherapistOverviewPage() {
   const recentVnvLinked = validationSampleEntries.filter(
     (entry) => (entry.vnv?.summary?.requirementIds?.length ?? 0) > 0,
   ).length;
+  const featuredEntries = featuredPatientDetail?.entries.slice(0, 6) ?? [];
+  const featuredLatest = featuredEntries[0];
+  const featuredStepCards = featuredLatest
+    ? [
+        ["Step 1", featuredLatest.stepScores.step1],
+        ["Step 2", featuredLatest.stepScores.step2],
+        ["Step 3", featuredLatest.stepScores.step3],
+        ["Step 4", featuredLatest.stepScores.step4],
+        ["Step 5", featuredLatest.stepScores.step5],
+        ["Step 6", featuredLatest.stepScores.step6],
+      ]
+    : [];
+  const featuredAqTrend = featuredEntries
+    .slice(0, 5)
+    .reverse()
+    .map((entry, index, rows) => ({
+      x: rows.length === 1 ? 0 : (index / (rows.length - 1)) * 100,
+      y: 100 - Math.max(0, Math.min(100, Number(entry.aq ?? 0))),
+      label: new Date(entry.completedAt).toLocaleDateString("ko-KR", {
+        month: "2-digit",
+        day: "2-digit",
+      }),
+      aq: Number(entry.aq ?? 0),
+    }));
 
   const kpis = [
     {
@@ -113,7 +164,7 @@ export default async function TherapistOverviewPage() {
       accent: "text-sky-600",
     },
     {
-      title: "measured 비율",
+      title: "측정 완료 비율",
       value: `${measuredRate.toFixed(1)}%`,
       note: `${measuredCount}건 / ${validationSampleEntries.length}건`,
       icon: Microscope,
@@ -139,10 +190,10 @@ export default async function TherapistOverviewPage() {
     <section className="space-y-6">
       <article className="rounded-[32px] border border-slate-200 bg-gradient-to-r from-sky-600 to-indigo-600 p-6 text-white shadow-sm sm:p-8">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="max-w-3xl">
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-sky-100">
-              Today KPI
-            </p>
+            <div className="max-w-3xl">
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-sky-100">
+                오늘의 핵심 KPI
+              </p>
             <h2 className="mt-3 text-2xl font-black tracking-tight sm:text-3xl">
               치료사가 바로 확인해야 하는 핵심 지표를 한 화면에 모았습니다.
             </h2>
@@ -173,6 +224,62 @@ export default async function TherapistOverviewPage() {
       </article>
 
       <section className="grid gap-6 xl:grid-cols-[1.25fr_0.95fr]">
+        <article className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8 xl:col-span-2">
+          <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
+            <div>
+              <div className="flex items-center gap-2">
+                <Search className="h-5 w-5 text-sky-600" />
+                <h3 className="text-xl font-black text-slate-950">
+                  사용자·세션 빠른 검색
+                </h3>
+              </div>
+              <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
+                사용자 이름, 코드, 로그인 ID로 바로 기록 화면에 진입합니다. 세부
+                필터와 저장 상태 검토는 사용자/훈련 이력 및 결과 분석 화면에서 이어서
+                확인합니다.
+              </p>
+              <form action="/therapist/patients" className="mt-5 flex flex-col gap-3 sm:flex-row">
+                <label className="flex-1">
+                  <span className="sr-only">사용자 또는 세션 검색</span>
+                  <input
+                    name="query"
+                    placeholder="사용자 이름, 사용자 코드, 로그인 ID 검색"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-sky-600 px-5 py-3 text-sm font-black text-white transition hover:bg-sky-700"
+                >
+                  <Search className="h-4 w-4" />
+                  검색
+                </button>
+              </form>
+            </div>
+            <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-indigo-600" />
+                <p className="text-sm font-black text-slate-950">운영자 액션</p>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {RESULT_FILTER_LINKS.map((item) => (
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+              <p className="mt-4 text-sm font-medium leading-6 text-slate-600">
+                저장 실패, measured 비율, 보안·검증 현황 같은 운영 체크포인트를 바로
+                열 수 있게 묶었습니다.
+              </p>
+            </div>
+          </div>
+        </article>
+
         <article className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <div className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5 text-sky-600" />
@@ -242,7 +349,7 @@ export default async function TherapistOverviewPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">
-                User List
+                사용자/훈련 리스트
               </p>
               <h3 className="mt-2 text-xl font-black text-slate-950">최근 확인이 필요한 사용자</h3>
             </div>
@@ -300,7 +407,7 @@ export default async function TherapistOverviewPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">
-                Recent Results
+                결과 요약 패널
               </p>
               <h3 className="mt-2 text-xl font-black text-slate-950">최근 저장 결과</h3>
             </div>
@@ -357,6 +464,145 @@ export default async function TherapistOverviewPage() {
         </article>
       </section>
 
+      <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+        <article className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">
+                사용자 상세 핵심 패널
+              </p>
+              <h3 className="mt-2 text-xl font-black text-slate-950">
+                최근 사용자 상태를 메인 화면에서 바로 확인합니다.
+              </h3>
+            </div>
+            {featuredPatientDetail?.patient.patientId ? (
+              <Link
+                href={`/therapist/patients/${featuredPatientDetail.patient.patientId}`}
+                className="rounded-full bg-sky-600 px-4 py-2 text-sm font-black text-white transition hover:bg-sky-700"
+              >
+                상세 보기
+              </Link>
+            ) : null}
+          </div>
+
+          {featuredPatientDetail && featuredLatest ? (
+            <>
+              <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-lg font-black text-slate-950">
+                    {featuredPatientDetail.patient.patientName}
+                  </p>
+                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-black text-slate-700">
+                    {featuredPatientDetail.patient.patientCode}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm font-semibold text-slate-600">
+                  최근 AQ {Number(featuredLatest.aq ?? 0).toFixed(1)} · 측정 품질{" "}
+                  {getQualityLabel(featuredLatest.measurementQuality?.overall)}
+                </p>
+              </div>
+
+              <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_0.95fr]">
+                <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-black text-slate-500">AQ 추이</p>
+                  <div className="mt-4 rounded-[20px] bg-white p-3 shadow-sm">
+                    <svg viewBox="0 0 100 100" className="h-40 w-full">
+                      <polyline
+                        fill="none"
+                        stroke="#2563eb"
+                        strokeWidth="3"
+                        points={featuredAqTrend.map((point) => `${point.x},${point.y}`).join(" ")}
+                      />
+                      {featuredAqTrend.map((point) => (
+                        <g key={`${point.label}-${point.x}`}>
+                          <circle cx={point.x} cy={point.y} r="2.8" fill="#0f172a" />
+                          <text
+                            x={point.x}
+                            y={96}
+                            textAnchor="middle"
+                            className="fill-slate-500 text-[4px] font-bold"
+                          >
+                            {point.label}
+                          </text>
+                        </g>
+                      ))}
+                    </svg>
+                  </div>
+                </div>
+
+                <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-black text-slate-500">Step1~6 결과 요약</p>
+                  <div className="mt-4 grid grid-cols-3 gap-3">
+                    {featuredStepCards.map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="rounded-[18px] border border-slate-200 bg-white px-3 py-3 text-center shadow-sm"
+                      >
+                        <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
+                          {label}
+                        </p>
+                        <p className="mt-2 text-lg font-black text-slate-950">
+                          {Number(value ?? 0).toFixed(0)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-[18px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
+                        측정 품질
+                      </p>
+                      <p className="mt-2 text-base font-black text-slate-950">
+                        {getQualityLabel(featuredLatest.measurementQuality?.overall)}
+                      </p>
+                    </div>
+                    <div className="rounded-[18px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
+                        검증 연결
+                      </p>
+                      <p className="mt-2 text-base font-black text-slate-950">
+                        요구사항 {featuredLatest.vnv?.summary?.requirementIds?.length ?? 0}건
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="mt-5 rounded-[24px] border border-dashed border-slate-200 px-4 py-8 text-sm font-semibold text-slate-500">
+              아직 메인 화면에 표시할 사용자 상세 데이터가 없습니다.
+            </div>
+          )}
+        </article>
+
+        <aside className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <div className="flex items-center gap-2">
+            <Filter className="h-5 w-5 text-indigo-600" />
+            <h3 className="text-xl font-black text-slate-950">검색/필터 포인트</h3>
+          </div>
+          <div className="mt-5 space-y-3">
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-sm font-black text-slate-500">검색 기준</p>
+              <p className="mt-2 text-sm font-medium leading-6 text-slate-700">
+                사용자 이름, 사용자 코드, 로그인 ID로 바로 사용자 이력 화면에 진입합니다.
+              </p>
+            </div>
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-sm font-black text-slate-500">주요 필터</p>
+              <p className="mt-2 text-sm font-medium leading-6 text-slate-700">
+                측정 품질, 저장 상태, 최근 AQ 범위, 재활 Step 기준으로 결과 분석 화면을 이어서 사용합니다.
+              </p>
+            </div>
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-sm font-black text-slate-500">즉시 조치</p>
+              <p className="mt-2 text-sm font-medium leading-6 text-slate-700">
+                저장 실패 확인, 보안·검증 점검, 결과 내보내기 등 운영자 액션을 메인 화면과 결과 화면에서 바로 실행합니다.
+              </p>
+            </div>
+          </div>
+        </aside>
+      </section>
+
       <section className="grid gap-4 md:grid-cols-3">
         {QUICK_LINKS.map((card) => (
           <Link
@@ -367,7 +613,7 @@ export default async function TherapistOverviewPage() {
             <div className="flex items-center gap-2">
               <Clock3 className="h-4 w-4 text-sky-600" />
               <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">
-                Quick Action
+                운영자 액션
               </p>
             </div>
             <h3 className="mt-4 text-lg font-black text-slate-950">{card.title}</h3>
@@ -379,6 +625,30 @@ export default async function TherapistOverviewPage() {
             </span>
           </Link>
         ))}
+      </section>
+
+      <section className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <div className="flex items-center gap-2">
+          <Clock3 className="h-5 w-5 text-sky-600" />
+          <h3 className="text-xl font-black text-slate-950">즉시 실행 액션</h3>
+        </div>
+        <div className="mt-5 flex flex-wrap gap-3">
+          {OPERATION_EXPORT_LINKS.map((item) => (
+            <a
+              key={item.label}
+              href={item.href}
+              className="rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-black text-slate-700 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+            >
+              {item.label}
+            </a>
+          ))}
+          <Link
+            href="/therapist/results?saveState=failed"
+            className="rounded-full border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-black text-rose-700 transition hover:bg-rose-100"
+          >
+            저장 실패 결과 바로 보기
+          </Link>
+        </div>
       </section>
     </section>
   );

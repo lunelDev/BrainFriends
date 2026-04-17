@@ -4,10 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const NAV_ITEMS = [
-  { href: "/therapist", label: "Overview" },
-  { href: "/therapist/patients", label: "Patients" },
-  { href: "/therapist/results", label: "Results" },
-  { href: "/therapist/system", label: "System" },
+  { href: "/therapist", label: "종합 대시보드" },
+  { href: "/therapist/patients", label: "사용자/훈련 이력" },
+  { href: "/therapist/results", label: "측정·안면 분석" },
+  { href: "/therapist/system", label: "보안·검증 현황" },
 ];
 
 function isActive(pathname: string, href: string) {

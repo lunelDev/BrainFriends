@@ -9,9 +9,12 @@
 시험기관에 먼저 전달할 1페이지 요약본:
 
 - [시험기관 사전 문의 1페이지 요약본](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/test-lab-inquiry-one-pager.md)
+- [시험기관 선정 기준표](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/test-lab-selection-criteria.md)
+- [시험기관 공통 문의 질문 리스트](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/test-lab-question-list.md)
 - [SaMD 준비 부족 항목 체크리스트](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/samd-gap-checklist.md)
 - [SaMD 관련 문서 경로 정리](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/samd-document-paths.md)
 - [SaMD / 공인성적서 문서 맵](file:///C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/samd-document-map.html)
+- [UI 인포그래픽 구현 체크리스트](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/ui-infographic-implementation-checklist.md)
 
 ## 핵심 5개 문서
 

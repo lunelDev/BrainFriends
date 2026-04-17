@@ -219,7 +219,7 @@ export default function ModeSelectPage() {
 
   return (
     <div className="flex min-h-full flex-col overflow-x-hidden bg-[linear-gradient(180deg,#f6f8fc_0%,#eef5ff_100%)] text-slate-900">
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur-md">
+      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-center gap-4">
             <img
@@ -241,7 +241,30 @@ export default function ModeSelectPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {patient?.userRole === "therapist" ? (
+            {patient?.userRole === "admin" ? (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-2 text-xs font-black text-slate-700">
+                    현재 관리자
+                  </span>
+                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700">
+                    사용자 화면 미리보기
+                  </span>
+                </div>
+                <button
+                  onClick={() => router.push("/select-page/mode")}
+                  className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-black text-white transition hover:bg-indigo-700"
+                >
+                  사용자 화면
+                </button>
+                <button
+                  onClick={() => router.push("/therapist")}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
+                >
+                  치료사 화면
+                </button>
+              </>
+            ) : patient?.userRole === "therapist" ? (
               <button
                 onClick={() => router.push("/therapist")}
                 className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
@@ -362,9 +385,9 @@ export default function ModeSelectPage() {
                       style={{ backgroundImage: `url(${card.imagePath})` }}
                     >
                       <div
-                        className={`flex h-full rounded-[24px] bg-gradient-to-br ${card.accentColor} p-4`}
+                        className={`flex h-full items-start rounded-[24px] bg-gradient-to-br ${card.accentColor} p-4`}
                       >
-                        <span className="rounded-full border border-white/20 bg-white/15 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-white backdrop-blur">
+                        <span className="rounded-full border border-white/20 bg-white/15 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-white">
                           {card.modeLabel}
                         </span>
                       </div>

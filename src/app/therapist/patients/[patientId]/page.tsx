@@ -7,15 +7,15 @@ import { useParams } from "next/navigation";
 import {
   Activity,
   BarChart3,
-  FileDown,
   ImageIcon,
   MessageSquare,
   Music,
   ScanFace,
-  TrendingUp,
   UserRound,
 } from "lucide-react";
+import type { PatientProfile } from "@/lib/patientStorage";
 import type { TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
+import { persistTrainingHistoryToDatabase } from "@/lib/client/clinicalResultsApi";
 import {
   fetchTherapistPatientDetail,
   fetchTherapistPatientNote,
@@ -72,6 +72,34 @@ function getFollowUpLabel(state: TherapistFollowUpState) {
   if (state === "follow_up") return "후속 점검";
   if (state === "priority") return "우선 검토";
   return "설정 안 함";
+}
+
+function getEntrySaveState(entry: TrainingHistoryEntry) {
+  return (entry as TrainingHistoryEntry & { dbSaveState?: string }).dbSaveState ?? "unknown";
+}
+
+function getEntrySaveStateLabel(entry: TrainingHistoryEntry) {
+  const state = getEntrySaveState(entry);
+  if (state === "saved") return "저장 완료";
+  if (state === "failed") return "저장 실패";
+  if (state === "skipped") return "저장 제외";
+  return "확인 필요";
+}
+
+function buildRetryPatientProfile(patient: TherapistPatientDetail): PatientProfile {
+  return {
+    sessionId: patient.patientId,
+    userRole: "therapist",
+    name: patient.patientName,
+    birthDate: patient.birthDate ?? undefined,
+    gender: "U",
+    age: 0,
+    educationYears: 0,
+    phone: patient.phone ?? undefined,
+    hand: "U",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
 }
 
 function collectEntryMedia(entry: TrainingHistoryEntry) {
@@ -202,6 +230,9 @@ export default function TherapistPatientDetailPage() {
   const [isSavingNote, setIsSavingNote] = useState(false);
   const [noteError, setNoteError] = useState("");
   const [noteNotice, setNoteNotice] = useState("");
+  const [retryNotice, setRetryNotice] = useState("");
+  const [retryError, setRetryError] = useState("");
+  const [retryingHistoryId, setRetryingHistoryId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!patientId) {
@@ -341,6 +372,49 @@ export default function TherapistPatientDetailPage() {
     anchor.download = `therapist-user-${patient.patientCode || patient.patientId}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadEntryJson = (entry: TrainingHistoryEntry) => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      patient,
+      entry,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `therapist-entry-${entry.historyId}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const retryEntrySave = async (entry: TrainingHistoryEntry) => {
+    if (!patient) return;
+    setRetryNotice("");
+    setRetryError("");
+    setRetryingHistoryId(entry.historyId);
+    try {
+      const result = await persistTrainingHistoryToDatabase(
+        buildRetryPatientProfile(patient),
+        entry,
+      );
+      if (result.skipped) {
+        setRetryNotice("이 결과는 저장 대상에서 제외되어 재시도하지 않았습니다.");
+      } else {
+        setRetryNotice("결과를 다시 저장하도록 요청했습니다.");
+      }
+    } catch (error) {
+      setRetryError(
+        error instanceof Error
+          ? error.message
+          : "결과 재저장을 요청하지 못했습니다.",
+      );
+    } finally {
+      setRetryingHistoryId(null);
+    }
   };
 
   const saveNote = async () => {
@@ -550,6 +624,9 @@ export default function TherapistPatientDetailPage() {
                       <Badge tone={getQualityTone(entry.measurementQuality?.overall ?? "unknown")}>
                         {getQualityLabel(entry.measurementQuality?.overall ?? "unknown")}
                       </Badge>
+                      <Badge tone={getEntrySaveState(entry) === "failed" ? "amber" : "slate"}>
+                        {getEntrySaveStateLabel(entry)}
+                      </Badge>
                     </div>
                     <p className="mt-2 text-sm font-semibold text-slate-600">{formatDate(entry.completedAt)}</p>
                   </div>
@@ -563,6 +640,23 @@ export default function TherapistPatientDetailPage() {
                     <span className="rounded-full bg-white px-3 py-1 text-slate-700">
                       Step4 {Number(entry.stepScores.step4 ?? 0).toFixed(0)}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => downloadEntryJson(entry)}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-700 transition hover:bg-slate-100"
+                    >
+                      결과 다운로드
+                    </button>
+                    {getEntrySaveState(entry) === "failed" ? (
+                      <button
+                        type="button"
+                        onClick={() => retryEntrySave(entry)}
+                        disabled={retryingHistoryId === entry.historyId}
+                        className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {retryingHistoryId === entry.historyId ? "재시도 중..." : "저장 재시도"}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -596,6 +690,8 @@ export default function TherapistPatientDetailPage() {
             />
             {noteNotice ? <p className="mt-3 text-xs font-bold text-emerald-600">{noteNotice}</p> : null}
             {noteError ? <p className="mt-3 text-xs font-bold text-rose-600">{noteError}</p> : null}
+            {retryNotice ? <p className="mt-3 text-xs font-bold text-emerald-600">{retryNotice}</p> : null}
+            {retryError ? <p className="mt-3 text-xs font-bold text-rose-600">{retryError}</p> : null}
             <div className="mt-4 flex items-center justify-between gap-3">
               <div className="text-xs font-bold text-slate-500">
                 {note?.updatedAt
