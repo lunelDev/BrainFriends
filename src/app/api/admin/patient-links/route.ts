@@ -7,6 +7,7 @@ import {
 } from "@/lib/server/accountAuth";
 import { reviewPatientLinkRequest } from "@/lib/server/patientLinkRequests";
 import { getDbPool } from "@/lib/server/postgres";
+import { mirrorPatientLinkApproval, runMirrorGuarded } from "@/lib/server/newSchemaMirror";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -125,6 +126,16 @@ export async function PATCH(req: Request) {
       requestId,
       status,
       reviewedBy: context.userId,
+    });
+
+    // ── 이중 쓰기 (기능 플래그 ON 일 때만) ──
+    await runMirrorGuarded("patient-link", async () => {
+      await mirrorPatientLinkApproval({
+        patientUserId,
+        therapistUserId,
+        legacyOrganizationId: organizationId,
+        status,
+      });
     });
 
     return NextResponse.json({ ok: true, reviewed });

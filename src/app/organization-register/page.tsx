@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
+import OrganizationBasicFields, {
+  normalizeOrganizationPhone,
+  validateOrganizationBasicFields,
+} from "@/components/organization/OrganizationBasicFields";
 
 type FormState = {
   organizationName: string;
@@ -44,17 +48,6 @@ const INITIAL_FORM: FormState = {
   privacyAgreed: false,
   medicalDataAgreed: false,
 };
-
-function formatBusinessNumber(value: string) {
-  const digits = value.replace(/\D/g, "").slice(0, 10);
-  if (digits.length <= 3) return digits;
-  if (digits.length <= 5) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
-  return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5, 10)}`;
-}
-
-function normalizePhone(value: string) {
-  return value.replace(/[^\d-]/g, "").slice(0, 13);
-}
 
 async function toDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -106,24 +99,28 @@ export default function OrganizationRegisterPage() {
   };
 
   const validate = () => {
-    const requiredValues = [
-      form.organizationName.trim(),
-      form.businessNumber.trim(),
-      form.representativeName.trim(),
-      form.organizationType.trim(),
-      form.businessLicenseFileName.trim(),
-      form.careInstitutionNumber.trim(),
+    const basicError = validateOrganizationBasicFields({
+      organizationName: form.organizationName,
+      businessNumber: form.businessNumber,
+      representativeName: form.representativeName,
+      organizationType: form.organizationType,
+      careInstitutionNumber: form.careInstitutionNumber,
+      businessLicenseFileName: form.businessLicenseFileName,
+      businessLicenseFileDataUrl: form.businessLicenseFileDataUrl,
+      organizationPhone: form.organizationPhone,
+      postalCode: form.postalCode,
+      roadAddress: form.roadAddress,
+      addressDetail: form.addressDetail,
+    });
+    if (basicError) return basicError;
+
+    const contactRequired = [
       form.contactName.trim(),
       form.contactPhone.trim(),
       form.contactEmail.trim(),
     ];
-
-    if (requiredValues.some((item) => !item)) {
-      return "필수 항목을 모두 입력해 주세요.";
-    }
-
-    if (form.businessNumber.replace(/\D/g, "").length !== 10) {
-      return "사업자등록번호는 10자리 숫자로 입력해 주세요.";
+    if (contactRequired.some((item) => !item)) {
+      return "담당자 정보를 모두 입력해 주세요.";
     }
 
     if (!form.termsAgreed || !form.privacyAgreed || !form.medicalDataAgreed) {
@@ -171,7 +168,13 @@ export default function OrganizationRegisterPage() {
 
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload?.ok) {
-        setError("기관 등록 요청에 실패했습니다. 중복 기관 여부와 필수 항목을 확인해 주세요.");
+        setError(
+          payload?.error === "organization_already_exists"
+            ? "같은 이름·사업자번호·요양기관번호의 기관이 이미 등록 또는 신청 중입니다."
+            : payload?.error === "invalid_request_payload"
+              ? "기관 등록 정보가 누락되었거나 잘못되었습니다."
+              : "기관 등록 요청에 실패했습니다. 필수 항목을 확인해 주세요.",
+        );
         return;
       }
 
@@ -216,73 +219,26 @@ export default function OrganizationRegisterPage() {
         <div className="mt-8 grid gap-6">
           <SectionCard
             title="기관 기본 정보"
-            description="법적 식별과 기관 확인에 필요한 최소 정보만 입력합니다."
+            description="법적 식별과 기관 확인에 필요한 최소 정보와 연락처를 입력합니다."
           >
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              <Field label="기관명 *">
-                <input
-                  className="input-style"
-                  value={form.organizationName}
-                  onChange={(event) => updateField("organizationName", event.target.value)}
-                  placeholder="정식 기관명"
-                />
-              </Field>
-              <Field label="사업자등록번호 *">
-                <input
-                  className="input-style"
-                  value={form.businessNumber}
-                  onChange={(event) =>
-                    updateField("businessNumber", formatBusinessNumber(event.target.value))
-                  }
-                  placeholder="123-45-67890"
-                />
-              </Field>
-              <Field label="대표자명 *">
-                <input
-                  className="input-style"
-                  value={form.representativeName}
-                  onChange={(event) => updateField("representativeName", event.target.value)}
-                  placeholder="대표자명"
-                />
-              </Field>
-              <Field label="기관 유형 *">
-                <select
-                  className="input-style"
-                  value={form.organizationType}
-                  onChange={(event) => updateField("organizationType", event.target.value)}
-                >
-                  <option value="">기관 유형 선택</option>
-                  <option value="병원">병원</option>
-                  <option value="의원">의원</option>
-                  <option value="재활병원">재활병원</option>
-                  <option value="요양기관">요양기관</option>
-                  <option value="기타">기타</option>
-                </select>
-              </Field>
-              <Field label="요양기관번호 *">
-                <input
-                  className="input-style"
-                  value={form.careInstitutionNumber}
-                  onChange={(event) => updateField("careInstitutionNumber", event.target.value)}
-                  placeholder="건보 기준 요양기관번호"
-                />
-              </Field>
-              <Field label="사업자등록증 업로드 *">
-                <input
-                  className="input-style file:mr-3 file:rounded-xl file:border-0 file:bg-orange-50 file:px-3 file:py-2 file:text-sm file:font-black file:text-orange-700"
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  onChange={handleBusinessLicenseUpload}
-                />
-                <p className="mt-2 text-xs font-semibold text-slate-500">
-                  {isReadingFile
-                    ? "파일을 읽는 중입니다..."
-                    : form.businessLicenseFileName
-                      ? `첨부됨: ${form.businessLicenseFileName}`
-                      : "PDF, JPG, PNG / 최대 5MB"}
-                </p>
-              </Field>
-            </div>
+            <OrganizationBasicFields
+              value={{
+                organizationName: form.organizationName,
+                businessNumber: form.businessNumber,
+                representativeName: form.representativeName,
+                organizationType: form.organizationType,
+                careInstitutionNumber: form.careInstitutionNumber,
+                businessLicenseFileName: form.businessLicenseFileName,
+                businessLicenseFileDataUrl: form.businessLicenseFileDataUrl,
+                organizationPhone: form.organizationPhone,
+                postalCode: form.postalCode,
+                roadAddress: form.roadAddress,
+                addressDetail: form.addressDetail,
+              }}
+              onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+              onLicenseFileChange={handleBusinessLicenseUpload}
+              isReadingLicense={isReadingFile}
+            />
           </SectionCard>
 
           <SectionCard
@@ -303,7 +259,7 @@ export default function OrganizationRegisterPage() {
                   className="input-style"
                   value={form.contactPhone}
                   onChange={(event) =>
-                    updateField("contactPhone", normalizePhone(event.target.value))
+                    updateField("contactPhone", normalizeOrganizationPhone(event.target.value))
                   }
                   placeholder="담당자 휴대폰"
                 />
@@ -315,32 +271,6 @@ export default function OrganizationRegisterPage() {
                   value={form.contactEmail}
                   onChange={(event) => updateField("contactEmail", event.target.value)}
                   placeholder="manager@hospital.kr"
-                />
-              </Field>
-              <Field label="기관 대표 연락처">
-                <input
-                  className="input-style"
-                  value={form.organizationPhone}
-                  onChange={(event) =>
-                    updateField("organizationPhone", normalizePhone(event.target.value))
-                  }
-                  placeholder="선택 입력"
-                />
-              </Field>
-              <Field label="도로명 주소">
-                <input
-                  className="input-style"
-                  value={form.roadAddress}
-                  onChange={(event) => updateField("roadAddress", event.target.value)}
-                  placeholder="선택 입력"
-                />
-              </Field>
-              <Field label="상세 주소">
-                <input
-                  className="input-style"
-                  value={form.addressDetail}
-                  onChange={(event) => updateField("addressDetail", event.target.value)}
-                  placeholder="선택 입력"
                 />
               </Field>
             </div>

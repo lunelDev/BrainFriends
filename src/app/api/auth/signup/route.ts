@@ -2,6 +2,14 @@ import { NextResponse } from "next/server";
 import { createAccount } from "@/lib/server/accountAuth";
 import { upsertTherapistRegistrationProfile } from "@/lib/server/therapistRegistrationProfiles";
 import { createOrganizationRegistrationRequest } from "@/lib/server/organizationRegistrationRequests";
+import { findOrganizationDuplicate } from "@/lib/server/organizationCatalogDb";
+import {
+  mirrorAccountSignup,
+  runMirrorGuarded,
+  type MirrorAccountSignupInput,
+} from "@/lib/server/newSchemaMirror";
+import { getPseudonymIdByLegacyPatientId } from "@/lib/server/newSchema/pseudonymLinkDb";
+import { getDbPool } from "@/lib/server/postgres";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,6 +61,20 @@ export async function POST(req: Request) {
         !body.confidentialityAgreed)
     ) {
       throw new Error("invalid_signup_payload");
+    }
+
+    // 솔로 기관 모드 — createAccount 전에 기관명/사업자/요양기관 번호 중복을 먼저 차단한다.
+    // (이전에는 createAccount 후 createOrganizationRegistrationRequest에서만 검사해서,
+    //  중복이어도 계정만 만들어지는 고아 계정 문제가 있었음.)
+    if (userRole === "therapist" && institutionMode === "solo" && soloInstitution) {
+      const duplicate = await findOrganizationDuplicate({
+        name: String(soloInstitution.organizationName ?? ""),
+        businessNumber: String(soloInstitution.businessNumber ?? ""),
+        careInstitutionNumber: String(soloInstitution.careInstitutionNumber ?? ""),
+      });
+      if (duplicate) {
+        throw new Error("organization_already_exists");
+      }
     }
 
     const created = await createAccount({
@@ -145,6 +167,8 @@ export async function POST(req: Request) {
         confidentialityAgreed: Boolean(body.confidentialityAgreed),
       });
 
+      // 1인 기관 신청 — 레거시 organization_registration_requests 에 저장
+      // (이 코드는 기존 그대로)
       if (institutionMode === "solo" && soloInstitution) {
         await createOrganizationRegistrationRequest({
           organizationName: String(soloInstitution.organizationName ?? ""),
@@ -183,6 +207,95 @@ export async function POST(req: Request) {
       }
     }
 
+    // ── 이중 쓰기 (기능 플래그 ON 일 때만 동작) ──
+    // 레거시 쓰기가 모두 성공한 뒤 신규 스키마로 미러링.
+    // 실패해도 레거시 결과는 보호됨 (runMirrorGuarded 가 기본적으로 로그만 남김).
+    await runMirrorGuarded("signup", async () => {
+      const pool = getDbPool();
+
+      // 레거시 저장된 정보를 읽어 미러 입력 구성
+      const userRow = await pool.query(
+        `SELECT login_key_hash, password_hash FROM app_users WHERE user_id = $1::uuid LIMIT 1`,
+        [created.userId],
+      );
+      const loginKeyHash = userRow.rows[0]?.login_key_hash
+        ? String(userRow.rows[0].login_key_hash)
+        : null;
+      const passwordHash = userRow.rows[0]?.password_hash
+        ? String(userRow.rows[0].password_hash)
+        : "";
+
+      const pseudonymId = await getPseudonymIdByLegacyPatientId(created.patientId);
+
+      const mirrorInput: MirrorAccountSignupInput = {
+        userId: created.userId,
+        legacyPatientId: created.patientId,
+        patientPseudonymId: pseudonymId,
+        name: String(body.name ?? "").trim(),
+        email:
+          userRole === "therapist"
+            ? therapistEmail
+            : `local+${created.userId}@brainfriends.local`,
+        phone:
+          userRole === "therapist"
+            ? therapistPhone
+            : String(body.phoneLast4 ?? "").trim() || "0000",
+        loginId: String(body.loginId ?? "").trim(),
+        passwordHash,
+        loginKeyHash,
+        accountType:
+          userRole === "therapist"
+            ? "THERAPIST"
+            : userRole === "admin"
+              ? "ADMIN"
+              : "USER",
+        status: userRole === "therapist" ? "PENDING" : "ACTIVE",
+        legacyUserRole: userRole,
+        birthDate: String(body.birthDate ?? "").trim() || null,
+        sex:
+          body.gender === "M" || body.gender === "F" ? String(body.gender) : "U",
+        language: "ko",
+        legacyPatientCode: null,
+        therapist:
+          userRole === "therapist"
+            ? {
+                jobType: String(body.profession ?? "other"),
+                licenseNumber: String(body.licenseNumber ?? ""),
+                licenseFileUrl: String(body.licenseFileName ?? "") || "pending",
+                issuedBy: String(body.licenseIssuedBy ?? "") || null,
+                issuedDate: String(body.licenseIssuedDate ?? "") || null,
+                specialty: String(body.specialties ?? "") || null,
+                introduction: null,
+              }
+            : undefined,
+        existingLegacyOrganizationId:
+          (userRole === "patient" || userRole === "therapist") &&
+          institutionMode === "existing" &&
+          body.organizationId
+            ? String(body.organizationId)
+            : null,
+        soloInstitution:
+          userRole === "therapist" && institutionMode === "solo" && soloInstitution
+            ? {
+                name: String(soloInstitution.organizationName ?? ""),
+                businessNumber: String(soloInstitution.businessNumber ?? "") || null,
+                representativeName:
+                  String(soloInstitution.representativeName ?? "") || null,
+                institutionType:
+                  String(soloInstitution.organizationType ?? "") || null,
+                phone: String(soloInstitution.organizationPhone ?? "") || null,
+                zipCode: String(soloInstitution.postalCode ?? "") || null,
+                address1: String(soloInstitution.roadAddress ?? "") || null,
+                address2: String(soloInstitution.addressDetail ?? "") || null,
+                businessLicenseFileUrl:
+                  String(soloInstitution.businessLicenseFileName ?? "") || null,
+              }
+            : null,
+      };
+
+      await mirrorAccountSignup(mirrorInput);
+    });
+
     return NextResponse.json({ ok: true, created });
   } catch (error) {
     const message =
@@ -196,6 +309,12 @@ export async function POST(req: Request) {
           ? 400
         : message === "account_already_exists"
           ? 409
+        : message === "duplicate_identity"
+          ? 409
+        : message === "organization_already_exists"
+          ? 409
+        : message === "invalid_request_payload"
+          ? 400
           : 500;
     return NextResponse.json({ ok: false, error: message }, { status });
   }

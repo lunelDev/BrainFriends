@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createOrganizationRegistrationRequest } from "@/lib/server/organizationRegistrationRequests";
+import { findOrganizationDuplicate } from "@/lib/server/organizationCatalogDb";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +52,18 @@ export async function POST(req: Request) {
   }
 
   try {
+    // 중복 가드: 같은 이름/사업자번호/요양기관번호의 기관이 이미 승인(manual) 또는
+    // 대기(request pending) 상태라면 거부. 1인 기업 가입 경로(/api/auth/signup)와
+    // 동일한 규칙을 적용해 저장소 일관성 유지.
+    const duplicate = await findOrganizationDuplicate({
+      name: String(body.organizationName ?? ""),
+      businessNumber: String(body.businessNumber ?? ""),
+      careInstitutionNumber: String(body.careInstitutionNumber ?? ""),
+    });
+    if (duplicate) {
+      throw new Error("organization_already_exists");
+    }
+
     const request = await createOrganizationRegistrationRequest({
       organizationName: body.organizationName ?? "",
       businessNumber: body.businessNumber ?? "",
@@ -92,7 +105,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, request });
   } catch (error) {
     const message = error instanceof Error ? error.message : "failed_to_create_request";
-    const status = message === "invalid_request_payload" ? 400 : 500;
+    const status =
+      message === "invalid_request_payload"
+        ? 400
+        : message === "organization_already_exists"
+          ? 409
+          : 500;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }

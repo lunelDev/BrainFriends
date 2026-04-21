@@ -1,0 +1,48 @@
+[
+  {
+    "id": "4b6a8ce5-dab2-4ec5-86f6-0bd19e131ecb",
+    "code": "ORG-지수병원-087094",
+    "name": "지수병원",
+    "address": "지수병원",
+    "businessNumber": "132-15-16189",
+    "representativeName": "박지수",
+    "organizationType": "언어재활",
+    "careInstitutionNumber": "1234856",
+    "medicalDepartments": "speech",
+    "contactName": "우우",
+    "contactTitle": "대표 치료사",
+    "contactPhone": "123-1485-9489",
+    "contactEmail": "j@gm.com",
+    "adminLoginEmail": "j@gm.com",
+    "doctorName": "우우",
+    "doctorLicenseNumber": "156165188",
+    "createdAt": "2026-04-20T09:08:07.094Z",
+    "source": "manual"
+  },
+  {
+    "id": "1b580747-c312-44d0-be86-e9df46a725e3",
+    "code": "ORG-대한독립만세-210867",
+    "name": "대한독립만세",
+    "address": "대한독립만세",
+    "businessNumber": "123-45-67895",
+    "representativeName": "박지수",
+    "organizationType": "재활병원",
+    "careInstitutionNumber": "123456789",
+    "contactName": "박지수",
+    "contactPhone": "01099172904",
+    "contactEmail": "j@gmail.com",
+    "createdAt": "2026-04-20T07:13:30.867Z",
+    "source": "manual"
+  },
+  {
+    "id": "3bd8dc7f-225a-4985-bb7d-0e5aa03a670f",
+    "code": "ORG-울산대학병원-239234",
+    "name": "울산대학병원",
+    "address": "ㅁㄴㅇㅁㄴ",
+    "businessNumber": "111-11-11111",
+    "representativeName": "대표",
+    "organizationPhone": "123123123213",
+    "createdAt": "2026-04-17T05:37:19.234Z",
+    "source": "manual"
+  }
+]

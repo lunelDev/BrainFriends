@@ -169,6 +169,97 @@ function summarizeTherapistPermissions(item: TherapistColleagueSummary) {
   return labels.length ? labels.join(" · ") : "권한 미설정";
 }
 
+function formatPatientSex(value?: string | null) {
+  switch (value) {
+    case "M":
+      return "남";
+    case "F":
+      return "여";
+    case "U":
+      return "기타";
+    default:
+      return "미입력";
+  }
+}
+
+function formatHemiplegia(value?: string | null) {
+  switch (value) {
+    case "Y":
+      return "있음";
+    case "N":
+      return "없음";
+    default:
+      return "미입력";
+  }
+}
+
+function formatHemianopsia(value?: string | null) {
+  switch (value) {
+    case "LEFT":
+      return "좌측";
+    case "RIGHT":
+      return "우측";
+    case "NONE":
+      return "없음";
+    default:
+      return "미입력";
+  }
+}
+
+function formatHand(value?: string | null) {
+  switch (value) {
+    case "R":
+      return "오른손";
+    case "L":
+      return "왼손";
+    case "A":
+      return "양손";
+    case "U":
+      return "미확인";
+    default:
+      return "미입력";
+  }
+}
+
+function formatPatientBirth(value?: string | null) {
+  if (!value) return "미입력";
+  const trimmed = value.trim();
+  if (!trimmed) return "미입력";
+  return trimmed.slice(0, 10);
+}
+
+function formatPatientAgeFromBirth(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - date.getFullYear();
+  const hasBirthdayPassed =
+    now.getMonth() > date.getMonth() ||
+    (now.getMonth() === date.getMonth() && now.getDate() >= date.getDate());
+  if (!hasBirthdayPassed) age -= 1;
+  return age >= 0 && age < 150 ? age : null;
+}
+
+function formatEducationYears(value?: number | null) {
+  if (value == null) return "미입력";
+  if (!Number.isFinite(value)) return "미입력";
+  return `${value}년`;
+}
+
+function formatOnsetSummary(
+  onsetDate?: string | null,
+  daysSinceOnset?: number | null,
+) {
+  if (!onsetDate && daysSinceOnset == null) return "미입력";
+  const parts: string[] = [];
+  if (onsetDate) parts.push(onsetDate.slice(0, 10));
+  if (daysSinceOnset != null && Number.isFinite(daysSinceOnset)) {
+    parts.push(`발병 후 ${daysSinceOnset}일`);
+  }
+  return parts.length ? parts.join(" · ") : "미입력";
+}
+
 export function AdminConsoleClient({
   adminName,
   organizations: initialOrganizations,
@@ -215,7 +306,14 @@ export function AdminConsoleClient({
     const query = search.trim().toLowerCase();
     if (!query) return patients;
     return patients.filter((item) =>
-      [item.patientName, item.patientCode, item.loginId, item.patientPseudonymId]
+      [
+        item.patientName,
+        item.patientCode,
+        item.loginId,
+        item.patientPseudonymId,
+        item.therapistName,
+        item.therapistLoginId,
+      ]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(query)),
     );
@@ -1262,7 +1360,7 @@ export function AdminConsoleClient({
                         <input
                           value={search}
                           onChange={(event) => setSearch(event.target.value)}
-                          placeholder="이름, 코드, 로그인 ID 검색"
+                          placeholder="이름, 코드, 로그인 ID, 담당 치료사 검색"
                           className="h-11 min-w-[260px] rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 outline-none transition focus:border-sky-300 focus:bg-white focus:ring-4 focus:ring-sky-100"
                         />
                         <button
@@ -1281,49 +1379,111 @@ export function AdminConsoleClient({
                           <tr className="bg-[#1c2133] text-left text-white">
                             <th className="px-4 py-3 font-black">번호</th>
                             <th className="px-4 py-3 font-black">사용자명</th>
-                            <th className="px-4 py-3 font-black">사용자 코드</th>
-                            <th className="px-4 py-3 font-black">로그인 ID</th>
-                            <th className="px-4 py-3 font-black">자가진단</th>
-                            <th className="px-4 py-3 font-black">재활</th>
-                            <th className="px-4 py-3 font-black">노래</th>
+                            <th className="px-4 py-3 font-black">기본 정보</th>
+                            <th className="px-4 py-3 font-black">임상 정보</th>
+                            <th className="px-4 py-3 font-black">담당 치료사</th>
+                            <th className="px-4 py-3 font-black">훈련 횟수</th>
                             <th className="px-4 py-3 font-black">최근 활동</th>
+                            <th className="px-4 py-3 font-black">가입일</th>
                             <th className="px-4 py-3 font-black">상세</th>
                           </tr>
                         </thead>
                         <tbody>
                           {filteredPatients.length ? (
-                            filteredPatients.map((item, index) => (
-                              <tr
-                                key={item.patientId}
-                                className="border-b border-slate-200 bg-white text-slate-700"
-                              >
-                                <td className="px-4 py-4 font-semibold">
-                                  {filteredPatients.length - index}
-                                </td>
-                                <td className="px-4 py-4 font-black text-slate-950">
-                                  {item.patientName}
-                                </td>
-                                <td className="px-4 py-4 font-semibold">{item.patientCode}</td>
-                                <td className="px-4 py-4 font-semibold">{item.loginId ?? "-"}</td>
-                                <td className="px-4 py-4 font-semibold">
-                                  {item.selfAssessmentCount}
-                                </td>
-                                <td className="px-4 py-4 font-semibold">{item.rehabCount}</td>
-                                <td className="px-4 py-4 font-semibold">{item.singCount}</td>
-                                <td className="px-4 py-4 font-semibold">
-                                  {formatDateTime(item.latestActivityAt)}
-                                </td>
-                                <td className="px-4 py-4">
-                                  <button
-                                    type="button"
-                                    onClick={() => setSelectedPatientId(item.patientId)}
-                                    className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-black text-sky-700 transition hover:bg-sky-100"
-                                  >
-                                    상세보기
-                                  </button>
-                                </td>
-                              </tr>
-                            ))
+                            filteredPatients.map((item, index) => {
+                              const age = formatPatientAgeFromBirth(item.birthDate);
+                              return (
+                                <tr
+                                  key={item.patientId}
+                                  className="border-b border-slate-200 bg-white align-top text-slate-700"
+                                >
+                                  <td className="px-4 py-4 font-semibold">
+                                    {filteredPatients.length - index}
+                                  </td>
+                                  <td className="px-4 py-4 font-black text-slate-950">
+                                    <p>{item.patientName}</p>
+                                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                                      코드 {item.patientCode}
+                                    </p>
+                                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                                      로그인 {item.loginId ?? "-"}
+                                    </p>
+                                  </td>
+                                  <td className="px-4 py-4 font-semibold">
+                                    <p>
+                                      생년월일 {formatPatientBirth(item.birthDate)}
+                                      {age != null ? ` (${age}세)` : ""}
+                                    </p>
+                                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                                      성별 {formatPatientSex(item.sex)} · 교육{" "}
+                                      {formatEducationYears(item.educationYears)}
+                                    </p>
+                                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                                      연락처 {item.phone ?? "미입력"}
+                                    </p>
+                                  </td>
+                                  <td className="px-4 py-4 font-semibold">
+                                    <p>
+                                      {formatOnsetSummary(item.onsetDate, item.daysSinceOnset)}
+                                    </p>
+                                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                                      편마비 {formatHemiplegia(item.hemiplegia)} · 반맹{" "}
+                                      {formatHemianopsia(item.hemianopsia)}
+                                    </p>
+                                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                                      손잡이 {formatHand(item.hand)}
+                                    </p>
+                                  </td>
+                                  <td className="px-4 py-4 font-semibold">
+                                    {item.therapistName ? (
+                                      <div className="flex flex-col">
+                                        <span className="font-black text-slate-900">
+                                          {item.therapistName}
+                                        </span>
+                                        {item.therapistLoginId ? (
+                                          <span className="mt-1 text-xs font-semibold text-slate-500">
+                                            {item.therapistLoginId}
+                                          </span>
+                                        ) : null}
+                                        {item.therapistOrganizationName ? (
+                                          <span className="mt-1 text-xs font-semibold text-slate-500">
+                                            {item.therapistOrganizationName}
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                    ) : (
+                                      <span className="text-xs font-semibold text-slate-400">
+                                        미배정
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-4 font-semibold">
+                                    <p>자가 {item.selfAssessmentCount}회</p>
+                                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                                      재활 {item.rehabCount}회
+                                    </p>
+                                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                                      노래 {item.singCount}회
+                                    </p>
+                                  </td>
+                                  <td className="px-4 py-4 font-semibold">
+                                    {formatDateTime(item.latestActivityAt)}
+                                  </td>
+                                  <td className="px-4 py-4 font-semibold">
+                                    {formatDateTime(item.createdAt)}
+                                  </td>
+                                  <td className="px-4 py-4">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedPatientId(item.patientId)}
+                                      className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-black text-sky-700 transition hover:bg-sky-100"
+                                    >
+                                      상세보기
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })
                           ) : (
                             <tr>
                               <td

@@ -12,6 +12,8 @@ import {
   listOrganizationRegistrationRequests,
   reviewOrganizationRegistrationRequest,
 } from "@/lib/server/organizationRegistrationRequests";
+import { linkTherapistProfilesToOrganization } from "@/lib/server/therapistRegistrationProfiles";
+import { mirrorOrganizationReview, runMirrorGuarded } from "@/lib/server/newSchemaMirror";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -66,39 +68,107 @@ export async function POST(req: Request) {
 
   if (body.action === "review") {
     try {
+      const requestId = String(body.requestId ?? "");
+      const targetStatus = body.status === "rejected" ? "rejected" : "approved";
+
+      // 승인인 경우 createManagedOrganization을 먼저 시도한다.
+      // 이전 구조: request status를 먼저 'approved'로 찍고 나서 org 생성 → 후자 실패 시
+      //          request만 approved로 남고 manual-organizations.json에는 빠져 유실됐음.
+      // 새 구조: 실물 org 생성이 성공해야 request를 approved로 확정한다.
+      let organization = null;
+      if (targetStatus === "approved") {
+        const pendingRequests = await listOrganizationRegistrationRequests();
+        const found = pendingRequests.find((item) => item.id === requestId);
+        if (!found) {
+          return NextResponse.json({ ok: false, error: "request_not_found" }, { status: 404 });
+        }
+        if (found.status !== "pending") {
+          return NextResponse.json(
+            { ok: false, error: "request_already_reviewed" },
+            { status: 409 },
+          );
+        }
+
+        const assembledAddress = `${found.roadAddress ?? ""} ${found.addressDetail ?? ""}`.trim();
+        organization = await createManagedOrganization({
+          name: found.organizationName,
+          // 소재지를 비워둔 채 승인된 기존 요청도 수용되도록 폴백.
+          address: assembledAddress || found.organizationName || "주소 미입력",
+          businessNumber: found.businessNumber,
+          representativeName: found.representativeName,
+          organizationPhone: found.organizationPhone,
+          organizationType: found.organizationType,
+          careInstitutionNumber: found.careInstitutionNumber,
+          medicalInstitutionCode: found.medicalInstitutionCode,
+          medicalDepartments: found.medicalDepartments,
+          postalCode: found.postalCode,
+          roadAddress: found.roadAddress,
+          addressDetail: found.addressDetail,
+          contactName: found.contactName,
+          contactTitle: found.contactTitle,
+          contactPhone: found.contactPhone,
+          contactEmail: found.contactEmail,
+          adminLoginEmail: found.adminLoginEmail,
+          twoFactorMethod: found.twoFactorMethod,
+          servicePurpose: found.servicePurpose,
+          targetPatients: found.targetPatients,
+          doctorName: found.doctorName,
+          doctorLicenseNumber: found.doctorLicenseNumber,
+        });
+      }
+
+      // org 생성까지 성공했거나 rejected인 경우에만 request 상태를 최종 확정.
       const reviewed = await reviewOrganizationRegistrationRequest({
-        requestId: String(body.requestId ?? ""),
-        status: body.status === "rejected" ? "rejected" : "approved",
+        requestId,
+        status: targetStatus,
         reviewerLoginId: auth.context.userId,
       });
 
-      let organization = null;
-      if (reviewed.status === "approved") {
-        organization = await createManagedOrganization({
-          name: reviewed.organizationName,
-          address: `${reviewed.roadAddress} ${reviewed.addressDetail}`.trim(),
-          businessNumber: reviewed.businessNumber,
-          representativeName: reviewed.representativeName,
-          organizationPhone: reviewed.organizationPhone,
-          organizationType: reviewed.organizationType,
-          careInstitutionNumber: reviewed.careInstitutionNumber,
-          medicalInstitutionCode: reviewed.medicalInstitutionCode,
-          medicalDepartments: reviewed.medicalDepartments,
-          postalCode: reviewed.postalCode,
-          roadAddress: reviewed.roadAddress,
-          addressDetail: reviewed.addressDetail,
-          contactName: reviewed.contactName,
-          contactTitle: reviewed.contactTitle,
-          contactPhone: reviewed.contactPhone,
-          contactEmail: reviewed.contactEmail,
-          adminLoginEmail: reviewed.adminLoginEmail,
-          twoFactorMethod: reviewed.twoFactorMethod,
-          servicePurpose: reviewed.servicePurpose,
-          targetPatients: reviewed.targetPatients,
-          doctorName: reviewed.doctorName,
-          doctorLicenseNumber: reviewed.doctorLicenseNumber,
-        });
+      // solo 치료사 ↔ 신규 기관 연결.
+      // 가입 시 치료사 프로필에는 organizationId 없이 requestedOrganizationName 만 저장되므로,
+      // 기관이 승인되는 이 시점에 역방향으로 id 를 주입해 준다.
+      // 치료사가 이미 먼저 승인된 경우에도 app_users.organization_id 가 null 로 남아 있을 수
+      // 있으므로 COALESCE 로 비어 있는 행만 채운다 (기존 연결은 보호).
+      if (organization) {
+        const linkedUserIds = await linkTherapistProfilesToOrganization(
+          reviewed.organizationName,
+          organization.id,
+        );
+        if (linkedUserIds.length) {
+          const { getDbPool } = await import("@/lib/server/postgres");
+          const pool = getDbPool();
+          await pool.query(
+            `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS organization_id UUID NULL`,
+          );
+          await pool.query(
+            `
+              UPDATE app_users
+                 SET organization_id = COALESCE(organization_id, $2::uuid),
+                     updated_at = NOW()
+               WHERE user_id = ANY($1::uuid[])
+                 AND user_role = 'therapist'
+            `,
+            [linkedUserIds, organization.id],
+          );
+        }
       }
+
+      // ── 이중 쓰기 (기능 플래그 ON 일 때만) ──
+      await runMirrorGuarded("organization-review", async () => {
+        await mirrorOrganizationReview({
+          legacyOrganizationId: organization?.id ?? null,
+          name: reviewed.organizationName,
+          businessNumber: reviewed.businessNumber || null,
+          representativeName: reviewed.representativeName || null,
+          institutionType: reviewed.organizationType || null,
+          phone: reviewed.organizationPhone || null,
+          zipCode: reviewed.postalCode || null,
+          address1: reviewed.roadAddress || null,
+          address2: reviewed.addressDetail || null,
+          businessLicenseFileUrl: null,
+          status: reviewed.status === "approved" ? "APPROVED" : "REJECTED",
+        });
+      });
 
       return NextResponse.json({ ok: true, reviewed, organization });
     } catch (error) {
@@ -111,7 +181,9 @@ export async function POST(req: Request) {
             ? 409
             : message === "organization_already_exists"
               ? 409
-              : 500;
+              : message === "invalid_organization_payload"
+                ? 400
+                : 500;
       return NextResponse.json({ ok: false, error: message }, { status });
     }
   }

@@ -65,7 +65,7 @@ export default async function AdminPage({
   const initialSection =
     resolvedSearchParams?.section && ALLOWED_SECTIONS.has(resolvedSearchParams.section as never)
       ? (resolvedSearchParams.section as "samd" | "dashboard" | "members" | "organizations" | "therapists")
-      : "members";
+      : "dashboard";
 
   return (
     <AdminConsoleClient

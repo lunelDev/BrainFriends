@@ -1,0 +1,133 @@
+{
+  "capturedAt": "2026-04-21T02:13:59.134Z",
+  "host": "localhost",
+  "results": {
+    "app_users.count": [
+      {
+        "n": 10
+      }
+    ],
+    "patient_pii.count": [
+      {
+        "n": 10
+      }
+    ],
+    "patient_intake_profiles.count": [
+      {
+        "n": 10
+      }
+    ],
+    "organizations.count": {
+      "__error": "\"organizations\" 이름의 릴레이션(relation)이 없습니다"
+    },
+    "therapist_patient_assignments.count": {
+      "__error": "\"therapist_patient_assignments\" 이름의 릴레이션(relation)이 없습니다"
+    },
+    "auth_sessions.count": [
+      {
+        "n": 6
+      }
+    ],
+    "patient_pseudonym_map.count": [
+      {
+        "n": 10
+      }
+    ],
+    "clinical_sessions.count": [
+      {
+        "n": 13
+      }
+    ],
+    "language_training_results.count": [
+      {
+        "n": 8
+      }
+    ],
+    "sing_results.count": [
+      {
+        "n": 5
+      }
+    ],
+    "clinical_media_objects.count": [
+      {
+        "n": 80
+      }
+    ],
+    "training_client_drafts.count": [
+      {
+        "n": 22
+      }
+    ],
+    "training_usage_events.count": [
+      {
+        "n": 987
+      }
+    ],
+    "users.count": [
+      {
+        "n": 0
+      }
+    ],
+    "user_pii_profile.count": [
+      {
+        "n": 0
+      }
+    ],
+    "therapist_profiles.count": [
+      {
+        "n": 0
+      }
+    ],
+    "institutions.count": [
+      {
+        "n": 0
+      }
+    ],
+    "institution_members.count": [
+      {
+        "n": 0
+      }
+    ],
+    "user_therapist_mappings.count": [
+      {
+        "n": 0
+      }
+    ],
+    "clinical_patient_profiles.count": [
+      {
+        "n": 0
+      }
+    ],
+    "app_users.role_distribution": [
+      {
+        "user_role": "admin",
+        "n": 1
+      },
+      {
+        "user_role": "patient",
+        "n": 1
+      },
+      {
+        "user_role": "therapist",
+        "n": 8
+      }
+    ],
+    "app_users.approval_distribution": [
+      {
+        "approval_state": "approved",
+        "n": 10
+      }
+    ],
+    "users.account_type_distribution": [],
+    "session_join_smoke": [
+      {
+        "n": 6
+      }
+    ],
+    "active_admin_exists": [
+      {
+        "n": 1
+      }
+    ]
+  }
+}

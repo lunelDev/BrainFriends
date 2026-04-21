@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Building2, ChevronRight, UserRound } from "lucide-react";
 import type { OrganizationCatalogEntry } from "@/lib/organizations/catalog";
+import OrganizationBasicFields, {
+  validateOrganizationBasicFields,
+} from "@/components/organization/OrganizationBasicFields";
 
 type Gender = "M" | "F" | "U";
 type Hemiplegia = "Y" | "N";
@@ -587,17 +590,24 @@ export default function SignupPage() {
         return;
       }
 
-      if (
-        form.institutionMode === "solo" &&
-        (!form.soloOrganizationName.trim() ||
-          !form.soloBusinessNumber.trim() ||
-          !form.soloRepresentativeName.trim() ||
-          !form.soloOrganizationType.trim() ||
-          !form.soloCareInstitutionNumber.trim() ||
-          !form.soloBusinessLicenseFileName.trim())
-      ) {
-        setError("1인 기관 등록에 필요한 기관 정보를 모두 입력해 주세요.");
-        return;
+      if (form.institutionMode === "solo") {
+        const soloError = validateOrganizationBasicFields({
+          organizationName: form.soloOrganizationName,
+          businessNumber: form.soloBusinessNumber,
+          representativeName: form.soloRepresentativeName,
+          organizationType: form.soloOrganizationType,
+          careInstitutionNumber: form.soloCareInstitutionNumber,
+          businessLicenseFileName: form.soloBusinessLicenseFileName,
+          businessLicenseFileDataUrl: form.soloBusinessLicenseFileDataUrl,
+          organizationPhone: form.soloOrganizationPhone,
+          postalCode: form.soloPostalCode,
+          roadAddress: form.soloRoadAddress,
+          addressDetail: form.soloAddressDetail,
+        });
+        if (soloError) {
+          setError(soloError);
+          return;
+        }
       }
 
       if (
@@ -754,15 +764,21 @@ export default function SignupPage() {
         setError(
           payload?.error === "account_already_exists"
             ? "이미 등록된 회원입니다."
-            : payload?.error === "invalid_organization"
-              ? "선택한 병원 정보를 다시 확인해 주세요."
-              : payload?.error === "invalid_therapist"
-                ? "선택한 치료사 정보를 다시 확인해 주세요."
-                : payload?.error === "invalid_signup_payload"
-                  ? "입력한 가입 정보가 올바른지 다시 확인해 주세요."
-                  : payload?.error === "failed_to_create_account"
-                    ? "기관 소속 정보를 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."
-                    : `회원가입에 실패했습니다. (${String(payload?.error ?? "server_error")})`,
+            : payload?.error === "duplicate_identity"
+              ? "이름과 휴대폰 뒷자리가 동일한 계정이 이미 존재합니다. 본인 계정 여부를 확인해 주세요."
+              : payload?.error === "organization_already_exists"
+                ? "같은 이름·사업자번호·요양기관번호의 기관이 이미 등록 또는 신청 중입니다."
+                : payload?.error === "invalid_organization"
+                  ? "선택한 병원 정보를 다시 확인해 주세요."
+                  : payload?.error === "invalid_therapist"
+                    ? "선택한 치료사 정보를 다시 확인해 주세요."
+                    : payload?.error === "invalid_signup_payload"
+                      ? "입력한 가입 정보가 올바른지 다시 확인해 주세요."
+                      : payload?.error === "invalid_request_payload"
+                        ? "기관 등록 정보가 누락되었거나 잘못되었습니다."
+                        : payload?.error === "failed_to_create_account"
+                          ? "기관 소속 정보를 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."
+                          : `회원가입에 실패했습니다. (${String(payload?.error ?? "server_error")})`,
         );
         return;
       }
@@ -1101,67 +1117,50 @@ export default function SignupPage() {
                           />
                         </Field>
                       ) : (
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <Field label="기관명 *">
-                          <input
-                            className="input-style"
-                            value={form.soloOrganizationName}
-                            onChange={(e) => updateForm("soloOrganizationName", e.target.value)}
-                            placeholder="기관명 또는 병원명"
-                            />
-                          </Field>
-                          <Field label="사업자등록번호 *">
-                            <input
-                              className="input-style"
-                              value={form.soloBusinessNumber}
-                              onChange={(e) =>
-                                updateForm("soloBusinessNumber", e.target.value.replace(/\D/g, "").slice(0, 10).replace(/^(\d{3})(\d{0,2})(\d{0,5}).*$/, (_, a, b, c) => [a, b, c].filter(Boolean).join("-")))
-                              }
-                              placeholder="123-45-67890"
-                            />
-                          </Field>
-                          <Field label="대표자명 *">
-                            <input
-                              className="input-style"
-                              value={form.soloRepresentativeName}
-                              onChange={(e) => updateForm("soloRepresentativeName", e.target.value)}
-                              placeholder="대표자명"
-                            />
-                          </Field>
-                          <Field label="기관 유형 *">
-                            <input
-                              className="input-style"
-                              value={form.soloOrganizationType}
-                              onChange={(e) => updateForm("soloOrganizationType", e.target.value)}
-                              placeholder="예: 의원, 언어치료실"
-                            />
-                          </Field>
-                          <Field label="요양기관번호 *">
-                            <input
-                              className="input-style"
-                              value={form.soloCareInstitutionNumber}
-                              onChange={(e) => updateForm("soloCareInstitutionNumber", e.target.value)}
-                              placeholder="요양기관번호"
-                            />
-                          </Field>
-                          <Field label="사업자등록증 업로드 *">
-                            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4">
-                              <input
-                                type="file"
-                                accept=".png,.jpg,.jpeg,.pdf"
-                                onChange={handleSoloBusinessLicenseUpload}
-                                className="block w-full text-sm font-semibold text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-black file:text-white hover:file:bg-slate-700"
-                              />
-                              <p className="mt-3 text-xs font-semibold text-slate-500">
-                                {isReadingTherapistLicense
-                                  ? "사업자등록증 파일을 읽는 중입니다."
-                                  : form.soloBusinessLicenseFileName
-                                    ? `첨부됨: ${form.soloBusinessLicenseFileName}`
-                                    : "PNG, JPG, PDF 파일을 1개 업로드해 주세요."}
-                              </p>
-                            </div>
-                          </Field>
-                        </div>
+                        <OrganizationBasicFields
+                          value={{
+                            organizationName: form.soloOrganizationName,
+                            businessNumber: form.soloBusinessNumber,
+                            representativeName: form.soloRepresentativeName,
+                            organizationType: form.soloOrganizationType,
+                            careInstitutionNumber: form.soloCareInstitutionNumber,
+                            businessLicenseFileName: form.soloBusinessLicenseFileName,
+                            businessLicenseFileDataUrl: form.soloBusinessLicenseFileDataUrl,
+                            organizationPhone: form.soloOrganizationPhone,
+                            postalCode: form.soloPostalCode,
+                            roadAddress: form.soloRoadAddress,
+                            addressDetail: form.soloAddressDetail,
+                          }}
+                          onChange={(patch) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              soloOrganizationName:
+                                patch.organizationName ?? prev.soloOrganizationName,
+                              soloBusinessNumber:
+                                patch.businessNumber ?? prev.soloBusinessNumber,
+                              soloRepresentativeName:
+                                patch.representativeName ?? prev.soloRepresentativeName,
+                              soloOrganizationType:
+                                patch.organizationType ?? prev.soloOrganizationType,
+                              soloCareInstitutionNumber:
+                                patch.careInstitutionNumber ?? prev.soloCareInstitutionNumber,
+                              soloBusinessLicenseFileName:
+                                patch.businessLicenseFileName ??
+                                prev.soloBusinessLicenseFileName,
+                              soloBusinessLicenseFileDataUrl:
+                                patch.businessLicenseFileDataUrl ??
+                                prev.soloBusinessLicenseFileDataUrl,
+                              soloOrganizationPhone:
+                                patch.organizationPhone ?? prev.soloOrganizationPhone,
+                              soloPostalCode: patch.postalCode ?? prev.soloPostalCode,
+                              soloRoadAddress: patch.roadAddress ?? prev.soloRoadAddress,
+                              soloAddressDetail:
+                                patch.addressDetail ?? prev.soloAddressDetail,
+                            }))
+                          }
+                          onLicenseFileChange={handleSoloBusinessLicenseUpload}
+                          isReadingLicense={isReadingTherapistLicense}
+                        />
                       )}
                     </div>
                   ) : (

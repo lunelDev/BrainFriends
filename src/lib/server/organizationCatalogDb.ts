@@ -5,6 +5,7 @@ import {
   ORGANIZATION_CATALOG,
   type OrganizationCatalogEntry,
 } from "@/lib/organizations/catalog";
+import { listOrganizationRegistrationRequests } from "@/lib/server/organizationRegistrationRequests";
 
 export type ManagedOrganizationEntry = OrganizationCatalogEntry & {
   businessNumber?: string;
@@ -78,6 +79,78 @@ export async function listAvailableOrganizations() {
 export async function getAvailableOrganizationById(organizationId: string) {
   const items = await listAvailableOrganizations();
   return items.find((item) => item.id === organizationId) ?? null;
+}
+
+export type OrganizationDuplicateMatch = {
+  /** 중복이 발견된 저장소. manual = 승인 완료, request = 승인 대기 중 */
+  source: "manual" | "request";
+  /** 어떤 필드가 일치했는지 */
+  field: "name" | "businessNumber" | "careInstitutionNumber";
+  /** 원본 레코드 id (manual-organization id 또는 request id) */
+  existingId: string;
+};
+
+/**
+ * 기관 등록 신청 시 중복 여부를 모든 저장소에 대해 조사한다.
+ *  - `manual-organizations.json` 의 승인 완료 기관
+ *  - `registration-requests.json` 의 pending 상태 요청
+ *  rejected 요청과는 재신청 허용.
+ */
+export async function findOrganizationDuplicate(input: {
+  name?: string;
+  businessNumber?: string;
+  careInstitutionNumber?: string;
+}): Promise<OrganizationDuplicateMatch | null> {
+  const name = String(input.name ?? "").trim();
+  const businessNumber = String(input.businessNumber ?? "").trim();
+  const careInstitutionNumber = String(input.careInstitutionNumber ?? "").trim();
+  if (!name && !businessNumber && !careInstitutionNumber) return null;
+
+  const managed = await listAvailableOrganizations();
+  for (const item of managed) {
+    if (name && item.name === name) {
+      return { source: "manual", field: "name", existingId: item.id };
+    }
+    const itemBiz = (item as { businessNumber?: string }).businessNumber?.trim();
+    if (businessNumber && itemBiz && itemBiz === businessNumber) {
+      return { source: "manual", field: "businessNumber", existingId: item.id };
+    }
+    const itemCin = (item as { careInstitutionNumber?: string }).careInstitutionNumber?.trim();
+    if (careInstitutionNumber && itemCin && itemCin === careInstitutionNumber) {
+      return { source: "manual", field: "careInstitutionNumber", existingId: item.id };
+    }
+  }
+
+  const requests = await listOrganizationRegistrationRequests();
+  for (const request of requests) {
+    if (request.status !== "pending") continue;
+    if (name && request.organizationName === name) {
+      return { source: "request", field: "name", existingId: request.id };
+    }
+    if (businessNumber && request.businessNumber === businessNumber) {
+      return { source: "request", field: "businessNumber", existingId: request.id };
+    }
+    if (
+      careInstitutionNumber &&
+      request.careInstitutionNumber === careInstitutionNumber
+    ) {
+      return { source: "request", field: "careInstitutionNumber", existingId: request.id };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 이미 승인된 기관(builtin 카탈로그 + manual-organizations.json)에서 이름이 일치하는
+ * 첫 항목을 반환한다. 치료사 승인 시 solo 치료사의 requestedOrganizationName 으로
+ * 역조회해서 organization_id 를 붙이는 데 사용.
+ */
+export async function findApprovedOrganizationByName(name: string) {
+  const target = String(name ?? "").trim();
+  if (!target) return null;
+  const items = await listAvailableOrganizations();
+  return items.find((item) => item.name === target) ?? null;
 }
 
 function normalizeOrgCode(name: string) {

@@ -127,6 +127,39 @@ export async function getTherapistRegistrationProfilesByUserIds(userIds: string[
     .map(toPublicProfile);
 }
 
+/**
+ * requestedOrganizationName(solo 가입 시 입력한 기관명)이 일치하는 프로필들에
+ * organizationId 를 주입한다. 기관 승인 시점에 호출되어 치료사와 새 기관을 묶는다.
+ *
+ * 이미 organizationId 가 있는 프로필은 건드리지 않는다 (먼저 승인된 쪽을 존중).
+ *
+ * @returns organizationId 가 주입된 프로필 userId 목록 (후속 app_users 업데이트용)
+ */
+export async function linkTherapistProfilesToOrganization(
+  requestedOrganizationName: string,
+  organizationId: string,
+): Promise<string[]> {
+  const name = normalizeText(requestedOrganizationName);
+  const orgId = normalizeText(organizationId);
+  if (!name || !orgId) return [];
+
+  const items = await readProfiles();
+  const linkedUserIds: string[] = [];
+  let mutated = false;
+  for (const item of items) {
+    if (item.organizationId) continue;
+    if (normalizeText(item.requestedOrganizationName) !== name) continue;
+    item.organizationId = orgId;
+    item.updatedAt = new Date().toISOString();
+    linkedUserIds.push(item.userId);
+    mutated = true;
+  }
+  if (mutated) {
+    await writeProfiles(items);
+  }
+  return linkedUserIds;
+}
+
 export async function upsertTherapistRegistrationProfile(
   input: CreateTherapistRegistrationProfileInput,
 ) {

@@ -13,10 +13,23 @@ export type AdminPatientReportSummary = {
   patientCode: string;
   loginId: string | null;
   birthDate: string | null;
+  phone: string | null;
+  sex: "M" | "F" | "U" | null;
+  educationYears: number | null;
+  onsetDate: string | null;
+  daysSinceOnset: number | null;
+  hemiplegia: "Y" | "N" | null;
+  hemianopsia: "LEFT" | "RIGHT" | "NONE" | null;
+  hand: string | null;
   latestActivityAt: string | null;
+  createdAt: string | null;
   selfAssessmentCount: number;
   rehabCount: number;
   singCount: number;
+  therapistName: string | null;
+  therapistLoginId: string | null;
+  therapistUserId: string | null;
+  therapistOrganizationName: string | null;
 };
 
 type AdminReportPatientRow = {
@@ -60,65 +73,197 @@ export async function listAdminPatientReportSummaries(sessionToken: string) {
   }
 
   const pool = getDbPool();
-  const result = await pool.query(
-    `
-      SELECT
-        pii.patient_id::text AS patient_id,
-        ppm.patient_pseudonym_id,
-        pii.full_name,
-        pii.patient_code,
-        pii.birth_date::text AS birth_date,
-        au.login_id,
-        (
-          SELECT MAX(created_at)
-          FROM (
-            SELECT ltr.created_at
+  const client = await pool.connect();
+  try {
+    // 런타임 DB 에 따라 일부 테이블이 아직 없을 수 있으므로 defensive 체크 후
+    // LEFT JOIN / SELECT 절을 조건부로 붙인다.
+    const probe = await client.query(
+      `
+        SELECT
+          to_regclass('public.therapist_patient_assignments') IS NOT NULL AS has_assignments,
+          to_regclass('public.patient_intake_profiles')       IS NOT NULL AS has_intake,
+          to_regclass('public.organizations')                 IS NOT NULL AS has_organizations
+      `,
+    );
+    const hasAssignmentsTable = Boolean(probe.rows[0]?.has_assignments);
+    const hasIntakeTable = Boolean(probe.rows[0]?.has_intake);
+    const hasOrganizationsTable = Boolean(probe.rows[0]?.has_organizations);
+
+    const therapistSelect = hasAssignmentsTable
+      ? `
+          tpii.full_name AS therapist_name,
+          tu.login_id    AS therapist_login_id,
+          tu.user_id::text AS therapist_user_id,
+          ${hasOrganizationsTable ? "torg.organization_name" : "NULL::text"} AS therapist_organization_name,
+      `
+      : `
+          NULL::text AS therapist_name,
+          NULL::text AS therapist_login_id,
+          NULL::text AS therapist_user_id,
+          NULL::text AS therapist_organization_name,
+      `;
+
+    const therapistJoin = hasAssignmentsTable
+      ? `
+          LEFT JOIN LATERAL (
+            SELECT tpa.therapist_user_id
+            FROM therapist_patient_assignments tpa
+            WHERE tpa.patient_id = pii.patient_id
+              AND COALESCE(tpa.is_active, TRUE) = TRUE
+            ORDER BY tpa.assigned_at DESC NULLS LAST
+            LIMIT 1
+          ) tpa ON TRUE
+          LEFT JOIN app_users  tu   ON tu.user_id    = tpa.therapist_user_id
+          LEFT JOIN patient_pii tpii ON tpii.patient_id = tu.patient_id
+          ${
+            hasOrganizationsTable
+              ? "LEFT JOIN organizations torg ON torg.organization_id = tu.organization_id"
+              : ""
+          }
+      `
+      : "";
+
+    const intakeSelect = hasIntakeTable
+      ? `
+          pip.education_years   AS education_years,
+          pip.onset_date::text  AS onset_date,
+          pip.days_since_onset  AS days_since_onset,
+          pip.hemiplegia        AS hemiplegia,
+          pip.hemianopsia       AS hemianopsia,
+          pip.hand              AS hand,
+      `
+      : `
+          NULL::int  AS education_years,
+          NULL::text AS onset_date,
+          NULL::int  AS days_since_onset,
+          NULL::text AS hemiplegia,
+          NULL::text AS hemianopsia,
+          NULL::text AS hand,
+      `;
+
+    const intakeJoin = hasIntakeTable
+      ? `LEFT JOIN patient_intake_profiles pip ON pip.patient_id = pii.patient_id`
+      : "";
+
+    const result = await client.query(
+      `
+        SELECT
+          pii.patient_id::text AS patient_id,
+          ppm.patient_pseudonym_id,
+          pii.full_name,
+          pii.patient_code,
+          pii.birth_date::text AS birth_date,
+          pii.phone,
+          pii.sex,
+          pii.created_at::text AS created_at,
+          au.login_id,
+          ${intakeSelect}
+          ${therapistSelect}
+          (
+            SELECT MAX(created_at)
+            FROM (
+              SELECT ltr.created_at
+              FROM language_training_results ltr
+              WHERE ltr.patient_pseudonym_id = ppm.patient_pseudonym_id
+              UNION ALL
+              SELECT sr.created_at
+              FROM sing_results sr
+              WHERE sr.patient_pseudonym_id = ppm.patient_pseudonym_id
+            ) AS activities
+          )::text AS latest_activity_at,
+          (
+            SELECT COUNT(*)::int
             FROM language_training_results ltr
             WHERE ltr.patient_pseudonym_id = ppm.patient_pseudonym_id
-            UNION ALL
-            SELECT sr.created_at
+              AND ltr.training_mode = 'self'
+          ) AS self_assessment_count,
+          (
+            SELECT COUNT(*)::int
+            FROM language_training_results ltr
+            WHERE ltr.patient_pseudonym_id = ppm.patient_pseudonym_id
+              AND ltr.training_mode = 'rehab'
+          ) AS rehab_count,
+          (
+            SELECT COUNT(*)::int
             FROM sing_results sr
             WHERE sr.patient_pseudonym_id = ppm.patient_pseudonym_id
-          ) AS activities
-        )::text AS latest_activity_at,
-        (
-          SELECT COUNT(*)::int
-          FROM language_training_results ltr
-          WHERE ltr.patient_pseudonym_id = ppm.patient_pseudonym_id
-            AND ltr.training_mode = 'self'
-        ) AS self_assessment_count,
-        (
-          SELECT COUNT(*)::int
-          FROM language_training_results ltr
-          WHERE ltr.patient_pseudonym_id = ppm.patient_pseudonym_id
-            AND ltr.training_mode = 'rehab'
-        ) AS rehab_count,
-        (
-          SELECT COUNT(*)::int
-          FROM sing_results sr
-          WHERE sr.patient_pseudonym_id = ppm.patient_pseudonym_id
-        ) AS sing_count
-      FROM patient_pii pii
-      JOIN patient_pseudonym_map ppm ON ppm.patient_id = pii.patient_id
-      JOIN app_users au
-        ON au.patient_id = pii.patient_id
-       AND au.user_role = 'patient'
-      ORDER BY latest_activity_at DESC NULLS LAST, pii.created_at DESC
-    `,
-  );
+          ) AS sing_count
+        FROM patient_pii pii
+        JOIN patient_pseudonym_map ppm ON ppm.patient_id = pii.patient_id
+        JOIN app_users au
+          ON au.patient_id = pii.patient_id
+         AND au.user_role = 'patient'
+        ${intakeJoin}
+        ${therapistJoin}
+        ORDER BY latest_activity_at DESC NULLS LAST, pii.created_at DESC
+      `,
+    );
 
-  return result.rows.map((row: any) => ({
-    patientId: String(row.patient_id),
-    patientPseudonymId: String(row.patient_pseudonym_id),
-    patientName: String(row.full_name),
-    patientCode: String(row.patient_code),
-    loginId: row.login_id ? String(row.login_id) : null,
-    birthDate: row.birth_date ? String(row.birth_date) : null,
-    latestActivityAt: row.latest_activity_at ? String(row.latest_activity_at) : null,
-    selfAssessmentCount: Number(row.self_assessment_count ?? 0),
-    rehabCount: Number(row.rehab_count ?? 0),
-    singCount: Number(row.sing_count ?? 0),
-  })) satisfies AdminPatientReportSummary[];
+    return result.rows.map((row: any) => {
+      const sexRaw =
+        typeof row.sex === "string" ? row.sex.trim().toUpperCase() : "";
+      const sex: "M" | "F" | "U" | null =
+        sexRaw === "M" || sexRaw === "F" || sexRaw === "U"
+          ? (sexRaw as "M" | "F" | "U")
+          : null;
+      const hemiplegiaRaw =
+        typeof row.hemiplegia === "string"
+          ? row.hemiplegia.trim().toUpperCase()
+          : "";
+      const hemiplegia: "Y" | "N" | null =
+        hemiplegiaRaw === "Y" || hemiplegiaRaw === "N"
+          ? (hemiplegiaRaw as "Y" | "N")
+          : null;
+      const hemianopsiaRaw =
+        typeof row.hemianopsia === "string"
+          ? row.hemianopsia.trim().toUpperCase()
+          : "";
+      const hemianopsia: "LEFT" | "RIGHT" | "NONE" | null =
+        hemianopsiaRaw === "LEFT" ||
+        hemianopsiaRaw === "RIGHT" ||
+        hemianopsiaRaw === "NONE"
+          ? (hemianopsiaRaw as "LEFT" | "RIGHT" | "NONE")
+          : null;
+
+      return {
+        patientId: String(row.patient_id),
+        patientPseudonymId: String(row.patient_pseudonym_id),
+        patientName: String(row.full_name),
+        patientCode: String(row.patient_code),
+        loginId: row.login_id ? String(row.login_id) : null,
+        birthDate: row.birth_date ? String(row.birth_date) : null,
+        phone: row.phone ? String(row.phone) : null,
+        sex,
+        educationYears:
+          row.education_years == null ? null : Number(row.education_years),
+        onsetDate: row.onset_date ? String(row.onset_date) : null,
+        daysSinceOnset:
+          row.days_since_onset == null ? null : Number(row.days_since_onset),
+        hemiplegia,
+        hemianopsia,
+        hand: row.hand ? String(row.hand) : null,
+        latestActivityAt: row.latest_activity_at
+          ? String(row.latest_activity_at)
+          : null,
+        createdAt: row.created_at ? String(row.created_at) : null,
+        selfAssessmentCount: Number(row.self_assessment_count ?? 0),
+        rehabCount: Number(row.rehab_count ?? 0),
+        singCount: Number(row.sing_count ?? 0),
+        therapistName: row.therapist_name ? String(row.therapist_name) : null,
+        therapistLoginId: row.therapist_login_id
+          ? String(row.therapist_login_id)
+          : null,
+        therapistUserId: row.therapist_user_id
+          ? String(row.therapist_user_id)
+          : null,
+        therapistOrganizationName: row.therapist_organization_name
+          ? String(row.therapist_organization_name)
+          : null,
+      };
+    }) satisfies AdminPatientReportSummary[];
+  } finally {
+    client.release();
+  }
 }
 
 function mapAdminHistoryEntries(

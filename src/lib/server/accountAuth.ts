@@ -107,6 +107,18 @@ function buildLoginKey(input: {
   ].join("|");
 }
 
+/**
+ * 이름 + 휴대폰 뒷자리 4자만으로 구성되는 식별 키.
+ * 생년월일이 달라도 이름+뒷4자가 같으면 동일 인물일 개연성이 매우 높으므로
+ * 이 키로 추가 중복 검사를 한다.
+ */
+function buildIdentityKey(input: { name: string; phoneLast4: string }) {
+  return [
+    normalizeName(input.name).toLowerCase(),
+    normalizePhoneLast4(input.phoneLast4),
+  ].join("|");
+}
+
 function sha256(value: string) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -387,11 +399,18 @@ export async function createAccount(input: SignupAccountInput) {
       : "NONE";
 
   const loginKeyHash = sha256(buildLoginKey({ name, birthDate, phoneLast4 }));
+  const identityKeyHash = sha256(buildIdentityKey({ name, phoneLast4 }));
   const pool = getDbPool();
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
+
+    // (이름 + 뒷4자리) 식별 키를 저장할 컬럼을 defensive 하게 보장.
+    // 기존 행은 NULL 이므로 기존 데이터의 중복 여부는 비교되지 않음 — 이후 생성분부터 차단.
+    await client.query(
+      `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS identity_key_hash VARCHAR(64) NULL`,
+    );
 
     const existing = await client.query(
       `SELECT user_id FROM app_users WHERE login_id = $1 OR login_key_hash = $2 LIMIT 1`,
@@ -399,6 +418,16 @@ export async function createAccount(input: SignupAccountInput) {
     );
     if (existing.rowCount) {
       throw new Error("account_already_exists");
+    }
+
+    // 이름 + 뒷자리 4자 동일한 계정이 이미 있으면 차단.
+    // (생년월일이 달라도 동일 인물일 개연성이 크다는 사용자 정책.)
+    const identityDup = await client.query(
+      `SELECT user_id FROM app_users WHERE identity_key_hash = $1 LIMIT 1`,
+      [identityKeyHash],
+    );
+    if (identityDup.rowCount) {
+      throw new Error("duplicate_identity");
     }
 
     const patientProfile = {
@@ -502,6 +531,7 @@ export async function createAccount(input: SignupAccountInput) {
       "login_id",
       "login_key_hash",
       "password_hash",
+      "identity_key_hash",
     ];
     const userValues: Array<string | null> = [
       userId,
@@ -510,6 +540,7 @@ export async function createAccount(input: SignupAccountInput) {
       loginId,
       loginKeyHash,
       hashPassword(input.password),
+      identityKeyHash,
     ];
 
     if (canStoreOrganizationId) {

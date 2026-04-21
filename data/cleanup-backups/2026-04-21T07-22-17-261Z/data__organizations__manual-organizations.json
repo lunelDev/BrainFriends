@@ -1,0 +1,22 @@
+[
+  {
+    "id": "9e5815cb-ec03-4ba5-a1db-5ca3560e38da",
+    "code": "ORG-지수병원1-651543",
+    "name": "지수병원1",
+    "address": "지수병원1",
+    "businessNumber": "123-45-64897",
+    "representativeName": "박지수1",
+    "organizationType": "언어재활",
+    "careInstitutionNumber": "1234567895",
+    "medicalDepartments": "speech",
+    "contactName": "박머수",
+    "contactTitle": "대표 치료사",
+    "contactPhone": "010-9917-2905",
+    "contactEmail": "j@gmail.com",
+    "adminLoginEmail": "j@gmail.com",
+    "doctorName": "박머수",
+    "doctorLicenseNumber": "123456789",
+    "createdAt": "2026-04-21T06:40:51.543Z",
+    "source": "manual"
+  }
+]

@@ -5,7 +5,12 @@ import {
   createAccount,
   getAuthenticatedSessionContext,
 } from "@/lib/server/accountAuth";
-import { getTherapistRegistrationProfilesByUserIds } from "@/lib/server/therapistRegistrationProfiles";
+import {
+  getTherapistRegistrationProfilesByUserIds,
+  linkTherapistProfilesToOrganization,
+} from "@/lib/server/therapistRegistrationProfiles";
+import { findApprovedOrganizationByName } from "@/lib/server/organizationCatalogDb";
+import { mirrorTherapistReview, runMirrorGuarded } from "@/lib/server/newSchemaMirror";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -103,7 +108,22 @@ export async function PATCH(req: Request) {
     );
 
     const profiles = await getTherapistRegistrationProfilesByUserIds([therapistUserId]);
-    const profileOrganizationId = profiles[0]?.organizationId ?? null;
+    let profileOrganizationId = profiles[0]?.organizationId ?? null;
+
+    // solo 치료사인데 기관이 먼저 승인되어 있는 경우: requestedOrganizationName 으로
+    // 역조회해서 organization_id 를 보강한다.
+    // 반대 순서(기관이 아직 pending)면 역조회 결과가 null 이므로 그냥 null 로 두고,
+    // 나중에 기관 승인 시점(organizations/route.ts)에서 이 app_users 행의 organization_id 가
+    // COALESCE 로 채워진다.
+    if (!profileOrganizationId && profiles[0]?.requestedOrganizationName) {
+      const requestedName = profiles[0].requestedOrganizationName;
+      const approvedOrg = await findApprovedOrganizationByName(requestedName);
+      if (approvedOrg) {
+        profileOrganizationId = approvedOrg.id;
+        // 프로필 JSON 도 동기화 (다음부터는 fast path 로 바로 읽힘)
+        await linkTherapistProfilesToOrganization(requestedName, approvedOrg.id);
+      }
+    }
 
     const result = await pool.query(
       `
@@ -122,6 +142,14 @@ export async function PATCH(req: Request) {
     if (!result.rowCount) {
       return NextResponse.json({ ok: false, error: "therapist_not_found" }, { status: 404 });
     }
+
+    // ── 이중 쓰기 (기능 플래그 ON 일 때만) ──
+    await runMirrorGuarded("therapist-review", async () => {
+      await mirrorTherapistReview({
+        therapistUserId,
+        status,
+      });
+    });
 
     return NextResponse.json({
       ok: true,
