@@ -44,6 +44,8 @@ export async function POST(req: Request) {
         ? 400
         : message === "invalid_credentials"
           ? 401
+          : message === "approval_pending"
+            ? 403
           : 500;
     return NextResponse.json({ ok: false, error: message }, { status });
   }

@@ -13,7 +13,20 @@ import { listTherapistColleagueSummaries } from "@/lib/server/therapistReportsDb
 import { listOrganizationRegistrationRequests } from "@/lib/server/organizationRegistrationRequests";
 import { AdminConsoleClient } from "./_components/AdminConsoleClient";
 
-export default async function AdminPage() {
+const ALLOWED_SECTIONS = new Set([
+  "samd",
+  "dashboard",
+  "members",
+  "organizations",
+  "therapists",
+] as const);
+
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ section?: string }>;
+}) {
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const cookieStore = await cookies();
   const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
   const context = token
@@ -32,7 +45,13 @@ export default async function AdminPage() {
     redirect("/select-page/mode");
   }
 
-  const [patients, organizations, therapists, validationSampleEntries, organizationRequests] = await Promise.all([
+  const [
+    patients,
+    organizations,
+    therapists,
+    validationSampleEntries,
+    organizationRequests,
+  ] = await Promise.all([
     listAdminPatientReportSummaries(token!),
     listAvailableOrganizations(),
     listTherapistColleagueSummaries(token!),
@@ -40,11 +59,20 @@ export default async function AdminPage() {
     listOrganizationRegistrationRequests(),
   ]);
 
+  const visibleOrganizationRequests = organizationRequests.filter(
+    (item) => item.status !== "approved",
+  );
+  const initialSection =
+    resolvedSearchParams?.section && ALLOWED_SECTIONS.has(resolvedSearchParams.section as never)
+      ? (resolvedSearchParams.section as "samd" | "dashboard" | "members" | "organizations" | "therapists")
+      : "members";
+
   return (
     <AdminConsoleClient
       adminName={context.patient.name || "관리자"}
+      initialSection={initialSection}
       organizations={organizations}
-      organizationRequests={organizationRequests}
+      organizationRequests={visibleOrganizationRequests}
       patients={patients}
       therapists={therapists}
       validationSampleEntries={validationSampleEntries}

@@ -8,6 +8,10 @@ import {
 import type { PatientProfile } from "@/lib/patientStorage";
 import { getDbPool } from "@/lib/server/postgres";
 import { getAvailableOrganizationById } from "@/lib/server/organizationCatalogDb";
+import {
+  hasFallbackPatientTherapistAssignment,
+  upsertFallbackPatientTherapistAssignment,
+} from "@/lib/server/patientTherapistAssignments";
 import { upsertPatientIdentity } from "@/lib/server/patientIdentityDb";
 
 export const AUTH_COOKIE_NAME = "brainfriends_session";
@@ -50,6 +54,33 @@ function normalizeName(name: string) {
 
 function normalizeBirthDate(value: string) {
   return value.trim();
+}
+
+function isIsoDateString(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isValidCalendarDate(value: string) {
+  if (!isIsoDateString(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
+}
+
+function getTodayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function isValidBirthDate(value: string) {
+  return isValidCalendarDate(value) && value <= getTodayIsoDate();
+}
+
+function isValidOnsetDate(value: string) {
+  return isValidCalendarDate(value) && value <= getTodayIsoDate();
 }
 
 function normalizePhoneLast4(value: string) {
@@ -182,6 +213,8 @@ async function ensureOrganizationRecord(client: any, organizationId: string) {
 export function buildPatientProfile(row: {
   session_seed: string;
   user_role?: UserRole | null;
+  organization_id?: string | null;
+  has_assigned_therapist?: boolean | null;
   full_name: string;
   birth_date: string | null;
   sex: PatientProfile["gender"] | null;
@@ -196,6 +229,8 @@ export function buildPatientProfile(row: {
   return {
     sessionId: row.session_seed || randomUUID(),
     userRole: normalizeUserRole(row.user_role),
+    organizationId: row.organization_id ? String(row.organization_id) : null,
+    hasAssignedTherapist: Boolean(row.has_assigned_therapist),
     name: row.full_name,
     birthDate,
     gender: row.sex ?? "U",
@@ -326,7 +361,7 @@ export async function createAccount(input: SignupAccountInput) {
     !isValidLoginIdFormat(loginId) ||
     loginId === BUILTIN_ADMIN_LOGIN_ID ||
     !name ||
-    !birthDate ||
+    !isValidBirthDate(birthDate) ||
     phoneLast4.length !== 4 ||
     !validatePassword(input.password)
   ) {
@@ -335,10 +370,8 @@ export async function createAccount(input: SignupAccountInput) {
 
   if (
     userRole === "patient" &&
-    (!input.onsetDate ||
-      !input.educationYears ||
-      (input.gender !== "M" && input.gender !== "F") ||
-      !therapistUserId)
+    input.onsetDate &&
+    !isValidOnsetDate(String(input.onsetDate))
   ) {
     throw new Error("invalid_signup_payload");
   }
@@ -529,6 +562,14 @@ export async function createAccount(input: SignupAccountInput) {
       }
     }
 
+    if (userRole === "patient" && therapistUserId && !canUseAssignmentsTable) {
+      await upsertFallbackPatientTherapistAssignment({
+        patientId,
+        therapistUserId,
+        organizationId,
+      });
+    }
+
     await client.query("COMMIT");
     return { userId, patientId };
   } catch (error) {
@@ -549,6 +590,21 @@ export async function authenticateAccount(input: LoginAccountInput) {
   const client = await pool.connect();
 
   try {
+    const canStoreOrganizationId = await columnExists(
+      client,
+      "app_users",
+      "organization_id",
+    );
+    const canStoreApprovalState = await columnExists(
+      client,
+      "app_users",
+      "approval_state",
+    );
+    const canUseAssignmentsTable = await tableExists(
+      client,
+      "therapist_patient_assignments",
+    );
+
     if (loginId === BUILTIN_ADMIN_LOGIN_ID && input.password === BUILTIN_ADMIN_PASSWORD) {
       await client.query("BEGIN");
       try {
@@ -565,6 +621,10 @@ export async function authenticateAccount(input: LoginAccountInput) {
         SELECT
           u.user_id,
           COALESCE(u.user_role, 'patient') AS user_role,
+          ${canStoreApprovalState ? "COALESCE(u.approval_state, 'approved') AS approval_state," : "'approved'::text AS approval_state,"}
+          ${canStoreOrganizationId ? "u.organization_id::text AS organization_id," : "NULL::text AS organization_id,"}
+          ${canUseAssignmentsTable ? "EXISTS (SELECT 1 FROM therapist_patient_assignments tpa WHERE tpa.patient_id = u.patient_id AND COALESCE(tpa.is_active, TRUE) = TRUE) AS has_assigned_therapist," : "FALSE AS has_assigned_therapist,"}
+          u.patient_id::text AS patient_id,
           u.password_hash,
           pii.full_name,
           pii.birth_date::text,
@@ -587,6 +647,10 @@ export async function authenticateAccount(input: LoginAccountInput) {
     const row = result.rows[0];
     if (!row || !verifyPassword(input.password, row.password_hash)) {
       throw new Error("invalid_credentials");
+    }
+
+    if (row.user_role === "therapist" && row.approval_state !== "approved") {
+      throw new Error("approval_pending");
     }
 
     const sessionToken = randomBytes(32).toString("base64url");
@@ -621,12 +685,19 @@ export async function authenticateAccount(input: LoginAccountInput) {
       [row.user_id],
     );
 
+    const hasAssignedTherapist =
+      canUseAssignmentsTable || row.user_role !== "patient"
+        ? Boolean(row.has_assigned_therapist)
+        : await hasFallbackPatientTherapistAssignment(String(row.patient_id));
+
     return {
       sessionToken,
       expiresAt,
       patient: buildPatientProfile({
         session_seed: sessionSeed,
         user_role: row.user_role,
+        organization_id: row.organization_id,
+        has_assigned_therapist: hasAssignedTherapist,
         full_name: row.full_name,
         birth_date: row.birth_date,
         sex: row.sex,
@@ -648,12 +719,31 @@ export async function getPatientProfileFromSession(sessionToken: string) {
   const client = await pool.connect();
 
   try {
+    const canStoreOrganizationId = await columnExists(
+      client,
+      "app_users",
+      "organization_id",
+    );
+    const canStoreApprovalState = await columnExists(
+      client,
+      "app_users",
+      "approval_state",
+    );
+    const canUseAssignmentsTable = await tableExists(
+      client,
+      "therapist_patient_assignments",
+    );
+
     const result = await client.query(
       `
         SELECT
           s.session_id,
           s.session_seed,
           COALESCE(u.user_role, 'patient') AS user_role,
+          ${canStoreApprovalState ? "COALESCE(u.approval_state, 'approved') AS approval_state," : "'approved'::text AS approval_state,"}
+          ${canStoreOrganizationId ? "u.organization_id::text AS organization_id," : "NULL::text AS organization_id,"}
+          ${canUseAssignmentsTable ? "EXISTS (SELECT 1 FROM therapist_patient_assignments tpa WHERE tpa.patient_id = u.patient_id AND COALESCE(tpa.is_active, TRUE) = TRUE) AS has_assigned_therapist," : "FALSE AS has_assigned_therapist,"}
+          u.patient_id::text AS patient_id,
           pii.full_name,
           pii.birth_date::text,
           pii.sex,
@@ -677,14 +767,25 @@ export async function getPatientProfileFromSession(sessionToken: string) {
     const row = result.rows[0];
     if (!row) return null;
 
+    if (row.user_role === "therapist" && row.approval_state !== "approved") {
+      return null;
+    }
+
     await client.query(
       `UPDATE auth_sessions SET last_seen_at = NOW() WHERE session_id = $1`,
       [row.session_id],
     );
 
+    const hasAssignedTherapist =
+      canUseAssignmentsTable || row.user_role !== "patient"
+        ? Boolean(row.has_assigned_therapist)
+        : await hasFallbackPatientTherapistAssignment(String(row.patient_id));
+
     return buildPatientProfile({
       session_seed: row.session_seed,
       user_role: row.user_role,
+      organization_id: row.organization_id,
+      has_assigned_therapist: hasAssignedTherapist,
       full_name: row.full_name,
       birth_date: row.birth_date,
       sex: row.sex,
@@ -705,12 +806,18 @@ export async function getAuthenticatedSessionContext(sessionToken: string) {
   const client = await pool.connect();
 
   try {
+    const canStoreApprovalState = await columnExists(
+      client,
+      "app_users",
+      "approval_state",
+    );
     const result = await client.query(
       `
         SELECT
           s.session_id,
           s.session_seed,
           COALESCE(u.user_role, 'patient') AS user_role,
+          ${canStoreApprovalState ? "COALESCE(u.approval_state, 'approved') AS approval_state," : "'approved'::text AS approval_state,"}
           u.user_id::text AS user_id,
           u.patient_id::text AS patient_id,
           ppm.patient_pseudonym_id,
@@ -737,6 +844,10 @@ export async function getAuthenticatedSessionContext(sessionToken: string) {
 
     const row = result.rows[0];
     if (!row) return null;
+
+    if (row.user_role === "therapist" && row.approval_state !== "approved") {
+      return null;
+    }
 
     await client.query(
       `UPDATE auth_sessions SET last_seen_at = NOW() WHERE session_id = $1`,
@@ -809,7 +920,7 @@ function validateRecoveryIdentity(input: RecoveryIdentityInput) {
   const name = normalizeName(input.name);
   const birthDate = normalizeBirthDate(input.birthDate);
   const phoneLast4 = normalizePhoneLast4(input.phoneLast4);
-  if (!name || !birthDate || phoneLast4.length !== 4) {
+  if (!name || !isValidBirthDate(birthDate) || phoneLast4.length !== 4) {
     throw new Error("invalid_recovery_payload");
   }
   return { name, birthDate, phoneLast4 };

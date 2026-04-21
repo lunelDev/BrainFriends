@@ -83,6 +83,14 @@ export default function LoginPage() {
       return;
     }
 
+    if (!patient.organizationId || !patient.hasAssignedTherapist) {
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem("btt.trialMode");
+      }
+      router.replace("/signup");
+      return;
+    }
+
     if (typeof window !== "undefined") {
       window.sessionStorage.removeItem("btt.trialMode");
       setPendingPatient(null);
@@ -112,6 +120,14 @@ export default function LoginPage() {
       return;
     }
 
+    if (!patient.organizationId || !patient.hasAssignedTherapist) {
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem("btt.trialMode");
+      }
+      router.replace("/signup");
+      return;
+    }
+
     setPendingPatient(patient);
     setShowPermissionModal(true);
   };
@@ -124,7 +140,9 @@ export default function LoginPage() {
       setNotice(
         params.get("role") === "therapist"
           ? "치료사 가입 신청이 접수되었습니다. 확인 후 로그인해 주세요."
-          : "회원가입이 완료되었습니다. 로그인해 주세요.",
+          : params.get("needsLink") === "1"
+            ? "회원가입이 완료되었습니다. 로그인해 주세요."
+            : "회원가입이 완료되었습니다. 로그인해 주세요.",
       );
     }
   }, []);
@@ -175,6 +193,8 @@ export default function LoginPage() {
         setError(
           payload?.error === "invalid_credentials"
             ? "로그인 정보가 일치하지 않습니다."
+            : payload?.error === "approval_pending"
+              ? "치료사 계정은 관리자 승인 후 로그인할 수 있습니다."
             : "로그인에 실패했습니다.",
         );
         return;

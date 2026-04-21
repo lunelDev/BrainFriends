@@ -39,6 +39,7 @@ type Props = {
   patients: AdminPatientReportSummary[];
   therapists: TherapistColleagueSummary[];
   validationSampleEntries: TrainingHistoryEntry[];
+  initialSection?: InternalSection;
 };
 
 type AdminPatientDetailPayload = {
@@ -55,44 +56,117 @@ type AdminPatientDetailPayload = {
 
 type InternalSection =
   | "samd"
+  | "dashboard"
   | "members"
   | "organizations"
-  | "therapists"
-  | "operations"
-  | "usage"
-  | "security";
+  | "therapists";
 
 const SIDEBAR_ITEMS = [
   { label: "공인성적서·SaMD", key: "samd", icon: FileText },
+  { label: "대시보드", key: "dashboard", icon: ClipboardList },
   { label: "회원 관리", key: "members", icon: Users },
+  { label: "치료사 관리", key: "therapists", icon: Stethoscope },
   { label: "기관 관리", key: "organizations", icon: Building2 },
-  { label: "치료사 콘솔", key: "therapists", icon: Stethoscope },
-  { label: "운영 시스템", key: "operations", icon: Activity },
-  { label: "사용량 관리", key: "usage", icon: BarChart3 },
-  { label: "보안·검증 현황", key: "security", icon: ShieldCheck },
 ] as const;
-
-const SECTION_LABELS: Record<InternalSection, string> = {
-  samd: "SaMD",
-  members: "회원",
-  organizations: "기관",
-  therapists: "치료사",
-  operations: "운영",
-  usage: "사용량",
-  security: "보안",
-};
 
 function formatDateTime(value?: string | null) {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleString("ko-KR", {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    hourCycle: "h23",
   });
+  const parts = formatter.formatToParts(date);
+  const lookup = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+
+  const year = lookup("year");
+  const month = lookup("month");
+  const day = lookup("day");
+  const hour24 = Number(lookup("hour"));
+  const minute = lookup("minute");
+
+  if (!year || !month || !day || Number.isNaN(hour24) || !minute) return "-";
+
+  const meridiem = hour24 >= 12 ? "오후" : "오전";
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return `${year}. ${month}. ${day}. ${meridiem} ${String(hour12).padStart(2, "0")}:${minute}`;
+}
+
+function formatTherapistProfession(value?: string | null) {
+  switch (value) {
+    case "speech":
+      return "언어치료사";
+    case "occupational":
+      return "작업치료사";
+    case "physical":
+      return "물리치료사";
+    case "cognitive":
+      return "인지재활";
+    case "other":
+      return "기타";
+    default:
+      return "미입력";
+  }
+}
+
+function formatEmploymentStatus(value?: string | null) {
+  switch (value) {
+    case "employed":
+      return "재직";
+    case "contract":
+      return "계약";
+    case "freelance":
+      return "프리랜서";
+    default:
+      return "미입력";
+  }
+}
+
+function formatAccessRole(value?: string | null) {
+  switch (value) {
+    case "manager":
+      return "관리자";
+    case "observer":
+      return "관찰자";
+    case "therapist":
+      return "치료사";
+    default:
+      return "미입력";
+  }
+}
+
+function formatTwoFactorMethod(value?: string | null) {
+  return value === "sms" ? "문자" : value === "otp" ? "OTP" : "미설정";
+}
+
+function formatIrbParticipation(value?: string | null) {
+  switch (value) {
+    case "planned":
+      return "계획";
+    case "approved":
+      return "승인";
+    case "none":
+      return "해당 없음";
+    default:
+      return "미입력";
+  }
+}
+
+function summarizeTherapistPermissions(item: TherapistColleagueSummary) {
+  const labels = [
+    item.canViewPatients ? "환자조회" : null,
+    item.canEditPatientData ? "데이터수정" : null,
+    item.canEnterEvaluation ? "평가입력" : null,
+  ].filter(Boolean);
+
+  return labels.length ? labels.join(" · ") : "권한 미설정";
 }
 
 export function AdminConsoleClient({
@@ -100,21 +174,42 @@ export function AdminConsoleClient({
   organizations: initialOrganizations,
   organizationRequests: initialOrganizationRequests,
   patients,
-  therapists,
+  therapists: initialTherapists,
   validationSampleEntries,
+  initialSection = "members",
 }: Props) {
   const [search, setSearch] = useState("");
-  const [activeSection, setActiveSection] = useState<InternalSection>("members");
+  const [activeSection, setActiveSection] = useState<InternalSection>(initialSection);
   const [organizations, setOrganizations] = useState(initialOrganizations);
   const [organizationRequests, setOrganizationRequests] = useState(initialOrganizationRequests);
+  const [therapists, setTherapists] = useState(initialTherapists);
   const [organizationError, setOrganizationError] = useState("");
   const [organizationSuccess, setOrganizationSuccess] = useState("");
+  const [therapistError, setTherapistError] = useState("");
+  const [therapistSuccess, setTherapistSuccess] = useState("");
   const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null);
+  const [reviewingTherapistId, setReviewingTherapistId] = useState<string | null>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [selectedPatientDetail, setSelectedPatientDetail] =
     useState<AdminPatientDetailPayload | null>(null);
   const [isLoadingPatientDetail, setIsLoadingPatientDetail] = useState(false);
   const [patientDetailError, setPatientDetailError] = useState("");
+
+  const visibleOrganizationRequests = useMemo(
+    () => organizationRequests.filter((item) => item.status !== "approved"),
+    [organizationRequests],
+  );
+  const pendingTherapistRequests = useMemo(
+    () =>
+      therapists.filter(
+        (item) => item.approvalState !== "approved" && item.approvalState !== "rejected",
+      ),
+    [therapists],
+  );
+  const approvedTherapists = useMemo(
+    () => therapists.filter((item) => item.approvalState === "approved"),
+    [therapists],
+  );
 
   const filteredPatients = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -159,9 +254,11 @@ export function AdminConsoleClient({
     try {
       const result = await reviewOrganizationRequest({ requestId, status });
       setOrganizationRequests((prev) =>
-        prev.map((item) =>
-          item.id === requestId ? { ...item, ...result.reviewed } : item,
-        ),
+        status === "approved"
+          ? prev.filter((item) => item.id !== requestId)
+          : prev.map((item) =>
+              item.id === requestId ? { ...item, ...result.reviewed } : item,
+            ),
       );
       if (result.organization) {
         const nextOrganization: OrganizationRow = {
@@ -182,6 +279,50 @@ export function AdminConsoleClient({
       );
     } finally {
       setReviewingRequestId(null);
+    }
+  };
+
+  const reviewTherapist = async (
+    therapistUserId: string,
+    status: "approved" | "rejected",
+  ) => {
+    setTherapistError("");
+    setTherapistSuccess("");
+    setReviewingTherapistId(therapistUserId);
+
+    try {
+      const response = await fetch("/api/admin/therapists", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ therapistUserId, status }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(
+          payload?.error === "therapist_not_found"
+            ? "치료사 계정을 찾지 못했습니다."
+            : "치료사 승인 상태 변경에 실패했습니다.",
+        );
+      }
+
+      setTherapists((prev) =>
+        prev.map((item) =>
+          item.therapistUserId === therapistUserId
+            ? { ...item, approvalState: payload.reviewed.approvalState }
+            : item,
+        ),
+      );
+      setTherapistSuccess(
+        status === "approved"
+          ? "치료사 가입 신청을 승인했습니다."
+          : "치료사 가입 신청을 반려했습니다.",
+      );
+    } catch (error) {
+      setTherapistError(
+        error instanceof Error ? error.message : "치료사 승인 처리에 실패했습니다.",
+      );
+    } finally {
+      setReviewingTherapistId(null);
     }
   };
 
@@ -228,6 +369,275 @@ export function AdminConsoleClient({
       cancelled = true;
     };
   }, [selectedPatientId]);
+
+  const registrationRequestsSection = (
+    <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex items-center gap-2">
+        <ClipboardList className="h-5 w-5 text-amber-600" />
+        <div>
+          <h2 className="text-xl font-black text-slate-950">등록 요청</h2>
+          <p className="mt-1 text-sm font-medium text-slate-500">
+            기관 등록 요청과 치료사 가입 요청을 여기서 승인 또는 반려합니다.
+          </p>
+        </div>
+      </div>
+
+      {(organizationError || organizationSuccess) && (
+        <div className="mt-4 space-y-3">
+          {organizationError ? (
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
+              {organizationError}
+            </div>
+          ) : null}
+          {organizationSuccess ? (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+              {organizationSuccess}
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {(therapistError || therapistSuccess) && (
+        <div className="mt-4 space-y-3">
+          {therapistError ? (
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
+              {therapistError}
+            </div>
+          ) : null}
+          {therapistSuccess ? (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+              {therapistSuccess}
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      <div className="mt-5 overflow-hidden rounded-[20px] border border-slate-200">
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="px-4 py-3 text-left font-black text-slate-700">기관명</th>
+              <th className="px-4 py-3 text-left font-black text-slate-700">의료기관 정보</th>
+              <th className="px-4 py-3 text-left font-black text-slate-700">담당자 / 관리자</th>
+              <th className="px-4 py-3 text-left font-black text-slate-700">법적 / 동의</th>
+              <th className="px-4 py-3 text-left font-black text-slate-700">상태</th>
+              <th className="px-4 py-3 text-left font-black text-slate-700">액션</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {visibleOrganizationRequests.length ? (
+              visibleOrganizationRequests.map((item) => {
+                const isPending = item.status === "pending";
+                const isReviewing = reviewingRequestId === item.id;
+                return (
+                  <tr key={item.id}>
+                    <td className="px-4 py-4">
+                      <p className="font-black text-slate-900">{item.organizationName}</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        {item.organizationType || "기관 유형 미입력"} · {item.roadAddress} {item.addressDetail}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        목적 {item.servicePurpose} / 대상 {item.targetPatients}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="font-semibold text-slate-700">
+                        요양기관번호 {item.careInstitutionNumber || "-"}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        사업자번호 {item.businessNumber || "-"}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        의료기관 코드 {item.medicalInstitutionCode || "-"} / 진료과목 {item.medicalDepartments || "-"}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="font-semibold text-slate-700">
+                        {item.contactName || "-"} / {item.contactTitle || "-"}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        {item.contactPhone || "-"} · {item.contactEmail || "-"}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        관리자 ID {item.adminLoginEmail || "-"} · 2FA {item.twoFactorMethod === "sms" ? "문자" : "OTP"}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="font-semibold text-slate-700">
+                        사업자등록증 {item.businessLicenseFileName || "-"}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        약관 {item.termsAgreed ? "동의" : "미동의"} / 개인정보 {item.privacyAgreed ? "동의" : "미동의"}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        의료데이터 {item.medicalDataAgreed ? "동의" : "미동의"} / 환자데이터 {item.patientDataAgreed ? "동의" : "미동의"}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-700">
+                        {item.status === "approved"
+                          ? "승인 완료"
+                          : item.status === "rejected"
+                            ? "반려"
+                            : "승인 대기"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      {isPending ? (
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={isReviewing}
+                            onClick={() => reviewRequest(item.id, "approved")}
+                            className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                          >
+                            승인
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isReviewing}
+                            onClick={() => reviewRequest(item.id, "rejected")}
+                            className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+                          >
+                            반려
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-xs font-semibold text-slate-500">
+                          {item.reviewedAt ? `처리 ${formatDateTime(item.reviewedAt)}` : "처리 완료"}
+                        </p>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td
+                  colSpan={6}
+                  className="px-4 py-10 text-center text-sm font-semibold text-slate-500"
+                >
+                  대기 중인 등록 요청이 없습니다.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-6 overflow-hidden rounded-[20px] border border-slate-200">
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-sm font-black text-slate-900">치료사 가입 요청</p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            승인 대기 중인 치료사 계정을 여기서 바로 승인 또는 반려합니다.
+          </p>
+        </div>
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="px-4 py-3 text-left font-black text-slate-700">치료사명</th>
+              <th className="px-4 py-3 text-left font-black text-slate-700">의료 자격</th>
+              <th className="px-4 py-3 text-left font-black text-slate-700">소속 / 권한</th>
+              <th className="px-4 py-3 text-left font-black text-slate-700">연락 / 동의</th>
+              <th className="px-4 py-3 text-left font-black text-slate-700">상태</th>
+              <th className="px-4 py-3 text-left font-black text-slate-700">액션</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {pendingTherapistRequests.length ? (
+              pendingTherapistRequests.map((item) => (
+                <tr key={item.therapistUserId}>
+                  <td className="px-4 py-4">
+                    <p className="font-black text-slate-900">{item.therapistName}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      {item.loginId ?? "-"} · {item.email ?? "이메일 미입력"}
+                    </p>
+                  </td>
+                  <td className="px-4 py-4 font-semibold text-slate-700">
+                    <p>{formatTherapistProfession(item.profession)}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      자격번호 {item.licenseNumber ?? "-"}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      {item.licenseIssuedBy ?? "발급기관 미입력"} ·{" "}
+                      {item.licenseIssuedDate ?? "발급일 미입력"}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      파일 {item.licenseFileName ?? "미첨부"}
+                    </p>
+                  </td>
+                  <td className="px-4 py-4 font-semibold text-slate-700">
+                    <p>{item.organizationName ?? item.requestedOrganizationName ?? "기관 정보 없음"}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      {formatEmploymentStatus(item.employmentStatus)}
+                      {item.department ? ` · ${item.department}` : ""}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      역할 {formatAccessRole(item.accessRole)} · {formatTwoFactorMethod(item.twoFactorMethod)}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      {summarizeTherapistPermissions(item)}
+                    </p>
+                  </td>
+                  <td className="px-4 py-4 font-semibold text-slate-700">
+                    <p>{item.phone ?? "연락처 미입력"}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      경력 {item.experienceYears != null ? `${item.experienceYears}년` : "미입력"}
+                      {item.specialties ? ` · ${item.specialties}` : ""}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      동의 {item.privacyAgreed ? "개인정보" : "개인정보 미동의"} /{" "}
+                      {item.patientDataAccessAgreed ? "환자데이터" : "환자데이터 미동의"} /{" "}
+                      {item.securityPolicyAgreed ? "보안정책" : "보안정책 미동의"} /{" "}
+                      {item.confidentialityAgreed ? "비밀유지" : "비밀유지 미동의"}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      목적 {item.servicePurpose ?? "-"} / 대상 {item.targetPatientTypes ?? "-"} / IRB {formatIrbParticipation(item.irbParticipation)}
+                    </p>
+                  </td>
+                  <td className="px-4 py-4">
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-700">
+                      승인 대기
+                    </span>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => reviewTherapist(item.therapistUserId, "approved")}
+                        disabled={reviewingTherapistId === item.therapistUserId}
+                        className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                      >
+                        승인
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => reviewTherapist(item.therapistUserId, "rejected")}
+                        disabled={reviewingTherapistId === item.therapistUserId}
+                        className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+                      >
+                        반려
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td
+                  colSpan={6}
+                  className="px-4 py-10 text-center text-sm font-semibold text-slate-500"
+                >
+                  대기 중인 치료사 가입 요청이 없습니다.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+    </section>
+  );
 
   return (
     <main className="min-h-screen bg-[#f4f6fb]">
@@ -458,6 +868,228 @@ export function AdminConsoleClient({
                   </div>
                 </section>
               </section>
+            ) : activeSection === "dashboard" ? (
+              <section className="space-y-6">
+                <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <ClipboardList className="h-5 w-5 text-sky-600" />
+                    <div>
+                      <h2 className="text-xl font-black text-slate-950">대시보드</h2>
+                      <p className="mt-1 text-sm font-medium text-slate-500">
+                        등록 요청, 운영 현황, 사용량, 보안·검증을 한 페이지에서 순서대로 확인합니다.
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+                {registrationRequestsSection}
+
+                <section id="dashboard-operations" className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-sky-600" />
+                    <div>
+                      <h2 className="text-xl font-black text-slate-950">운영 현황</h2>
+                      <p className="mt-1 text-sm font-medium text-slate-500">
+                        운영 도구와 검증 현황을 대시보드 안에서 바로 확인합니다.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 overflow-x-auto">
+                    <table className="min-w-full border-collapse text-sm">
+                      <thead>
+                        <tr className="bg-[#1c2133] text-left text-white">
+                          <th className="px-4 py-3 font-black">영역</th>
+                          <th className="px-4 py-3 font-black">현재 상태</th>
+                          <th className="px-4 py-3 font-black">요약</th>
+                          <th className="px-4 py-3 font-black">바로가기</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-b border-slate-200 bg-white text-slate-700">
+                          <td className="px-4 py-4 font-black text-slate-950">기관 관리</td>
+                          <td className="px-4 py-4 font-semibold">{organizations.length}개 승인 기관</td>
+                          <td className="px-4 py-4 font-semibold">회원가입에서 선택 가능한 기관 목록 관리</td>
+                          <td className="px-4 py-4">
+                            <button
+                              type="button"
+                              onClick={() => setActiveSection("organizations")}
+                              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
+                            >
+                              열기
+                            </button>
+                          </td>
+                        </tr>
+                        <tr className="border-b border-slate-200 bg-white text-slate-700">
+                          <td className="px-4 py-4 font-black text-slate-950">치료사 관리</td>
+                          <td className="px-4 py-4 font-semibold">{approvedTherapists.length}명 승인 완료</td>
+                          <td className="px-4 py-4 font-semibold">소속 기관, 담당 사용자 수, 최근 로그인 확인</td>
+                          <td className="px-4 py-4">
+                            <button
+                              type="button"
+                              onClick={() => setActiveSection("therapists")}
+                              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
+                            >
+                              열기
+                            </button>
+                          </td>
+                        </tr>
+                        <tr className="bg-white text-slate-700">
+                          <td className="px-4 py-4 font-black text-slate-950">보안·검증</td>
+                          <td className="px-4 py-4 font-semibold">
+                            저장 실패 {usageSummary.failedCount}건 / 검증 연결 {usageSummary.vnvLinkedCount}건
+                          </td>
+                          <td className="px-4 py-4 font-semibold">내보내기와 상태 점검 항목 확인</td>
+                          <td className="px-4 py-4">
+                            <a
+                              href="#dashboard-security"
+                              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
+                            >
+                              이동
+                            </a>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section id="dashboard-usage" className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <BarChart3 className="h-5 w-5 text-sky-600" />
+                    <div>
+                      <h2 className="text-xl font-black text-slate-950">사용량</h2>
+                      <p className="mt-1 text-sm font-medium text-slate-500">
+                        사용자별 훈련 누적량과 최근 활동을 대시보드 안에서 확인합니다.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 overflow-hidden rounded-[20px] border border-slate-200">
+                    <table className="min-w-full border-collapse text-sm">
+                      <thead>
+                        <tr className="bg-slate-50 text-left text-slate-700">
+                          <th className="px-4 py-3 font-black">구분</th>
+                          <th className="px-4 py-3 font-black">수치</th>
+                          <th className="px-4 py-3 font-black">설명</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 bg-white">
+                        <tr>
+                          <td className="px-4 py-4 font-black text-slate-950">자가진단</td>
+                          <td className="px-4 py-4 font-semibold">{usageSummary.selfCount}</td>
+                          <td className="px-4 py-4 font-semibold text-slate-600">누적 자가진단 기록</td>
+                        </tr>
+                        <tr>
+                          <td className="px-4 py-4 font-black text-slate-950">재활</td>
+                          <td className="px-4 py-4 font-semibold">{usageSummary.rehabCount}</td>
+                          <td className="px-4 py-4 font-semibold text-slate-600">누적 재활 기록</td>
+                        </tr>
+                        <tr>
+                          <td className="px-4 py-4 font-black text-slate-950">노래</td>
+                          <td className="px-4 py-4 font-semibold">{usageSummary.singCount}</td>
+                          <td className="px-4 py-4 font-semibold text-slate-600">누적 노래 기록</td>
+                        </tr>
+                        <tr>
+                          <td className="px-4 py-4 font-black text-slate-950">활동 사용자</td>
+                          <td className="px-4 py-4 font-semibold">{latestActiveCount}</td>
+                          <td className="px-4 py-4 font-semibold text-slate-600">최근 활동 사용자 수</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-5 overflow-x-auto">
+                    <table className="min-w-full border-collapse text-sm">
+                      <thead>
+                        <tr className="bg-[#1c2133] text-left text-white">
+                          <th className="px-4 py-3 font-black">사용자명</th>
+                          <th className="px-4 py-3 font-black">자가진단</th>
+                          <th className="px-4 py-3 font-black">재활</th>
+                          <th className="px-4 py-3 font-black">노래</th>
+                          <th className="px-4 py-3 font-black">최근 활동</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {patients.map((item) => (
+                          <tr key={item.patientId} className="border-b border-slate-200 bg-white text-slate-700">
+                            <td className="px-4 py-4 font-black text-slate-950">{item.patientName}</td>
+                            <td className="px-4 py-4 font-semibold">{item.selfAssessmentCount}</td>
+                            <td className="px-4 py-4 font-semibold">{item.rehabCount}</td>
+                            <td className="px-4 py-4 font-semibold">{item.singCount}</td>
+                            <td className="px-4 py-4 font-semibold">{formatDateTime(item.latestActivityAt)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section id="dashboard-security" className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-5 w-5 text-emerald-600" />
+                    <div>
+                      <h2 className="text-xl font-black text-slate-950">보안·검증 현황</h2>
+                      <p className="mt-1 text-sm font-medium text-slate-500">
+                        저장 상태, 측정 품질, 검증 연결 수를 대시보드 안에서 확인합니다.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 overflow-hidden rounded-[20px] border border-slate-200">
+                    <table className="min-w-full border-collapse text-sm">
+                      <thead>
+                        <tr className="bg-slate-50 text-left text-slate-700">
+                          <th className="px-4 py-3 font-black">항목</th>
+                          <th className="px-4 py-3 font-black">수치</th>
+                          <th className="px-4 py-3 font-black">설명</th>
+                          <th className="px-4 py-3 font-black">액션</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 bg-white">
+                        <tr>
+                          <td className="px-4 py-4 font-black text-slate-950">저장 실패</td>
+                          <td className="px-4 py-4 font-semibold">{usageSummary.failedCount}건</td>
+                          <td className="px-4 py-4 font-semibold text-slate-600">즉시 확인이 필요한 저장 실패 결과</td>
+                          <td className="px-4 py-4 text-sm font-semibold text-slate-500">-</td>
+                        </tr>
+                        <tr>
+                          <td className="px-4 py-4 font-black text-slate-950">측정 완료</td>
+                          <td className="px-4 py-4 font-semibold">{usageSummary.measuredCount}건</td>
+                          <td className="px-4 py-4 font-semibold text-slate-600">measured 기준으로 저장된 결과</td>
+                          <td className="px-4 py-4 text-sm font-semibold text-slate-500">-</td>
+                        </tr>
+                        <tr>
+                          <td className="px-4 py-4 font-black text-slate-950">검증 연결</td>
+                          <td className="px-4 py-4 font-semibold">{usageSummary.vnvLinkedCount}건</td>
+                          <td className="px-4 py-4 font-semibold text-slate-600">V&V 메타데이터와 연결된 결과</td>
+                          <td className="px-4 py-4">
+                            <Link
+                              href="/api/therapist/system/vnv-export"
+                              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
+                            >
+                              V&amp;V 내보내기
+                            </Link>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="px-4 py-4 font-black text-slate-950">AI 평가</td>
+                          <td className="px-4 py-4 font-semibold">{validationSampleEntries.length}건</td>
+                          <td className="px-4 py-4 font-semibold text-slate-600">최근 검토 가능한 평가 결과 수</td>
+                          <td className="px-4 py-4">
+                            <Link
+                              href="/api/therapist/system/ai-evaluation-export"
+                              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
+                            >
+                              AI 평가 내보내기
+                            </Link>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </section>
             ) : activeSection === "members" ? (
               selectedPatientId ? (
                 <section className="space-y-6">
@@ -493,99 +1125,112 @@ export function AdminConsoleClient({
                       </div>
                     ) : selectedPatientDetail ? (
                       <div className="space-y-6 px-6 py-6">
-                        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                          <MetricCard
-                            label="사용자명"
-                            value={selectedPatientDetail.patient.patientName}
-                            note={selectedPatientDetail.patient.patientCode}
-                          />
-                          <MetricCard
-                            label="로그인 ID"
-                            value={selectedPatientDetail.patient.loginId ?? "-"}
-                            note="등록된 계정 정보"
-                          />
-                          <MetricCard
-                            label="최근 결과"
-                            value={`${selectedPatientDetail.entries.length}건`}
-                            note="누적 저장 결과 수"
-                          />
-                          <MetricCard
-                            label="최근 AQ"
-                            value={
-                              selectedPatientDetail.entries.length
-                                ? Number(selectedPatientDetail.entries[0]?.aq ?? 0).toFixed(1)
-                                : "-"
-                            }
-                            note="가장 최근 저장 결과 기준"
-                          />
-                        </section>
-
-                        <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-                          <div className="rounded-[20px] border border-slate-200 bg-slate-50 p-5">
-                            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-                              기본 정보
-                            </p>
-                            <div className="mt-4 space-y-3 text-sm">
-                              <div>
-                                <p className="font-black text-slate-950">
+                        <div className="grid gap-5">
+                          <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+                            <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white px-5 py-4">
+                              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                                기본 정보
+                              </p>
+                            </div>
+                            <div className="space-y-3 p-5">
+                              <div className="flex flex-wrap items-center gap-3 rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3">
+                                <span className="text-lg font-black text-slate-950">
                                   {selectedPatientDetail.patient.patientName}
-                                </p>
-                                <p className="mt-1 font-medium text-slate-500">
+                                </span>
+                                <span className="text-sm font-semibold text-slate-500">
                                   {selectedPatientDetail.patient.patientCode}
-                                </p>
+                                </span>
                               </div>
-                              <div className="grid gap-3 sm:grid-cols-2">
-                                <DetailBlock
-                                  label="로그인 ID"
-                                  value={selectedPatientDetail.patient.loginId ?? "-"}
-                                />
-                                <DetailBlock
-                                  label="생년월일"
-                                  value={selectedPatientDetail.patient.birthDate ?? "-"}
-                                />
-                                <DetailBlock
-                                  label="연락처"
-                                  value={selectedPatientDetail.patient.phone ?? "-"}
-                                />
-                                <DetailBlock
-                                  label="결과 수"
-                                  value={`${selectedPatientDetail.entries.length}건`}
+                              <div className="flex flex-wrap gap-2">
+                                <InlineInfo label="로그인 ID" value={selectedPatientDetail.patient.loginId ?? "-"} />
+                                <InlineInfo label="생년월일" value={selectedPatientDetail.patient.birthDate ?? "-"} />
+                                <InlineInfo label="연락처" value={selectedPatientDetail.patient.phone ?? "-"} />
+                                <InlineInfo label="결과 수" value={`${selectedPatientDetail.entries.length}건`} />
+                                <InlineInfo
+                                  label="최근 AQ"
+                                  value={
+                                    selectedPatientDetail.entries.length
+                                      ? Number(selectedPatientDetail.entries[0]?.aq ?? 0).toFixed(1)
+                                      : "-"
+                                  }
                                 />
                               </div>
                             </div>
                           </div>
 
-                          <div className="rounded-[20px] border border-slate-200 bg-slate-50 p-5">
-                            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-                              최근 결과 요약
-                            </p>
-                            <div className="mt-4 space-y-3">
-                              {selectedPatientDetail.entries.slice(0, 5).map((entry) => (
-                                <div
-                                  key={entry.historyId}
-                                  className="rounded-[18px] border border-slate-200 bg-white p-4"
-                                >
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-black text-slate-700">
-                                      {entry.trainingMode === "sing"
-                                        ? "노래"
-                                        : entry.trainingMode === "rehab"
-                                          ? `재활${entry.rehabStep ? ` Step ${entry.rehabStep}` : ""}`
-                                          : "자가진단"}
-                                    </span>
-                                    <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-black text-sky-700">
-                                      AQ {Number(entry.aq ?? 0).toFixed(1)}
-                                    </span>
+                          <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+                            <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white px-5 py-4">
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                                  최근 결과 요약
+                                </p>
+                                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-700">
+                                  최근 {Math.min(selectedPatientDetail.entries.length, 5)}건
+                                </span>
+                              </div>
+                            </div>
+                            <div className="space-y-2 p-5">
+                              {selectedPatientDetail.entries.slice(0, 5).map((entry) => {
+                                const saveState = (entry as TrainingHistoryEntry & { dbSaveState?: string })
+                                  .dbSaveState;
+                                const modeLabel =
+                                  entry.trainingMode === "sing"
+                                    ? "노래"
+                                    : entry.trainingMode === "rehab"
+                                      ? `재활${entry.rehabStep ? ` Step ${entry.rehabStep}` : ""}`
+                                      : "자가진단";
+                                const measurementLabel =
+                                  entry.measurementQuality?.overall === "measured"
+                                    ? "측정 완료"
+                                    : entry.measurementQuality?.overall === "partial"
+                                      ? "부분 측정"
+                                      : entry.measurementQuality?.overall === "demo"
+                                        ? "데모"
+                                        : "확인 필요";
+                                const saveStateLabel =
+                                  saveState === "saved"
+                                    ? "저장 완료"
+                                    : saveState === "failed"
+                                      ? "저장 실패"
+                                      : saveState === "temporary"
+                                        ? "임시 저장"
+                                        : "저장 상태 확인";
+                                const trackingQuality = entry.facialAnalysisSnapshot?.trackingQuality;
+                                const trackingLabel =
+                                  typeof trackingQuality === "number" && trackingQuality > 0
+                                    ? `얼굴 추적 품질 ${trackingQuality.toFixed(1)}`
+                                    : "얼굴 추적 데이터 없음";
+                                const noteCount = entry.measurementQuality?.notes?.length ?? 0;
+                                const noteLabel =
+                                  noteCount > 0 ? `품질 메모 ${noteCount}건` : "품질 메모 없음";
+
+                                return (
+                                  <div
+                                    key={entry.historyId}
+                                    className="space-y-2 rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-3"
+                                  >
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-black text-slate-700">
+                                        {modeLabel}
+                                      </span>
+                                      <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-black text-sky-700">
+                                        AQ {Number(entry.aq ?? 0).toFixed(1)}
+                                      </span>
+                                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-black text-emerald-700">
+                                        {measurementLabel}
+                                      </span>
+                                      <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-black text-slate-600">
+                                        {saveStateLabel}
+                                      </span>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-semibold text-slate-600">
+                                      <span>완료 시각 {formatDateTime(new Date(entry.completedAt).toISOString())}</span>
+                                      <span className="text-slate-500">{trackingLabel}</span>
+                                      <span className="text-slate-500">{noteLabel}</span>
+                                    </div>
                                   </div>
-                                  <p className="mt-2 text-sm font-semibold text-slate-600">
-                                    완료 시각 {formatDateTime(new Date(entry.completedAt).toISOString())}
-                                  </p>
-                                  <p className="mt-1 text-xs font-bold text-slate-500">
-                                    측정 품질 {entry.measurementQuality?.overall ?? "확인 필요"} ·
-                                    검증 연결 {entry.vnv?.summary?.requirementIds?.length ?? 0}건
-                                  </p>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
                         </div>
@@ -601,29 +1246,6 @@ export function AdminConsoleClient({
                 </section>
               ) : (
                 <section className="space-y-6">
-                  <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <MetricCard
-                      label="전체 사용자"
-                      value={String(patients.length)}
-                      note="관리자 기준 가입 사용자"
-                    />
-                    <MetricCard
-                      label="활동 사용자"
-                      value={String(latestActiveCount)}
-                      note="기록이 1건 이상 있는 사용자"
-                    />
-                    <MetricCard
-                      label="등록 기관"
-                      value={String(organizations.length)}
-                      note="가입 선택 가능한 기관 수"
-                    />
-                    <MetricCard
-                      label="현재 영역"
-                      value="회원"
-                      note="회원 전체 관리 화면"
-                    />
-                  </section>
-
                   <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
                     <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
                       <div>
@@ -722,104 +1344,6 @@ export function AdminConsoleClient({
               <section className="space-y-6">
                 <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
                   <div className="flex items-center gap-2">
-                    <ClipboardList className="h-5 w-5 text-amber-600" />
-                    <div>
-                      <h2 className="text-xl font-black text-slate-950">기관 등록 요청</h2>
-                      <p className="mt-1 text-sm font-medium text-slate-500">
-                        회원가입 화면에서 들어온 기관 등록 요청을 관리자 화면 안에서 승인 또는 반려합니다.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 overflow-hidden rounded-[20px] border border-slate-200">
-                    <table className="min-w-full divide-y divide-slate-200 text-sm">
-                      <thead className="bg-slate-50">
-                        <tr>
-                          <th className="px-4 py-3 text-left font-black text-slate-700">기관명</th>
-                          <th className="px-4 py-3 text-left font-black text-slate-700">담당자</th>
-                          <th className="px-4 py-3 text-left font-black text-slate-700">연락처</th>
-                          <th className="px-4 py-3 text-left font-black text-slate-700">사업자번호</th>
-                          <th className="px-4 py-3 text-left font-black text-slate-700">상태</th>
-                          <th className="px-4 py-3 text-left font-black text-slate-700">액션</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white">
-                        {organizationRequests.length ? (
-                          organizationRequests.map((item) => {
-                            const isPending = item.status === "pending";
-                            const isReviewing = reviewingRequestId === item.id;
-                            return (
-                              <tr key={item.id}>
-                                <td className="px-4 py-4">
-                                  <p className="font-black text-slate-900">{item.organizationName}</p>
-                                  <p className="mt-1 text-xs font-semibold text-slate-500">
-                                    {item.address}
-                                  </p>
-                                </td>
-                                <td className="px-4 py-4 font-semibold text-slate-700">
-                                  {item.contactName || "-"}
-                                </td>
-                                <td className="px-4 py-4 font-semibold text-slate-700">
-                                  {item.contactPhone || item.contactEmail || "-"}
-                                </td>
-                                <td className="px-4 py-4 font-semibold text-slate-700">
-                                  {item.businessNumber || "-"}
-                                </td>
-                                <td className="px-4 py-4">
-                                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-700">
-                                    {item.status === "approved"
-                                      ? "승인 완료"
-                                      : item.status === "rejected"
-                                        ? "반려"
-                                        : "승인 대기"}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-4">
-                                  {isPending ? (
-                                    <div className="flex flex-wrap gap-2">
-                                      <button
-                                        type="button"
-                                        disabled={isReviewing}
-                                        onClick={() => reviewRequest(item.id, "approved")}
-                                        className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-                                      >
-                                        승인
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled={isReviewing}
-                                        onClick={() => reviewRequest(item.id, "rejected")}
-                                        className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
-                                      >
-                                        반려
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <p className="text-xs font-semibold text-slate-500">
-                                      {item.reviewedAt ? `처리 ${formatDateTime(item.reviewedAt)}` : "처리 완료"}
-                                    </p>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        ) : (
-                          <tr>
-                            <td
-                              colSpan={6}
-                              className="px-4 py-10 text-center text-sm font-semibold text-slate-500"
-                            >
-                              대기 중인 기관 등록 요청이 없습니다.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-
-                <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-                  <div className="flex items-center gap-2">
                     <Building2 className="h-5 w-5 text-amber-600" />
                     <h2 className="text-xl font-black text-slate-950">기관 목록</h2>
                   </div>
@@ -867,12 +1391,27 @@ export function AdminConsoleClient({
                 <div className="flex items-center gap-2 border-b border-slate-200 px-6 py-5">
                   <Stethoscope className="h-5 w-5 text-indigo-600" />
                   <div>
-                    <h2 className="text-xl font-black text-slate-950">치료사 콘솔</h2>
+                    <h2 className="text-xl font-black text-slate-950">치료사 관리</h2>
                     <p className="mt-1 text-sm font-medium text-slate-500">
                       등록된 치료사 계정과 담당 사용자 수를 관리자 화면 내부에서 확인합니다.
                     </p>
                   </div>
                 </div>
+
+                {(therapistError || therapistSuccess) && (
+                  <div className="px-6 pt-5">
+                    {therapistError ? (
+                      <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
+                        {therapistError}
+                      </div>
+                    ) : null}
+                    {therapistSuccess ? (
+                      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+                        {therapistSuccess}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
 
                 <div className="overflow-x-auto px-6 py-5">
                   <table className="min-w-full border-collapse text-sm">
@@ -880,37 +1419,75 @@ export function AdminConsoleClient({
                       <tr className="bg-[#1c2133] text-left text-white">
                         <th className="px-4 py-3 font-black">번호</th>
                         <th className="px-4 py-3 font-black">치료사명</th>
-                        <th className="px-4 py-3 font-black">소속 기관</th>
-                        <th className="px-4 py-3 font-black">로그인 ID</th>
+                        <th className="px-4 py-3 font-black">의료 자격</th>
+                        <th className="px-4 py-3 font-black">소속 / 권한</th>
+                        <th className="px-4 py-3 font-black">연락 / 동의</th>
                         <th className="px-4 py-3 font-black">승인 상태</th>
                         <th className="px-4 py-3 font-black">담당 사용자</th>
                         <th className="px-4 py-3 font-black">최근 로그인</th>
+                        <th className="px-4 py-3 font-black">액션</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {therapists.length ? (
-                        therapists.map((item, index) => (
+                      {approvedTherapists.length ? (
+                        approvedTherapists.map((item, index) => (
                           <tr
                             key={item.therapistUserId}
                             className="border-b border-slate-200 bg-white text-slate-700"
                           >
                             <td className="px-4 py-4 font-semibold">
-                              {therapists.length - index}
+                              {approvedTherapists.length - index}
                             </td>
                             <td className="px-4 py-4 font-black text-slate-950">
-                              {item.therapistName}
+                              <p>{item.therapistName}</p>
+                              <p className="mt-1 text-xs font-semibold text-slate-500">
+                                {item.loginId ?? "-"} · {item.email ?? "이메일 미입력"}
+                              </p>
                             </td>
                             <td className="px-4 py-4 font-semibold">
-                              {item.organizationName ?? "기관 정보 없음"}
+                              <p>{formatTherapistProfession(item.profession)}</p>
+                              <p className="mt-1 text-xs font-semibold text-slate-500">
+                                자격번호 {item.licenseNumber ?? "-"}
+                              </p>
+                              <p className="mt-1 text-xs font-semibold text-slate-500">
+                                {item.licenseIssuedBy ?? "발급기관 미입력"} ·{" "}
+                                {item.licenseIssuedDate ?? "발급일 미입력"}
+                              </p>
                             </td>
-                            <td className="px-4 py-4 font-semibold">{item.loginId ?? "-"}</td>
+                            <td className="px-4 py-4">
+                              <p className="font-semibold text-slate-700">
+                                {item.organizationName ?? item.requestedOrganizationName ?? "기관 정보 없음"}
+                              </p>
+                              <p className="mt-1 text-xs font-semibold text-slate-500">
+                                {formatEmploymentStatus(item.employmentStatus)}
+                                {item.department ? ` · ${item.department}` : ""}
+                              </p>
+                              <p className="mt-1 text-xs font-semibold text-slate-500">
+                                역할 {formatAccessRole(item.accessRole)} · {formatTwoFactorMethod(item.twoFactorMethod)}
+                              </p>
+                              <p className="mt-1 text-xs font-semibold text-slate-500">
+                                {summarizeTherapistPermissions(item)}
+                              </p>
+                            </td>
+                            <td className="px-4 py-4 font-semibold text-slate-700">
+                              <p>{item.phone ?? "연락처 미입력"}</p>
+                              <p className="mt-1 text-xs font-semibold text-slate-500">
+                                경력 {item.experienceYears != null ? `${item.experienceYears}년` : "미입력"}
+                                {item.specialties ? ` · ${item.specialties}` : ""}
+                              </p>
+                              <p className="mt-1 text-xs font-semibold text-slate-500">
+                                동의 {item.privacyAgreed ? "개인정보" : "개인정보 미동의"} /{" "}
+                                {item.patientDataAccessAgreed ? "환자데이터" : "환자데이터 미동의"} /{" "}
+                                {item.securityPolicyAgreed ? "보안정책" : "보안정책 미동의"} /{" "}
+                                {item.confidentialityAgreed ? "비밀유지" : "비밀유지 미동의"}
+                              </p>
+                              <p className="mt-1 text-xs font-semibold text-slate-500">
+                                목적 {item.servicePurpose ?? "-"} / 대상 {item.targetPatientTypes ?? "-"} / IRB {formatIrbParticipation(item.irbParticipation)}
+                              </p>
+                            </td>
                             <td className="px-4 py-4">
                               <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-700">
-                                {item.approvalState === "pending"
-                                  ? "승인 대기"
-                                  : item.approvalState === "approved"
-                                    ? "승인 완료"
-                                    : "상태 확인"}
+                                승인 완료
                               </span>
                             </td>
                             <td className="px-4 py-4 font-semibold">
@@ -919,15 +1496,20 @@ export function AdminConsoleClient({
                             <td className="px-4 py-4 font-semibold">
                               {formatDateTime(item.lastLoginAt)}
                             </td>
+                            <td className="px-4 py-4">
+                              <span className="text-xs font-semibold text-slate-400">
+                                처리 완료
+                              </span>
+                            </td>
                           </tr>
                         ))
                       ) : (
                         <tr>
                           <td
-                            colSpan={7}
+                            colSpan={9}
                             className="px-4 py-10 text-center text-sm font-semibold text-slate-500"
                           >
-                            표시할 치료사 계정이 없습니다.
+                            승인된 치료사 계정이 없습니다.
                           </td>
                         </tr>
                       )}
@@ -935,166 +1517,136 @@ export function AdminConsoleClient({
                   </table>
                 </div>
               </section>
-            ) : activeSection === "operations" ? (
+            ) : (
               <section className="space-y-6">
-                <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-                  <div className="flex items-center gap-2">
-                    <Activity className="h-5 w-5 text-sky-600" />
+                <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
+                  <div className="flex items-center gap-2 border-b border-slate-200 px-6 py-5">
+                    <Stethoscope className="h-5 w-5 text-indigo-600" />
                     <div>
-                      <h2 className="text-xl font-black text-slate-950">운영 시스템</h2>
+                      <h2 className="text-xl font-black text-slate-950">치료사 관리</h2>
                       <p className="mt-1 text-sm font-medium text-slate-500">
-                        관리자 콘솔 안에서 운영 도구와 검증 현황을 한 번에 열어보는 내부 운영 허브입니다.
+                        등록된 치료사 계정과 담당 사용자 수를 관리자 화면 내부에서 확인합니다.
                       </p>
                     </div>
                   </div>
 
-                  <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <MetricCard label="측정 완료" value={String(usageSummary.measuredCount)} note="measured 결과 수" />
-                    <MetricCard label="저장 실패" value={String(usageSummary.failedCount)} note="즉시 확인 필요" />
-                    <MetricCard label="검증 연결" value={String(usageSummary.vnvLinkedCount)} note="V&V 연결 결과 수" />
-                    <MetricCard label="등록 기관" value={String(organizations.length)} note="현재 승인된 기관 수" />
-                  </div>
-                </section>
-
-                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <button
-                    type="button"
-                    onClick={() => setActiveSection("usage")}
-                    className="rounded-[24px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:bg-slate-50"
-                  >
-                    <p className="text-lg font-black text-slate-900">사용량 관리</p>
-                    <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
-                      사용자별 자가진단, 재활, 노래 누적량과 최근 활동을 확인합니다.
-                    </p>
-                    <span className="mt-5 inline-flex text-sm font-black text-sky-700">열기</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveSection("organizations")}
-                    className="rounded-[24px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:bg-slate-50"
-                  >
-                    <p className="text-lg font-black text-slate-900">기관 관리</p>
-                    <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
-                      기관 등록 요청 승인과 승인된 기관 목록을 관리자 화면 안에서 확인합니다.
-                    </p>
-                    <span className="mt-5 inline-flex text-sm font-black text-sky-700">열기</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveSection("therapists")}
-                    className="rounded-[24px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:bg-slate-50"
-                  >
-                    <p className="text-lg font-black text-slate-900">치료사 콘솔</p>
-                    <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
-                      치료사 승인 상태, 소속 기관, 담당 사용자 수를 한 화면에서 점검합니다.
-                    </p>
-                    <span className="mt-5 inline-flex text-sm font-black text-sky-700">열기</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveSection("security")}
-                    className="rounded-[24px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:bg-slate-50"
-                  >
-                    <p className="text-lg font-black text-slate-900">보안·검증 현황</p>
-                    <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
-                      저장 상태, 측정 품질, 검증 연결 수와 export 버튼을 확인합니다.
-                    </p>
-                    <span className="mt-5 inline-flex text-sm font-black text-sky-700">열기</span>
-                  </button>
-                </section>
-              </section>
-            ) : activeSection === "usage" ? (
-              <section className="space-y-6">
-                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <MetricCard label="자가진단" value={String(usageSummary.selfCount)} note="누적 자가진단 기록" />
-                  <MetricCard label="재활" value={String(usageSummary.rehabCount)} note="누적 재활 기록" />
-                  <MetricCard label="노래" value={String(usageSummary.singCount)} note="누적 노래 기록" />
-                  <MetricCard label="활동 사용자" value={String(latestActiveCount)} note="최근 활동 사용자 수" />
-                </section>
-
-                <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-                  <div className="flex items-center gap-2">
-                    <BarChart3 className="h-5 w-5 text-sky-600" />
-                    <div>
-                      <h2 className="text-xl font-black text-slate-950">사용량 관리</h2>
-                      <p className="mt-1 text-sm font-medium text-slate-500">
-                        사용자별 훈련 누적량과 최근 활동을 관리자 콘솔 안에서 확인합니다.
-                      </p>
+                  {(therapistError || therapistSuccess) && (
+                    <div className="px-6 pt-5">
+                      {therapistError ? (
+                        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
+                          {therapistError}
+                        </div>
+                      ) : null}
+                      {therapistSuccess ? (
+                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+                          {therapistSuccess}
+                        </div>
+                      ) : null}
                     </div>
-                  </div>
+                  )}
 
-                  <div className="mt-5 overflow-x-auto">
+                  <div className="overflow-x-auto px-6 py-5">
                     <table className="min-w-full border-collapse text-sm">
                       <thead>
                         <tr className="bg-[#1c2133] text-left text-white">
-                          <th className="px-4 py-3 font-black">사용자명</th>
-                          <th className="px-4 py-3 font-black">자가진단</th>
-                          <th className="px-4 py-3 font-black">재활</th>
-                          <th className="px-4 py-3 font-black">노래</th>
-                          <th className="px-4 py-3 font-black">최근 활동</th>
+                          <th className="px-4 py-3 font-black">번호</th>
+                          <th className="px-4 py-3 font-black">치료사명</th>
+                          <th className="px-4 py-3 font-black">의료 자격</th>
+                          <th className="px-4 py-3 font-black">소속 / 권한</th>
+                          <th className="px-4 py-3 font-black">연락 / 동의</th>
+                          <th className="px-4 py-3 font-black">승인 상태</th>
+                          <th className="px-4 py-3 font-black">담당 사용자</th>
+                          <th className="px-4 py-3 font-black">최근 로그인</th>
+                          <th className="px-4 py-3 font-black">액션</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {patients.map((item) => (
-                          <tr key={item.patientId} className="border-b border-slate-200 bg-white text-slate-700">
-                            <td className="px-4 py-4 font-black text-slate-950">{item.patientName}</td>
-                            <td className="px-4 py-4 font-semibold">{item.selfAssessmentCount}</td>
-                            <td className="px-4 py-4 font-semibold">{item.rehabCount}</td>
-                            <td className="px-4 py-4 font-semibold">{item.singCount}</td>
-                            <td className="px-4 py-4 font-semibold">{formatDateTime(item.latestActivityAt)}</td>
+                        {approvedTherapists.length ? (
+                          approvedTherapists.map((item, index) => (
+                            <tr
+                              key={item.therapistUserId}
+                              className="border-b border-slate-200 bg-white text-slate-700"
+                            >
+                              <td className="px-4 py-4 font-semibold">
+                                {approvedTherapists.length - index}
+                              </td>
+                              <td className="px-4 py-4 font-black text-slate-950">
+                                <p>{item.therapistName}</p>
+                                <p className="mt-1 text-xs font-semibold text-slate-500">
+                                  {item.loginId ?? "-"} · {item.email ?? "이메일 미입력"}
+                                </p>
+                              </td>
+                              <td className="px-4 py-4 font-semibold">
+                                <p>{formatTherapistProfession(item.profession)}</p>
+                                <p className="mt-1 text-xs font-semibold text-slate-500">
+                                  자격번호 {item.licenseNumber ?? "-"}
+                                </p>
+                                <p className="mt-1 text-xs font-semibold text-slate-500">
+                                  {item.licenseIssuedBy ?? "발급기관 미입력"} ·{" "}
+                                  {item.licenseIssuedDate ?? "발급일 미입력"}
+                                </p>
+                              </td>
+                              <td className="px-4 py-4">
+                                <p className="font-semibold text-slate-700">
+                                  {item.organizationName ?? item.requestedOrganizationName ?? "기관 정보 없음"}
+                                </p>
+                                <p className="mt-1 text-xs font-semibold text-slate-500">
+                                  {formatEmploymentStatus(item.employmentStatus)}
+                                  {item.department ? ` · ${item.department}` : ""}
+                                </p>
+                                <p className="mt-1 text-xs font-semibold text-slate-500">
+                                  역할 {formatAccessRole(item.accessRole)} · {formatTwoFactorMethod(item.twoFactorMethod)}
+                                </p>
+                                <p className="mt-1 text-xs font-semibold text-slate-500">
+                                  {summarizeTherapistPermissions(item)}
+                                </p>
+                              </td>
+                              <td className="px-4 py-4 font-semibold text-slate-700">
+                                <p>{item.phone ?? "연락처 미입력"}</p>
+                                <p className="mt-1 text-xs font-semibold text-slate-500">
+                                  경력 {item.experienceYears != null ? `${item.experienceYears}년` : "미입력"}
+                                  {item.specialties ? ` · ${item.specialties}` : ""}
+                                </p>
+                                <p className="mt-1 text-xs font-semibold text-slate-500">
+                                  동의 {item.privacyAgreed ? "개인정보" : "개인정보 미동의"} /{" "}
+                                  {item.patientDataAccessAgreed ? "환자데이터" : "환자데이터 미동의"} /{" "}
+                                  {item.securityPolicyAgreed ? "보안정책" : "보안정책 미동의"} /{" "}
+                                  {item.confidentialityAgreed ? "비밀유지" : "비밀유지 미동의"}
+                                </p>
+                                <p className="mt-1 text-xs font-semibold text-slate-500">
+                                  목적 {item.servicePurpose ?? "-"} / 대상 {item.targetPatientTypes ?? "-"} / IRB {formatIrbParticipation(item.irbParticipation)}
+                                </p>
+                              </td>
+                              <td className="px-4 py-4">
+                                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-700">
+                                  승인 완료
+                                </span>
+                              </td>
+                              <td className="px-4 py-4 font-semibold">
+                                {item.assignedPatientCount}명
+                              </td>
+                              <td className="px-4 py-4 font-semibold">
+                                {formatDateTime(item.lastLoginAt)}
+                              </td>
+                              <td className="px-4 py-4">
+                                <span className="text-xs font-semibold text-slate-400">
+                                  처리 완료
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td
+                              colSpan={9}
+                              className="px-4 py-10 text-center text-sm font-semibold text-slate-500"
+                            >
+                              승인된 치료사 계정이 없습니다.
+                            </td>
                           </tr>
-                        ))}
+                        )}
                       </tbody>
                     </table>
-                  </div>
-                </section>
-              </section>
-            ) : (
-              <section className="space-y-6">
-                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <MetricCard label="측정 완료" value={String(usageSummary.measuredCount)} note="measured 결과 수" />
-                  <MetricCard label="저장 실패" value={String(usageSummary.failedCount)} note="즉시 확인 필요" />
-                  <MetricCard label="검증 연결" value={String(usageSummary.vnvLinkedCount)} note="V&V 연결 결과 수" />
-                  <MetricCard label="전체 결과" value={String(validationSampleEntries.length)} note="최근 검토 가능한 결과 수" />
-                </section>
-
-                <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-                  <div className="flex items-center gap-2">
-                    <Activity className="h-5 w-5 text-emerald-600" />
-                    <div>
-                      <h2 className="text-xl font-black text-slate-950">보안·검증 현황</h2>
-                      <p className="mt-1 text-sm font-medium text-slate-500">
-                        저장 상태, 측정 품질, 검증 연결 수를 관리자 화면 안에서 확인합니다.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                    <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-5">
-                      <p className="text-sm font-black text-slate-500">즉시 확인 필요</p>
-                      <ul className="mt-3 space-y-2 text-sm font-medium text-slate-700">
-                        <li>저장 실패 결과: {usageSummary.failedCount}건</li>
-                        <li>측정 완료 결과: {usageSummary.measuredCount}건</li>
-                        <li>검증 연결 결과: {usageSummary.vnvLinkedCount}건</li>
-                      </ul>
-                    </div>
-                    <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-5">
-                      <p className="text-sm font-black text-slate-500">바로가기</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Link
-                          href="/api/therapist/system/vnv-export"
-                          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
-                        >
-                          V&amp;V 내보내기
-                        </Link>
-                        <Link
-                          href="/api/therapist/system/ai-evaluation-export"
-                          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
-                        >
-                          AI 평가 내보내기
-                        </Link>
-                      </div>
-                    </div>
                   </div>
                 </section>
               </section>
@@ -1158,6 +1710,38 @@ function DetailBlock({
         {label}
       </p>
       <p className="mt-2 text-sm font-bold text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function InlineInfo({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2">
+      <span className="text-xs font-black text-slate-500">{label}</span>
+      <span className="text-sm font-black text-slate-900">{value}</span>
+    </div>
+  );
+}
+
+function MiniStat({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-[14px] border border-slate-200 bg-white px-3 py-3">
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+        {label}
+      </p>
+      <p className="mt-1 text-sm font-black text-slate-900">{value}</p>
     </div>
   );
 }

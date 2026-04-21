@@ -16,6 +16,7 @@
 - [SaMD / 공인성적서 문서 맵](file:///C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/samd-document-map.html)
 - [UI 인포그래픽 구현 체크리스트](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/ui-infographic-implementation-checklist.md)
 - [병원 / 역할 / 배정 구조 설계안](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/organization-role-scope-design.md)
+- [계정 / 기관 / 매칭 재설계안](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/account-onboarding-redesign.md)
 
 ## 핵심 5개 문서
 

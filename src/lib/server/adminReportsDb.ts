@@ -100,7 +100,9 @@ export async function listAdminPatientReportSummaries(sessionToken: string) {
         ) AS sing_count
       FROM patient_pii pii
       JOIN patient_pseudonym_map ppm ON ppm.patient_id = pii.patient_id
-      JOIN app_users au ON au.patient_id = pii.patient_id
+      JOIN app_users au
+        ON au.patient_id = pii.patient_id
+       AND au.user_role = 'patient'
       ORDER BY latest_activity_at DESC NULLS LAST, pii.created_at DESC
     `,
   );

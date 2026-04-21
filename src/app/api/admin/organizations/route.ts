@@ -76,10 +76,27 @@ export async function POST(req: Request) {
       if (reviewed.status === "approved") {
         organization = await createManagedOrganization({
           name: reviewed.organizationName,
-          address: reviewed.address,
+          address: `${reviewed.roadAddress} ${reviewed.addressDetail}`.trim(),
           businessNumber: reviewed.businessNumber,
           representativeName: reviewed.representativeName,
           organizationPhone: reviewed.organizationPhone,
+          organizationType: reviewed.organizationType,
+          careInstitutionNumber: reviewed.careInstitutionNumber,
+          medicalInstitutionCode: reviewed.medicalInstitutionCode,
+          medicalDepartments: reviewed.medicalDepartments,
+          postalCode: reviewed.postalCode,
+          roadAddress: reviewed.roadAddress,
+          addressDetail: reviewed.addressDetail,
+          contactName: reviewed.contactName,
+          contactTitle: reviewed.contactTitle,
+          contactPhone: reviewed.contactPhone,
+          contactEmail: reviewed.contactEmail,
+          adminLoginEmail: reviewed.adminLoginEmail,
+          twoFactorMethod: reviewed.twoFactorMethod,
+          servicePurpose: reviewed.servicePurpose,
+          targetPatients: reviewed.targetPatients,
+          doctorName: reviewed.doctorName,
+          doctorLicenseNumber: reviewed.doctorLicenseNumber,
         });
       }
 

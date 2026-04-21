@@ -10,11 +10,39 @@ export async function POST(req: Request) {
         organizationName?: string;
         businessNumber?: string;
         representativeName?: string;
+        organizationType?: string;
+        openedDate?: string;
+        businessLicenseFileName?: string;
+        businessLicenseFileDataUrl?: string;
+        careInstitutionNumber?: string;
+        medicalInstitutionCode?: string;
+        medicalDepartments?: string;
+        bedCount?: number;
         organizationPhone?: string;
-        address?: string;
+        postalCode?: string;
+        roadAddress?: string;
+        addressDetail?: string;
         contactName?: string;
+        contactTitle?: string;
         contactPhone?: string;
         contactEmail?: string;
+        adminLoginEmail?: string;
+        adminPassword?: string;
+        twoFactorMethod?: "otp" | "sms";
+        billingEmail?: string;
+        bankName?: string;
+        bankAccountNumber?: string;
+        bankAccountHolder?: string;
+        servicePurpose?: string;
+        targetPatients?: string;
+        doctorName?: string;
+        doctorLicenseNumber?: string;
+        irbStatus?: "not_applicable" | "planned" | "approved";
+        termsAgreed?: boolean;
+        privacyAgreed?: boolean;
+        medicalDataAgreed?: boolean;
+        contractAgreed?: boolean;
+        patientDataAgreed?: boolean;
       }
     | null;
 
@@ -27,11 +55,39 @@ export async function POST(req: Request) {
       organizationName: body.organizationName ?? "",
       businessNumber: body.businessNumber ?? "",
       representativeName: body.representativeName ?? "",
+      organizationType: body.organizationType ?? "",
+      openedDate: body.openedDate ?? "",
+      businessLicenseFileName: body.businessLicenseFileName ?? "",
+      businessLicenseFileDataUrl: body.businessLicenseFileDataUrl ?? "",
+      careInstitutionNumber: body.careInstitutionNumber ?? "",
+      medicalInstitutionCode: body.medicalInstitutionCode ?? "",
+      medicalDepartments: body.medicalDepartments ?? "",
+      bedCount: body.bedCount,
       organizationPhone: body.organizationPhone ?? "",
-      address: body.address ?? "",
+      postalCode: body.postalCode ?? "",
+      roadAddress: body.roadAddress ?? "",
+      addressDetail: body.addressDetail ?? "",
       contactName: body.contactName ?? "",
+      contactTitle: body.contactTitle ?? "",
       contactPhone: body.contactPhone ?? "",
       contactEmail: body.contactEmail ?? "",
+      adminLoginEmail: body.adminLoginEmail ?? "",
+      adminPassword: body.adminPassword ?? "",
+      twoFactorMethod: body.twoFactorMethod === "sms" ? "sms" : "otp",
+      billingEmail: body.billingEmail ?? "",
+      bankName: body.bankName ?? "",
+      bankAccountNumber: body.bankAccountNumber ?? "",
+      bankAccountHolder: body.bankAccountHolder ?? "",
+      servicePurpose: body.servicePurpose ?? "",
+      targetPatients: body.targetPatients ?? "",
+      doctorName: body.doctorName ?? "",
+      doctorLicenseNumber: body.doctorLicenseNumber ?? "",
+      irbStatus: body.irbStatus ?? "not_applicable",
+      termsAgreed: Boolean(body.termsAgreed),
+      privacyAgreed: Boolean(body.privacyAgreed),
+      medicalDataAgreed: Boolean(body.medicalDataAgreed),
+      contractAgreed: Boolean(body.contractAgreed),
+      patientDataAgreed: Boolean(body.patientDataAgreed),
     });
     return NextResponse.json({ ok: true, request });
   } catch (error) {

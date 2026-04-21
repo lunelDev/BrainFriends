@@ -7,6 +7,7 @@ import {
 } from "@/lib/server/adminReportsDb";
 import { listAvailableOrganizations } from "@/lib/server/organizationCatalogDb";
 import { getDbPool } from "@/lib/server/postgres";
+import { getTherapistRegistrationProfilesByUserIds } from "@/lib/server/therapistRegistrationProfiles";
 import type { TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
 
 type SessionContext = NonNullable<
@@ -19,9 +20,34 @@ export type TherapistColleagueSummary = {
   loginId: string | null;
   organizationId: string | null;
   organizationName: string | null;
+  requestedOrganizationName: string | null;
   approvalState: string | null;
   assignedPatientCount: number;
   lastLoginAt: string | null;
+  phone: string | null;
+  email: string | null;
+  profession: string | null;
+  licenseNumber: string | null;
+  licenseFileName: string | null;
+  licenseIssuedBy: string | null;
+  licenseIssuedDate: string | null;
+  employmentStatus: string | null;
+  department: string | null;
+  twoFactorMethod: string | null;
+  accessRole: string | null;
+  canViewPatients: boolean;
+  canEditPatientData: boolean;
+  canEnterEvaluation: boolean;
+  experienceYears: number | null;
+  specialties: string | null;
+  servicePurpose: string | null;
+  targetPatientTypes: string | null;
+  dataConsentScope: string | null;
+  irbParticipation: string | null;
+  privacyAgreed: boolean;
+  patientDataAccessAgreed: boolean;
+  securityPolicyAgreed: boolean;
+  confidentialityAgreed: boolean;
 };
 
 async function resolveScopedContext(sessionToken: string) {
@@ -321,6 +347,11 @@ export async function listTherapistColleagueSummaries(sessionToken: string) {
     queryParams,
   );
 
+  const profiles = await getTherapistRegistrationProfilesByUserIds(
+    result.rows.map((row: any) => String(row.therapist_user_id)),
+  );
+  const profileMap = new Map(profiles.map((item) => [item.userId, item] as const));
+
   return result.rows.map((row: any) => ({
     therapistUserId: String(row.therapist_user_id),
     therapistName: String(row.therapist_name),
@@ -329,8 +360,52 @@ export async function listTherapistColleagueSummaries(sessionToken: string) {
     organizationName: row.organization_id
       ? organizationNameMap.get(String(row.organization_id)) ?? null
       : null,
+    requestedOrganizationName:
+      profileMap.get(String(row.therapist_user_id))?.requestedOrganizationName ?? null,
     approvalState: row.approval_state ? String(row.approval_state) : null,
     assignedPatientCount: Number(row.assigned_patient_count ?? 0),
     lastLoginAt: row.last_login_at ? String(row.last_login_at) : null,
+    phone: profileMap.get(String(row.therapist_user_id))?.phone ?? null,
+    email: profileMap.get(String(row.therapist_user_id))?.email ?? null,
+    profession: profileMap.get(String(row.therapist_user_id))?.profession ?? null,
+    licenseNumber:
+      profileMap.get(String(row.therapist_user_id))?.licenseNumber ?? null,
+    licenseFileName:
+      profileMap.get(String(row.therapist_user_id))?.licenseFileName ?? null,
+    licenseIssuedBy:
+      profileMap.get(String(row.therapist_user_id))?.licenseIssuedBy ?? null,
+    licenseIssuedDate:
+      profileMap.get(String(row.therapist_user_id))?.licenseIssuedDate ?? null,
+    employmentStatus:
+      profileMap.get(String(row.therapist_user_id))?.employmentStatus ?? null,
+    department: profileMap.get(String(row.therapist_user_id))?.department ?? null,
+    twoFactorMethod:
+      profileMap.get(String(row.therapist_user_id))?.twoFactorMethod ?? null,
+    accessRole: profileMap.get(String(row.therapist_user_id))?.accessRole ?? null,
+    canViewPatients:
+      profileMap.get(String(row.therapist_user_id))?.canViewPatients ?? false,
+    canEditPatientData:
+      profileMap.get(String(row.therapist_user_id))?.canEditPatientData ?? false,
+    canEnterEvaluation:
+      profileMap.get(String(row.therapist_user_id))?.canEnterEvaluation ?? false,
+    experienceYears:
+      profileMap.get(String(row.therapist_user_id))?.experienceYears ?? null,
+    specialties: profileMap.get(String(row.therapist_user_id))?.specialties ?? null,
+    servicePurpose:
+      profileMap.get(String(row.therapist_user_id))?.servicePurpose ?? null,
+    targetPatientTypes:
+      profileMap.get(String(row.therapist_user_id))?.targetPatientTypes ?? null,
+    dataConsentScope:
+      profileMap.get(String(row.therapist_user_id))?.dataConsentScope ?? null,
+    irbParticipation:
+      profileMap.get(String(row.therapist_user_id))?.irbParticipation ?? null,
+    privacyAgreed:
+      profileMap.get(String(row.therapist_user_id))?.privacyAgreed ?? false,
+    patientDataAccessAgreed:
+      profileMap.get(String(row.therapist_user_id))?.patientDataAccessAgreed ?? false,
+    securityPolicyAgreed:
+      profileMap.get(String(row.therapist_user_id))?.securityPolicyAgreed ?? false,
+    confidentialityAgreed:
+      profileMap.get(String(row.therapist_user_id))?.confidentialityAgreed ?? false,
   })) satisfies TherapistColleagueSummary[];
 }

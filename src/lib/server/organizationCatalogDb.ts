@@ -10,6 +10,23 @@ export type ManagedOrganizationEntry = OrganizationCatalogEntry & {
   businessNumber?: string;
   representativeName?: string;
   organizationPhone?: string;
+  organizationType?: string;
+  careInstitutionNumber?: string;
+  medicalInstitutionCode?: string;
+  medicalDepartments?: string;
+  postalCode?: string;
+  roadAddress?: string;
+  addressDetail?: string;
+  contactName?: string;
+  contactTitle?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  adminLoginEmail?: string;
+  twoFactorMethod?: "otp" | "sms";
+  servicePurpose?: string;
+  targetPatients?: string;
+  doctorName?: string;
+  doctorLicenseNumber?: string;
   createdAt?: string;
   source?: "builtin" | "manual";
 };
@@ -74,6 +91,23 @@ export async function createManagedOrganization(input: {
   businessNumber?: string;
   representativeName?: string;
   organizationPhone?: string;
+  organizationType?: string;
+  careInstitutionNumber?: string;
+  medicalInstitutionCode?: string;
+  medicalDepartments?: string;
+  postalCode?: string;
+  roadAddress?: string;
+  addressDetail?: string;
+  contactName?: string;
+  contactTitle?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  adminLoginEmail?: string;
+  twoFactorMethod?: "otp" | "sms";
+  servicePurpose?: string;
+  targetPatients?: string;
+  doctorName?: string;
+  doctorLicenseNumber?: string;
 }) {
   const name = input.name.trim();
   const address = input.address.trim();
@@ -97,6 +131,23 @@ export async function createManagedOrganization(input: {
     businessNumber: String(input.businessNumber ?? "").trim() || undefined,
     representativeName: String(input.representativeName ?? "").trim() || undefined,
     organizationPhone: String(input.organizationPhone ?? "").trim() || undefined,
+    organizationType: String(input.organizationType ?? "").trim() || undefined,
+    careInstitutionNumber: String(input.careInstitutionNumber ?? "").trim() || undefined,
+    medicalInstitutionCode: String(input.medicalInstitutionCode ?? "").trim() || undefined,
+    medicalDepartments: String(input.medicalDepartments ?? "").trim() || undefined,
+    postalCode: String(input.postalCode ?? "").trim() || undefined,
+    roadAddress: String(input.roadAddress ?? "").trim() || undefined,
+    addressDetail: String(input.addressDetail ?? "").trim() || undefined,
+    contactName: String(input.contactName ?? "").trim() || undefined,
+    contactTitle: String(input.contactTitle ?? "").trim() || undefined,
+    contactPhone: String(input.contactPhone ?? "").trim() || undefined,
+    contactEmail: String(input.contactEmail ?? "").trim() || undefined,
+    adminLoginEmail: String(input.adminLoginEmail ?? "").trim() || undefined,
+    twoFactorMethod: input.twoFactorMethod,
+    servicePurpose: String(input.servicePurpose ?? "").trim() || undefined,
+    targetPatients: String(input.targetPatients ?? "").trim() || undefined,
+    doctorName: String(input.doctorName ?? "").trim() || undefined,
+    doctorLicenseNumber: String(input.doctorLicenseNumber ?? "").trim() || undefined,
     createdAt: new Date().toISOString(),
     source: "manual",
   };
