@@ -568,7 +568,7 @@ function MetricCard({
       {!badgeClass ? (
         <p
           className={`mt-2 font-black tracking-tight text-slate-950 ${
-            compact ? "text-lg" : "text-3xl"
+            compact ? "text-base sm:text-lg" : "text-2xl sm:text-3xl"
           }`}
         >
           {value}
