@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { ShieldCheck, ClipboardCheck, Database, AlertTriangle } from "lucide-react";
-import { AUTH_COOKIE_NAME } from "@/lib/server/accountAuth";
+import {
+  AUTH_COOKIE_NAME,
+  getAuthenticatedSessionContext,
+} from "@/lib/server/accountAuth";
 import { buildVnvEvidenceSummary } from "@/lib/server/vnvEvidenceDb";
 import { getEvaluationSamplesSummary } from "@/lib/server/evaluationSamplesDb";
 import { listRecentSecurityAuditEvents } from "@/lib/server/securityAuditDb";
@@ -49,6 +53,14 @@ function formatDateTime(value?: string | null) {
 export default async function TherapistSystemPage() {
   const cookieStore = await cookies();
   const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
+
+  // 보안·검증 현황은 운영 정보라 관리자만 접근. 치료사는 종합 대시보드로 돌려보낸다.
+  const context = token
+    ? await getAuthenticatedSessionContext(token).catch(() => null)
+    : null;
+  if (!context || context.userRole !== "admin") {
+    redirect("/therapist");
+  }
 
   let vnvSummary: Awaited<ReturnType<typeof buildVnvEvidenceSummary>> | null = null;
   let evaluationSummary: Awaited<ReturnType<typeof getEvaluationSamplesSummary>> | null = null;

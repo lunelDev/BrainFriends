@@ -1,4 +1,7 @@
-import { TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
+import {
+  TrainingHistoryEntry,
+  type AcousticSnapshot,
+} from "@/lib/kwab/SessionManager";
 
 export type RehabTrendRow = {
   historyId: string;
@@ -24,6 +27,11 @@ export type StepResultCard = {
   userImage?: string;
   feedbackGood?: string;
   feedbackImprove?: string;
+  /**
+   * Parselmouth 음향 측정값. step-2/4/5 발화 카드에서만 노출.
+   * REQ-ACOUSTIC-001~004 정책에 따라 표시는 AcousticBlock 가 결정.
+   */
+  acoustic?: AcousticSnapshot | null;
 };
 
 export type FacialReport = {
@@ -728,6 +736,12 @@ export function buildStepResultCards(
               ? toNumberOrNull(it?.writingScore ?? it?.finalScore)
               : null;
     const feedback = buildFeedback(it);
+    const acousticPayload =
+      (safeStep === 2 || safeStep === 4 || safeStep === 5) &&
+      it?.acoustic &&
+      typeof it.acoustic === "object"
+        ? (it.acoustic as AcousticSnapshot)
+        : null;
     return {
       index: idx + 1,
       text,
@@ -737,6 +751,7 @@ export function buildStepResultCards(
       userImage: typeof it?.userImage === "string" ? it.userImage : undefined,
       feedbackGood: feedback?.good,
       feedbackImprove: feedback?.improve,
+      acoustic: acousticPayload,
     };
   });
 }

@@ -58,6 +58,33 @@ export interface Step1Result {
   }>;
 }
 
+// ──────── Parselmouth 음향 분석 결과 (REQ-ACOUSTIC-001~004) ────────
+// /api/proxy/voice-analysis 응답 shape 과 1:1 대응. step-2/4/5 와 sing-training
+// 에서 공통 사용. 산출 정의: docs/remediation/01-sw-vnv/parselmouth-requirements.md
+export interface AcousticSnapshot {
+  duration_sec: number | null;
+  f0: {
+    mean_hz: number | null;
+    std_hz: number | null;
+    min_hz: number | null;
+    max_hz: number | null;
+  };
+  intensity: {
+    mean_db: number | null;
+    max_db: number | null;
+  };
+  voicing_ratio: number | null;
+  measurement_quality: "measured" | "degraded" | "failed";
+  version_snapshot?: {
+    parselmouth: string;
+    praat_version_date: string;
+    python: string;
+    numpy: string;
+  } | null;
+  fallback?: boolean;
+  reason?: string;
+}
+
 export interface Step2Result {
   versionSnapshot?: VersionSnapshot;
   // 복창 훈련
@@ -83,6 +110,8 @@ export interface Step2Result {
     };
     dataSource?: "measured" | "demo";
     audioLevel: number; // dB
+    // Parselmouth 음향 분석 (REQ-ACOUSTIC-001~004). 실패 시 measurement_quality="failed".
+    acoustic?: AcousticSnapshot | null;
   }>;
   averageSymmetry: number;
   averagePronunciation: number;
@@ -142,6 +171,8 @@ export interface Step4Result {
       roundingPct: number; // 둥글림 (%)
       patternMatchPct: number; // 목표 패턴 일치도 (%)
     };
+    // Parselmouth 음향 분석 (REQ-ACOUSTIC-001~004). 실패 시 measurement_quality="failed".
+    acoustic?: AcousticSnapshot | null;
   }>;
   averageKwabScore: number;
   totalScenarios: number;
@@ -185,6 +216,8 @@ export interface Step5Result {
     dataSource?: "measured" | "demo";
     totalTime?: number;
     wordsPerMinute?: number;
+    // Parselmouth 음향 분석 (REQ-ACOUSTIC-001~004). 실패 시 measurement_quality="failed".
+    acoustic?: AcousticSnapshot | null;
   }>;
 }
 export interface Step6Result {
@@ -692,6 +725,9 @@ export class SessionManager {
               vowelAccuracy: item.vowelAccuracy,
               dataSource: item.dataSource,
               audioLevel: item.audioLevel,
+              // Parselmouth 음향 측정값(REQ-ACOUSTIC-001~004): 결과 페이지 → DB 저장
+              // 까지 살아남으려면 localStorage 라운드트립에서 보존돼야 한다.
+              acoustic: item.acoustic ?? null,
             })),
           }
         : undefined;
@@ -729,6 +765,9 @@ export class SessionManager {
               rawScore: item.rawScore,
               consonantAccuracy: item.consonantAccuracy,
               vowelAccuracy: item.vowelAccuracy,
+              // Parselmouth 음향 측정값(REQ-ACOUSTIC-001~004): 결과 페이지 → DB 저장
+              // 까지 살아남으려면 localStorage 라운드트립에서 보존돼야 한다.
+              acoustic: item.acoustic ?? null,
             })),
           }
         : undefined;
@@ -746,6 +785,9 @@ export class SessionManager {
               dataSource: item.dataSource,
               totalTime: item.totalTime,
               wordsPerMinute: item.wordsPerMinute,
+              // Parselmouth 음향 측정값(REQ-ACOUSTIC-001~004): 결과 페이지 → DB 저장
+              // 까지 살아남으려면 localStorage 라운드트립에서 보존돼야 한다.
+              acoustic: item.acoustic ?? null,
             })),
           }
         : undefined;

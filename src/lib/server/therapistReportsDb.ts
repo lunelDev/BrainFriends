@@ -8,6 +8,10 @@ import {
 import { listAvailableOrganizations } from "@/lib/server/organizationCatalogDb";
 import { getDbPool } from "@/lib/server/postgres";
 import { getTherapistRegistrationProfilesByUserIds } from "@/lib/server/therapistRegistrationProfiles";
+import {
+  listAllTherapistPatientNotes,
+  type TherapistPatientNote,
+} from "@/lib/server/therapistNotes";
 import type { TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
 
 type SessionContext = NonNullable<
@@ -408,6 +412,37 @@ export async function getTherapistPatientReportDetail(
   const context = await resolveScopedContext(sessionToken);
   await assertTherapistCanAccessPatient(context, patientId);
   return getAdminPatientReportDetail(sessionToken, patientId);
+}
+
+/**
+ * 현재 세션이 접근 가능한 환자의 메모/follow-up 만 골라서 반환한다.
+ * - admin: 전체 메모
+ * - therapist: 본인 담당 환자에 대한 메모만
+ *
+ * 반환은 patientId → TherapistPatientNote 형태의 record.
+ * 화면 단에서 환자 행과 join 해서 follow-up 뱃지/메모 미리보기를 그릴 때 사용한다.
+ */
+export async function listTherapistPatientNotesScoped(sessionToken: string) {
+  const context = await resolveScopedContext(sessionToken);
+  const allNotes = await listAllTherapistPatientNotes();
+
+  if (context.userRole === "admin") {
+    return allNotes;
+  }
+
+  const assignedPatientIds = await listAssignedPatientIds(context);
+  if (!assignedPatientIds?.length) {
+    return {} as Record<string, TherapistPatientNote>;
+  }
+
+  const allowed = new Set(assignedPatientIds);
+  const scoped: Record<string, TherapistPatientNote> = {};
+  for (const [patientId, note] of Object.entries(allNotes)) {
+    if (allowed.has(patientId)) {
+      scoped[patientId] = note;
+    }
+  }
+  return scoped;
 }
 
 export async function listTherapistColleagueSummaries(sessionToken: string) {

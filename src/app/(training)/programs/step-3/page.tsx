@@ -20,6 +20,10 @@ import { SessionManager } from "@/lib/kwab/SessionManager";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
 import {
+  clearFirstDiagnosisFlow,
+  isFirstDiagnosisFlow,
+} from "@/lib/firstDiagnosisFlow";
+import {
   analyzeArticulation,
   createInitialArticulationAnalyzerState,
 } from "@/lib/analysis/articulationAnalyzer";
@@ -179,6 +183,12 @@ function Step3Content() {
       sessionStorage.getItem("btt.trialMode") === "1";
     if (isTrialMode) {
       router.push("/");
+      return;
+    }
+    if (isFirstDiagnosisFlow()) {
+      clearFirstDiagnosisFlow();
+      saveTrainingExitProgress(place, 3);
+      router.push("/select-page/mode");
       return;
     }
     saveTrainingExitProgress(place, 3);

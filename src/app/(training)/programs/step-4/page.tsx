@@ -16,7 +16,8 @@ import { AnalysisSidebar } from "@/components/training/AnalysisSidebar";
 import { RuntimeStatusBanner } from "@/components/training/RuntimeStatusBanner";
 import { useTraining } from "../../TrainingContext";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
-import { SessionManager } from "@/lib/kwab/SessionManager";
+import { SessionManager, type AcousticSnapshot } from "@/lib/kwab/SessionManager";
+import { callVoiceAnalysis } from "@/lib/audio/voiceAnalysisClient";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
 import {
@@ -52,6 +53,10 @@ import {
   loadTransientStepStorage,
   saveTransientStepStorage,
 } from "@/lib/security/transientStepStorage";
+import {
+  clearFirstDiagnosisFlow,
+  isFirstDiagnosisFlow,
+} from "@/lib/firstDiagnosisFlow";
 
 export const dynamic = "force-dynamic";
 
@@ -95,6 +100,8 @@ type Step4EvalResult = {
     roundingPct: number;
     patternMatchPct: number;
   };
+  // Parselmouth 음향 측정값 (REQ-ACOUSTIC-001~004). 결과 페이지/DB 까지 같이 흘러간다.
+  acoustic?: AcousticSnapshot | null;
 };
 
 const shouldDisplayStep4Transcript = (
@@ -224,6 +231,12 @@ function Step4Content() {
       sessionStorage.getItem("btt.trialMode") === "1";
     if (isTrialMode) {
       router.push("/");
+      return;
+    }
+    if (isFirstDiagnosisFlow()) {
+      clearFirstDiagnosisFlow();
+      saveTrainingExitProgress(place, 4);
+      router.push("/select-page/mode");
       return;
     }
     saveTrainingExitProgress(place, 4);
@@ -816,6 +829,12 @@ function Step4Content() {
         responseStartMs,
       });
 
+      // Parselmouth 음향 측정값 (REQ-ACOUSTIC-001~004).
+      // 채점에는 영향 없음(참고 측정값) — 항상 안전한 shape 으로 반환됨.
+      const acousticSnapshot: AcousticSnapshot | null = analysis.audioBlob
+        ? await callVoiceAnalysis(analysis.audioBlob)
+        : null;
+
       const evalResult: Step4EvalResult = {
         index: currentIndex,
         situation: currentScenario.situation,
@@ -858,6 +877,7 @@ function Step4Content() {
           roundingPct: Number(vowelDetail.roundingPct.toFixed(1)),
           patternMatchPct: Number(vowelDetail.patternMatchPct.toFixed(1)),
         },
+        acoustic: acousticSnapshot,
       };
 
       let saveSucceeded = false;
@@ -914,6 +934,7 @@ function Step4Content() {
             rawScore: analysis.pronunciationScore,
             speechDuration: speechDurationSec,
             silenceRatio: 0,
+            acoustic: acousticSnapshot,
             timestamp: new Date().toLocaleTimeString(),
           };
 
@@ -1106,6 +1127,7 @@ function Step4Content() {
             articulationWritingConsistency: r.articulationWritingConsistency,
             consonantDetail: r.consonantDetail,
             vowelDetail: r.vowelDetail,
+            acoustic: r.acoustic ?? null,
           })),
           averageKwabScore: Number(averageKwabScore.toFixed(1)),
           totalScenarios: finalizedResults.length,

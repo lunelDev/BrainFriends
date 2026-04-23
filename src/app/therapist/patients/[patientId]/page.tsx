@@ -6,7 +6,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   Activity,
+  ArrowLeft,
   BarChart3,
+  ClipboardList,
   ImageIcon,
   MessageSquare,
   Music,
@@ -14,8 +16,12 @@ import {
   UserRound,
 } from "lucide-react";
 import type { PatientProfile } from "@/lib/patientStorage";
-import type { TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
+import type {
+  AcousticSnapshot,
+  TrainingHistoryEntry,
+} from "@/lib/kwab/SessionManager";
 import { persistTrainingHistoryToDatabase } from "@/lib/client/clinicalResultsApi";
+import { useTherapistConsoleGuard } from "@/hooks/useTherapistConsoleGuard";
 import {
   fetchTherapistPatientDetail,
   fetchTherapistPatientNote,
@@ -86,20 +92,123 @@ function getEntrySaveStateLabel(entry: TrainingHistoryEntry) {
   return "확인 필요";
 }
 
+/**
+ * 치료사 환자 상세 화면용 acoustic 요약.
+ * step-2/4/5 의 발화 카드별 Parselmouth 음향 측정값(REQ-ACOUSTIC-001~004)을 집계해
+ * "측정 N건 · 일부 N건 · 실패 N건" 형태의 한눈 통계로 노출한다.
+ * 점수 산정에는 영향이 없으며 참고 표시용이다.
+ */
+function summarizeEntryAcoustics(entry: TrainingHistoryEntry | null) {
+  if (!entry) return null;
+  const buckets = { measured: 0, degraded: 0, failed: 0, total: 0 };
+  const collect = (items: any[] | undefined) => {
+    if (!Array.isArray(items)) return;
+    for (const item of items) {
+      const acoustic = item?.acoustic as AcousticSnapshot | null | undefined;
+      if (!acoustic || typeof acoustic !== "object") continue;
+      buckets.total += 1;
+      if (acoustic.measurement_quality === "measured") buckets.measured += 1;
+      else if (acoustic.measurement_quality === "degraded") buckets.degraded += 1;
+      else buckets.failed += 1;
+    }
+  };
+  collect(entry.stepDetails?.step2);
+  collect(entry.stepDetails?.step4);
+  collect(entry.stepDetails?.step5);
+  if (buckets.total === 0) return null;
+  return buckets;
+}
+
+function calcAgeFromBirthDate(birthDate: string | null): number {
+  if (!birthDate) return 0;
+  const birth = new Date(birthDate);
+  if (Number.isNaN(birth.getTime())) return 0;
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  const monthDiff = now.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birth.getDate())) {
+    age -= 1;
+  }
+  return age < 0 ? 0 : age;
+}
+
 function buildRetryPatientProfile(patient: TherapistPatientDetail): PatientProfile {
+  const handRaw =
+    typeof patient.hand === "string" ? patient.hand.trim().toUpperCase() : "";
+  const hand: "R" | "L" | "U" =
+    handRaw === "R" || handRaw === "L" || handRaw === "U"
+      ? (handRaw as "R" | "L" | "U")
+      : "U";
+
   return {
     sessionId: patient.patientId,
     userRole: "therapist",
     name: patient.patientName,
     birthDate: patient.birthDate ?? undefined,
-    gender: "U",
-    age: 0,
-    educationYears: 0,
+    gender: patient.sex ?? "U",
+    age: calcAgeFromBirthDate(patient.birthDate),
+    educationYears: patient.educationYears ?? 0,
+    onsetDate: patient.onsetDate ?? undefined,
+    daysSinceOnset: patient.daysSinceOnset ?? undefined,
+    hemiplegia: patient.hemiplegia ?? undefined,
+    hemianopsia: patient.hemianopsia ?? undefined,
     phone: patient.phone ?? undefined,
-    hand: "U",
+    hand,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
+}
+
+function formatSex(value: TherapistPatientDetail["sex"]): string {
+  if (value === "M") return "남";
+  if (value === "F") return "여";
+  if (value === "U") return "미상";
+  return "-";
+}
+
+function formatHemiplegia(value: TherapistPatientDetail["hemiplegia"]): string {
+  if (value === "Y") return "있음";
+  if (value === "N") return "없음";
+  return "-";
+}
+
+function formatHemianopsia(
+  value: TherapistPatientDetail["hemianopsia"],
+): string {
+  if (value === "LEFT") return "좌측";
+  if (value === "RIGHT") return "우측";
+  if (value === "NONE") return "없음";
+  return "-";
+}
+
+function formatHand(value: TherapistPatientDetail["hand"]): string {
+  if (!value) return "-";
+  const upper = value.trim().toUpperCase();
+  if (upper === "R") return "오른손";
+  if (upper === "L") return "왼손";
+  if (upper === "U") return "미상";
+  return value;
+}
+
+function formatBirthDateWithAge(birthDate: string | null): string {
+  if (!birthDate) return "-";
+  const age = calcAgeFromBirthDate(birthDate);
+  return age > 0 ? `${birthDate} (만 ${age}세)` : birthDate;
+}
+
+function formatOnsetWithDays(
+  onsetDate: string | null,
+  days: number | null,
+): string {
+  if (!onsetDate && days == null) return "-";
+  if (onsetDate && days != null) return `${onsetDate} (발병 후 ${days}일)`;
+  if (onsetDate) return onsetDate;
+  return `발병 후 ${days}일`;
+}
+
+function formatEducationYears(value: number | null): string {
+  if (value == null) return "-";
+  return `${value}년`;
 }
 
 function collectEntryMedia(entry: TrainingHistoryEntry) {
@@ -216,6 +325,7 @@ function MiniMetric({
 }
 
 export default function TherapistPatientDetailPage() {
+  const { isReady, isAuthorized, isAdmin } = useTherapistConsoleGuard();
   const params = useParams<{ patientId: string }>();
   const patientId = String(params?.patientId ?? "");
   const [patient, setPatient] = useState<TherapistPatientDetail | null>(null);
@@ -235,6 +345,8 @@ export default function TherapistPatientDetailPage() {
   const [retryingHistoryId, setRetryingHistoryId] = useState<string | null>(null);
 
   useEffect(() => {
+    // admin/therapist 가 아니면 가드 훅이 redirect 하므로 fetch 자체를 보류.
+    if (!isReady || !isAuthorized) return;
     if (!patientId) {
       setError("사용자 ID가 없습니다.");
       setIsLoading(false);
@@ -267,7 +379,7 @@ export default function TherapistPatientDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [patientId]);
+  }, [patientId, isReady, isAuthorized]);
 
   useEffect(() => {
     if (!patientId) return;
@@ -324,6 +436,11 @@ export default function TherapistPatientDetailPage() {
       aq: Number(entry.aq ?? 0),
     }));
   }, [entries]);
+
+  const latestAcousticSummary = useMemo(
+    () => summarizeEntryAcoustics(summary.latest),
+    [summary.latest],
+  );
 
   const latestStepCards = useMemo(() => {
     const latest = summary.latest;
@@ -456,6 +573,21 @@ export default function TherapistPatientDetailPage() {
 
   return (
     <section className="space-y-6">
+      {/*
+        뒤로가기 — hero 안의 흰색 outline 버튼은 시야 끝(우측)에 묻혀 잘 안 보인다는 피드백을 받아서
+        페이지 최상단에 명시적인 좌측 정렬 back 링크를 분리해 둔다.
+        layout 의 admin 헤더(있을 때) 와 hero 사이에 위치하므로 어느 권한이든 같은 자리에서 보인다.
+      */}
+      <div>
+        <Link
+          href="/therapist"
+          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          사용자 목록으로 돌아가기
+        </Link>
+      </div>
+
       <article className="rounded-[32px] border border-slate-200 bg-gradient-to-r from-sky-600 to-indigo-600 p-6 text-white shadow-sm sm:p-8">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
@@ -470,12 +602,7 @@ export default function TherapistPatientDetailPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link
-              href="/therapist/patients"
-              className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-black text-white transition hover:bg-white/15"
-            >
-              사용자 목록
-            </Link>
+            {/* "사용자 목록" 버튼은 상단의 "← 사용자 목록으로 돌아가기" 와 중복이라 제거. */}
             <button
               type="button"
               onClick={exportPatientDetail}
@@ -563,6 +690,76 @@ export default function TherapistPatientDetailPage() {
         </aside>
       </section>
 
+      <article className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <div className="flex items-center gap-2">
+          <ClipboardList className="h-5 w-5 text-emerald-600" />
+          <h3 className="text-xl font-black text-slate-950">환자 프로필</h3>
+        </div>
+        <p className="mt-2 text-xs font-medium leading-5 text-slate-500">
+          접수 시 등록된 인적·임상 정보입니다. 비어 있는 항목은 환자 등록 단계에서 입력되지 않은 값입니다.
+        </p>
+
+        <div className="mt-5">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+            인적 정보
+          </p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <SummaryCard label="이름" value={patient.patientName} />
+            <SummaryCard
+              label="생년월일"
+              value={formatBirthDateWithAge(patient.birthDate)}
+            />
+            <SummaryCard label="성별" value={formatSex(patient.sex)} />
+            <SummaryCard label="연락처" value={patient.phone ?? "-"} />
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+            임상 정보
+          </p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <SummaryCard
+              label="발병일"
+              value={formatOnsetWithDays(patient.onsetDate, patient.daysSinceOnset)}
+            />
+            <SummaryCard
+              label="마비"
+              value={formatHemiplegia(patient.hemiplegia)}
+            />
+            <SummaryCard
+              label="시야 결손"
+              value={formatHemianopsia(patient.hemianopsia)}
+            />
+            <SummaryCard label="우세손" value={formatHand(patient.hand)} />
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <SummaryCard
+              label="교육 연수"
+              value={formatEducationYears(patient.educationYears)}
+            />
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+            담당 / 식별
+          </p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <SummaryCard
+              label="담당 치료사"
+              value={patient.therapistName ?? "-"}
+            />
+            <SummaryCard
+              label="소속 기관"
+              value={patient.therapistOrganizationName ?? "-"}
+            />
+            <SummaryCard label="사용자 코드" value={patient.patientCode} />
+            <SummaryCard label="로그인 ID" value={patient.loginId ?? "-"} />
+          </div>
+        </div>
+      </article>
+
       <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <article className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <div className="flex items-center justify-between gap-3">
@@ -570,12 +767,19 @@ export default function TherapistPatientDetailPage() {
               <Activity className="h-5 w-5 text-sky-600" />
               <h3 className="text-xl font-black text-slate-950">최근 세션 해석</h3>
             </div>
-            <Link
-              href="/therapist/results"
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-50"
-            >
-              전체 결과 보기
-            </Link>
+            {/*
+              "전체 결과 보기" → /therapist/results 는 admin 전용 화면(useTherapistAdminGuard)이라
+              일반 치료사가 누르면 곧장 /therapist 로 돌려보내져 "잠깐 갔다가 돌아오는" 버그처럼 보인다.
+              따라서 진입점 자체를 admin 일 때만 노출한다.
+            */}
+            {isAdmin ? (
+              <Link
+                href="/therapist/results"
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-50"
+              >
+                전체 결과 보기
+              </Link>
+            ) : null}
           </div>
 
           {summary.latest ? (
@@ -611,6 +815,49 @@ export default function TherapistPatientDetailPage() {
                   </div>
                 ))}
               </div>
+
+              {latestAcousticSummary ? (
+                <div className="mt-5 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                      음향 측정 (참고)
+                    </p>
+                    <p className="text-[11px] font-bold text-slate-500">
+                      Step 2/4/5 발화 합계 {latestAcousticSummary.total}건
+                    </p>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-2 py-2">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                        실측
+                      </p>
+                      <p className="mt-1 text-lg font-black text-emerald-800">
+                        {latestAcousticSummary.measured}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-2 py-2">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">
+                        일부
+                      </p>
+                      <p className="mt-1 text-lg font-black text-amber-800">
+                        {latestAcousticSummary.degraded}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white px-2 py-2">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                        실패
+                      </p>
+                      <p className="mt-1 text-lg font-black text-slate-700">
+                        {latestAcousticSummary.failed}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-[11px] font-medium text-slate-500 leading-relaxed">
+                    Parselmouth 기반 발화 음향 분석 결과 분포(REQ-ACOUSTIC-001~004). 점수
+                    산정에는 반영되지 않으며 참고용입니다.
+                  </p>
+                </div>
+              ) : null}
             </>
           ) : null}
 

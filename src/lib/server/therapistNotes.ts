@@ -50,6 +50,14 @@ export async function getTherapistPatientNote(patientId: string) {
   return store[patientId] ?? null;
 }
 
+/**
+ * 메모 store 의 모든 항목을 반환한다.
+ * 권한/스코프 필터링은 호출 측 (therapistReportsDb.listTherapistPatientNotesScoped) 에서 한다.
+ */
+export async function listAllTherapistPatientNotes() {
+  return readNotesStore();
+}
+
 export async function saveTherapistPatientNote(input: {
   patientId: string;
   memo: string;

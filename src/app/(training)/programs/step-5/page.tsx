@@ -16,7 +16,8 @@ import { useTraining } from "../../TrainingContext";
 import { AnalysisSidebar } from "@/components/training/AnalysisSidebar";
 import { RuntimeStatusBanner } from "@/components/training/RuntimeStatusBanner";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
-import { SessionManager } from "@/lib/kwab/SessionManager";
+import { SessionManager, type AcousticSnapshot } from "@/lib/kwab/SessionManager";
+import { callVoiceAnalysis } from "@/lib/audio/voiceAnalysisClient";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
 import {
@@ -42,6 +43,10 @@ import {
   loadTransientStepStorage,
   saveTransientStepStorage,
 } from "@/lib/security/transientStepStorage";
+import {
+  clearFirstDiagnosisFlow,
+  isFirstDiagnosisFlow,
+} from "@/lib/firstDiagnosisFlow";
 
 export const dynamic = "force-dynamic";
 const STEP5_STORAGE_KEY = "step5_recorded_data";
@@ -77,6 +82,8 @@ interface ReadingMetrics {
     roundingPct: number;
     patternMatchPct: number;
   };
+  // Parselmouth 음향 측정값 (REQ-ACOUSTIC-001~004). 결과 페이지/DB 까지 같이 흘러간다.
+  acoustic?: AcousticSnapshot | null;
   dataSource?: "measured" | "demo";
 }
 
@@ -286,6 +293,12 @@ function Step5Content() {
       sessionStorage.getItem("btt.trialMode") === "1";
     if (isTrialMode) {
       router.push("/");
+      return;
+    }
+    if (isFirstDiagnosisFlow()) {
+      clearFirstDiagnosisFlow();
+      saveTrainingExitProgress(place, 5);
+      router.push("/select-page/mode");
       return;
     }
     saveTrainingExitProgress(place, 5);
@@ -676,6 +689,11 @@ function Step5Content() {
         return;
       }
       const audioBlob = analysis.audioBlob;
+      // Parselmouth 음향 측정값 (REQ-ACOUSTIC-001~004).
+      // 채점에는 영향 없음(참고 측정값) — 항상 안전한 shape 으로 반환됨.
+      const acousticSnapshot: AcousticSnapshot | null = audioBlob
+        ? await callVoiceAnalysis(audioBlob)
+        : null;
       const finalReadingTime = Math.max(1, readingSecondsRef.current);
       const wpm = Math.round((currentItem.wordCount / finalReadingTime) * 60);
       const aggregate = articulationAggregateRef.current;
@@ -819,6 +837,7 @@ function Step5Content() {
           roundingPct: Number(vowelDetail.roundingPct.toFixed(1)),
           patternMatchPct: Number(vowelDetail.patternMatchPct.toFixed(1)),
         },
+        acoustic: acousticSnapshot,
         dataSource: "measured",
       };
 

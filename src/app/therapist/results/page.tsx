@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
 import { fetchTherapistReportsOverview } from "@/lib/client/therapistReportsApi";
+import { useTherapistAdminGuard } from "@/hooks/useTherapistAdminGuard";
 
 function formatDate(value: number) {
   const date = new Date(value);
@@ -32,6 +33,7 @@ function getEntrySaveState(entry: TrainingHistoryEntry) {
 }
 
 export default function TherapistResultsPage() {
+  const { isReady, isAdmin } = useTherapistAdminGuard();
   const searchParams = useSearchParams();
   const [entries, setEntries] = useState<TrainingHistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -47,6 +49,8 @@ export default function TherapistResultsPage() {
   );
 
   useEffect(() => {
+    // admin 이 아니면 가드 훅이 redirect 하므로 데이터 fetch 자체를 보류.
+    if (!isReady || !isAdmin) return;
     let cancelled = false;
 
     void fetchTherapistReportsOverview()
@@ -75,7 +79,7 @@ export default function TherapistResultsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isReady, isAdmin]);
 
   useEffect(() => {
     setSearch(searchParams.get("query") ?? "");

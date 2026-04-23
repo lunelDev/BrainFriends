@@ -1,6 +1,7 @@
 import type React from "react";
 import { FileText } from "lucide-react";
 import { StepDetail } from "@/features/result/types";
+import { Step2AcousticBlock } from "@/features/result/components/Step2AcousticBlock";
 
 type Props = {
   stepDetails: StepDetail[];
@@ -160,6 +161,10 @@ export function StepRecordSection({
                             <p className="text-[11px] font-black text-orange-700 mb-2">
                               점수 {itemScore.toFixed(1)}점
                             </p>
+                          )}
+
+                          {(step.id === 2 || step.id === 4 || step.id === 5) && it.acoustic && (
+                            <Step2AcousticBlock acoustic={it.acoustic} />
                           )}
 
                           {(feedback.good || feedback.improve) && (

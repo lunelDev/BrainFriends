@@ -13,6 +13,7 @@ const SAFE_LOCAL_KEYS = [
 const SAFE_SESSION_KEYS = [
   "btt.sessionId",
   "btt.trialMode",
+  "btt.firstDiagnosisFlow",
   "session.progress.currentStep",
   "session.progress.place",
   "session.temp.uiNotice",

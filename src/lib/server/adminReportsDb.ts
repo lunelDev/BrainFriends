@@ -493,6 +493,74 @@ export async function getAdminPatientReportDetail(
   }
 
   const pool = getDbPool();
+  // listAdminPatientReportSummaries 와 동일한 defensive 패턴.
+  // 런타임 DB 에 따라 일부 테이블이 아직 없을 수 있으므로 조건부 SELECT/JOIN 을 구성한다.
+  const probe = await pool.query(
+    `
+      SELECT
+        to_regclass('public.therapist_patient_assignments') IS NOT NULL AS has_assignments,
+        to_regclass('public.patient_intake_profiles')       IS NOT NULL AS has_intake,
+        to_regclass('public.organizations')                 IS NOT NULL AS has_organizations
+    `,
+  );
+  const hasAssignmentsTable = Boolean(probe.rows[0]?.has_assignments);
+  const hasIntakeTable = Boolean(probe.rows[0]?.has_intake);
+  const hasOrganizationsTable = Boolean(probe.rows[0]?.has_organizations);
+
+  const intakeSelect = hasIntakeTable
+    ? `
+        pip.education_years   AS education_years,
+        pip.onset_date::text  AS onset_date,
+        pip.days_since_onset  AS days_since_onset,
+        pip.hemiplegia        AS hemiplegia,
+        pip.hemianopsia       AS hemianopsia,
+        pip.hand              AS hand,
+    `
+    : `
+        NULL::int  AS education_years,
+        NULL::text AS onset_date,
+        NULL::int  AS days_since_onset,
+        NULL::text AS hemiplegia,
+        NULL::text AS hemianopsia,
+        NULL::text AS hand,
+    `;
+  const intakeJoin = hasIntakeTable
+    ? `LEFT JOIN patient_intake_profiles pip ON pip.patient_id = pii.patient_id`
+    : "";
+
+  const therapistSelect = hasAssignmentsTable
+    ? `
+        tpii.full_name AS therapist_name,
+        tu.login_id    AS therapist_login_id,
+        tu.user_id::text AS therapist_user_id,
+        ${hasOrganizationsTable ? "torg.organization_name" : "NULL::text"} AS therapist_organization_name
+    `
+    : `
+        NULL::text AS therapist_name,
+        NULL::text AS therapist_login_id,
+        NULL::text AS therapist_user_id,
+        NULL::text AS therapist_organization_name
+    `;
+  const therapistJoin = hasAssignmentsTable
+    ? `
+        LEFT JOIN LATERAL (
+          SELECT tpa.therapist_user_id
+          FROM therapist_patient_assignments tpa
+          WHERE tpa.patient_id = pii.patient_id
+            AND COALESCE(tpa.is_active, TRUE) = TRUE
+          ORDER BY tpa.assigned_at DESC NULLS LAST
+          LIMIT 1
+        ) tpa ON TRUE
+        LEFT JOIN app_users  tu   ON tu.user_id    = tpa.therapist_user_id
+        LEFT JOIN patient_pii tpii ON tpii.patient_id = tu.patient_id
+        ${
+          hasOrganizationsTable
+            ? "LEFT JOIN organizations torg ON torg.organization_id = tu.organization_id"
+            : ""
+        }
+    `
+    : "";
+
   const patientResult = await pool.query(
     `
       SELECT
@@ -502,10 +570,15 @@ export async function getAdminPatientReportDetail(
         pii.patient_code,
         pii.birth_date::text AS birth_date,
         pii.phone,
-        au.login_id
+        pii.sex,
+        au.login_id,
+        ${intakeSelect}
+        ${therapistSelect}
       FROM patient_pii pii
       JOIN patient_pseudonym_map ppm ON ppm.patient_id = pii.patient_id
       JOIN app_users au ON au.patient_id = pii.patient_id
+      ${intakeJoin}
+      ${therapistJoin}
       WHERE pii.patient_id::text = $1
       LIMIT 1
     `,
@@ -826,6 +899,31 @@ export async function getAdminPatientReportDetail(
     };
   });
 
+  const sexRaw =
+    typeof patient.sex === "string" ? patient.sex.trim().toUpperCase() : "";
+  const sex: "M" | "F" | "U" | null =
+    sexRaw === "M" || sexRaw === "F" || sexRaw === "U"
+      ? (sexRaw as "M" | "F" | "U")
+      : null;
+  const hemiplegiaRaw =
+    typeof patient.hemiplegia === "string"
+      ? patient.hemiplegia.trim().toUpperCase()
+      : "";
+  const hemiplegia: "Y" | "N" | null =
+    hemiplegiaRaw === "Y" || hemiplegiaRaw === "N"
+      ? (hemiplegiaRaw as "Y" | "N")
+      : null;
+  const hemianopsiaRaw =
+    typeof patient.hemianopsia === "string"
+      ? patient.hemianopsia.trim().toUpperCase()
+      : "";
+  const hemianopsia: "LEFT" | "RIGHT" | "NONE" | null =
+    hemianopsiaRaw === "LEFT" ||
+    hemianopsiaRaw === "RIGHT" ||
+    hemianopsiaRaw === "NONE"
+      ? (hemianopsiaRaw as "LEFT" | "RIGHT" | "NONE")
+      : null;
+
   return {
     requestedBy: {
       userId: context.userId,
@@ -839,6 +937,27 @@ export async function getAdminPatientReportDetail(
       loginId: patient.login_id ? String(patient.login_id) : null,
       birthDate: patient.birth_date ? String(patient.birth_date) : null,
       phone: patient.phone ? String(patient.phone) : null,
+      sex,
+      educationYears:
+        patient.education_years == null ? null : Number(patient.education_years),
+      onsetDate: patient.onset_date ? String(patient.onset_date) : null,
+      daysSinceOnset:
+        patient.days_since_onset == null ? null : Number(patient.days_since_onset),
+      hemiplegia,
+      hemianopsia,
+      hand: patient.hand ? String(patient.hand) : null,
+      therapistName: patient.therapist_name
+        ? String(patient.therapist_name)
+        : null,
+      therapistLoginId: patient.therapist_login_id
+        ? String(patient.therapist_login_id)
+        : null,
+      therapistUserId: patient.therapist_user_id
+        ? String(patient.therapist_user_id)
+        : null,
+      therapistOrganizationName: patient.therapist_organization_name
+        ? String(patient.therapist_organization_name)
+        : null,
     },
     entries,
   };

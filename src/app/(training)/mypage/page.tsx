@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { ChevronRight, LineChart, Sparkles, Target, Trophy } from "lucide-react";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { SessionManager, type TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
+import { ReportContent } from "@/app/(training)/report/page";
 
 function formatAq(value: number | null | undefined) {
   if (!Number.isFinite(Number(value))) return "-";
@@ -74,9 +75,9 @@ function getTrainingModeLabel(entry: TrainingHistoryEntry) {
 
 export default function MyPage() {
   const { patient, isLoading } = useTrainingSession();
-  const [activeView, setActiveView] = useState<"history" | "report">("history");
-  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [historyEntries, setHistoryEntries] = useState<TrainingHistoryEntry[]>([]);
+  // 좌측 리스트에서 클릭한 진단을 우측 상세 카드로 보여주는 master-detail 상태.
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!patient) {
@@ -126,30 +127,33 @@ export default function MyPage() {
     () => getNextGoal(aqTrend?.latest?.aq ?? latest?.aq ?? null),
     [aqTrend?.latest?.aq, latest?.aq],
   );
-  const selectedEntry = useMemo(() => {
-    if (!historyEntries.length) return null;
-    if (!selectedHistoryId) return historyEntries[0] ?? null;
-    return (
-      historyEntries.find((entry) => entry.historyId === selectedHistoryId) ??
-      historyEntries[0] ??
-      null
-    );
-  }, [historyEntries, selectedHistoryId]);
 
+  // 최근 5건 기준, 선택된 항목을 유효하게 유지 (없으면 첫 번째로 폴백)
+  const recentEntries = useMemo(
+    () => historyEntries.slice(0, 5),
+    [historyEntries],
+  );
   useEffect(() => {
-    if (!historyEntries.length) {
-      setSelectedHistoryId(null);
+    if (recentEntries.length === 0) {
+      if (selectedHistoryId !== null) setSelectedHistoryId(null);
       return;
     }
-    if (!selectedHistoryId) {
-      setSelectedHistoryId(historyEntries[0]?.historyId ?? null);
-      return;
-    }
-    const exists = historyEntries.some((entry) => entry.historyId === selectedHistoryId);
-    if (!exists) {
-      setSelectedHistoryId(historyEntries[0]?.historyId ?? null);
-    }
-  }, [historyEntries, selectedHistoryId]);
+    const exists = recentEntries.some((e) => e.historyId === selectedHistoryId);
+    if (!exists) setSelectedHistoryId(recentEntries[0].historyId);
+  }, [recentEntries, selectedHistoryId]);
+  const selectedEntry =
+    recentEntries.find((e) => e.historyId === selectedHistoryId) ??
+    recentEntries[0] ??
+    null;
+  const selectedIdx = selectedEntry
+    ? recentEntries.findIndex((e) => e.historyId === selectedEntry.historyId)
+    : -1;
+  const selectedPrev =
+    selectedIdx >= 0 ? recentEntries[selectedIdx + 1] ?? null : null;
+  const selectedAqDelta =
+    selectedEntry && selectedPrev
+      ? Number((selectedEntry.aq - selectedPrev.aq).toFixed(1))
+      : null;
 
   if (isLoading) {
     return (
@@ -169,34 +173,26 @@ export default function MyPage() {
   return (
     <main className="min-h-full flex-1 overflow-y-auto bg-[linear-gradient(180deg,#f6f8fc_0%,#eef5ff_100%)] px-4 py-6 pb-12 sm:px-6 sm:py-8">
       <div className="mx-auto max-w-6xl space-y-6">
-        <section className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-          <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <section className="rounded-[24px] sm:rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6 lg:p-8">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h1 className="text-3xl font-black tracking-tight text-slate-950">
+              <h1 className="text-xl font-black tracking-tight text-slate-950 sm:text-2xl lg:text-3xl">
                 {patient?.name ?? "사용자"}님의 현재 기록
               </h1>
-              <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+              <p className="mt-2 text-xs font-medium leading-5 text-slate-600 sm:text-sm sm:leading-6">
                 최근 결과와 훈련 흐름을 한 번에 확인하고, 다음 훈련으로 바로 이어갈 수 있습니다.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              {/* 상단 "결과 리포트 보기" 토글은 제거: 각 기록 카드에 있는
+                  "결과 보기 →" 가 해당 항목을 지정해 리포트 뷰로 넘어가고,
+                  report 뷰 안의 "기록 목록으로" 로 다시 되돌아오므로 중복임. */}
               <Link
                 href="/select-page/mode"
                 className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
               >
                 홈으로
               </Link>
-              <button
-                type="button"
-                onClick={() => setActiveView("report")}
-                className={`rounded-full px-4 py-2 text-sm font-black transition ${
-                  activeView === "report"
-                    ? "bg-slate-900 text-white hover:bg-slate-800"
-                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                }`}
-              >
-                결과 리포트 보기
-              </button>
             </div>
           </div>
         </section>
@@ -233,182 +229,20 @@ export default function MyPage() {
           />
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
-          <article className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-indigo-500">
-              {activeView === "report" ? "결과 리포트" : "최근 훈련 기록"}
-            </p>
-            <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-              {activeView === "report"
-                ? "마이페이지 안에서 최근 결과를 바로 확인하세요."
-                : "최근 저장된 결과를 확인하세요."}
-            </h2>
-            {activeView === "report" ? (
-              <div className="mt-6 space-y-4">
-                {!selectedEntry ? (
-                  <div className="rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-6">
-                    <p className="text-base font-black text-slate-900">
-                      아직 확인할 결과 리포트가 없습니다.
-                    </p>
-                    <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
-                      먼저 훈련을 진행하고 결과를 저장해 보세요.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      <ReportMetricCard
-                        label="훈련 유형"
-                        value={getTrainingModeLabel(selectedEntry)}
-                      />
-                      <ReportMetricCard
-                        label="AQ"
-                        value={formatAq(selectedEntry.aq)}
-                      />
-                      <ReportMetricCard
-                        label="측정 품질"
-                        value={
-                          selectedEntry.measurementQuality?.overall ?? "demo"
-                        }
-                      />
-                      <ReportMetricCard
-                        label="완료일"
-                        value={formatDate(selectedEntry.completedAt)}
-                      />
-                    </div>
-
-                    <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-                      <p className="text-sm font-black text-slate-900">
-                        현재 결과 요약
-                      </p>
-                      <p className="mt-3 text-3xl font-black tracking-tight text-slate-950">
-                        AQ {formatAq(selectedEntry.aq)}
-                      </p>
-                      <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
-                        {getTrainingModeLabel(selectedEntry)} 결과입니다. 측정 품질은{" "}
-                        {selectedEntry.measurementQuality?.overall ?? "demo"}이며,
-                        다음 목표는 {getNextGoal(selectedEntry.aq)}입니다.
-                      </p>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-black text-slate-900">
-                          다른 결과 보기
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => setActiveView("history")}
-                          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
-                        >
-                          기록 목록으로
-                        </button>
-                      </div>
-                      {historyEntries.slice(0, 5).map((entry) => {
-                        const isSelected = entry.historyId === selectedEntry.historyId;
-                        return (
-                          <button
-                            key={entry.historyId}
-                            type="button"
-                            onClick={() => setSelectedHistoryId(entry.historyId)}
-                            className={`flex w-full items-center justify-between gap-4 rounded-[20px] border px-4 py-3 text-left transition ${
-                              isSelected
-                                ? "border-slate-900 bg-slate-900 text-white"
-                                : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
-                            }`}
-                          >
-                            <div>
-                              <p className="text-sm font-black">
-                                {getTrainingModeLabel(entry)}
-                              </p>
-                              <p
-                                className={`mt-1 text-xs font-bold ${
-                                  isSelected ? "text-slate-200" : "text-slate-500"
-                                }`}
-                              >
-                                {formatDate(entry.completedAt)} · AQ {formatAq(entry.aq)}
-                              </p>
-                            </div>
-                            <ChevronRight className="h-4 w-4" />
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
+        {/* 전체 리포트 페이지와 동일한 master-detail (좌: HistorySidebar, 우: 선택 진단 상세)
+            레이아웃을 카드 컨테이너 안에 그대로 임베드. embedded 모드는
+            /report/page 의 ReportContent 내부 헤더/배경을 끄고, /mypage 의
+            rounded-[32px] 카드 디자인에 맞게 표시한다. */}
+        <section className="rounded-[32px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+          <Suspense
+            fallback={
+              <div className="p-6 text-sm font-medium text-slate-600">
+                리포트를 불러오는 중입니다…
               </div>
-            ) : (
-              <div className="mt-6 space-y-3">
-                {!historyEntries.length ? (
-                <div className="rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-6">
-                  <p className="text-base font-black text-slate-900">
-                    아직 저장된 훈련 기록이 없습니다.
-                  </p>
-                  <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
-                    자가진단이나 재활 훈련을 먼저 시작해 보세요.
-                  </p>
-                </div>
-              ) : (
-                historyEntries.slice(0, 5).map((entry) => (
-                  <div
-                    key={entry.historyId}
-                    className="flex flex-col gap-3 rounded-[24px] border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between"
-                  >
-                    <div>
-                      <p className="text-lg font-black text-slate-900">
-                        {entry.trainingMode === "rehab"
-                          ? `언어 재활${entry.rehabStep ? ` · Step ${entry.rehabStep}` : ""}`
-                          : entry.trainingMode === "sing"
-                            ? "브레인 노래방"
-                            : "자가 진단"}
-                      </p>
-                      <p className="mt-1 text-sm font-medium text-slate-600">
-                        {formatDate(entry.completedAt)} · AQ {formatAq(entry.aq)}
-                      </p>
-                    </div>
-                    <Link
-                      href="#"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        setSelectedHistoryId(entry.historyId);
-                        setActiveView("report");
-                      }}
-                      className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-black text-white transition hover:bg-slate-800"
-                    >
-                      결과 보기
-                      <ChevronRight className="h-4 w-4" />
-                    </Link>
-                  </div>
-                ))
-                )}
-              </div>
-            )}
-          </article>
-
-          <aside className="space-y-6">
-            <section className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-sky-600">
-                빠른 이동
-              </p>
-              <div className="mt-4 grid gap-3">
-                <QuickLink href="/select-page/self-assessment" label="자가진단 다시 하기" />
-                <QuickLink href="/select-page/speech-rehab" label="언어 재활 시작" />
-                <QuickLink href="/select-page/sing-training" label="브레인 노래방 시작" />
-                <QuickLink href="/select-page/game-mode" label="게임 모드 열기" />
-              </div>
-            </section>
-
-            <section className="rounded-[32px] border border-slate-200 bg-[linear-gradient(180deg,#f7fbff_0%,#eef6ff_100%)] p-6 shadow-sm sm:p-8">
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-sky-700">
-                진행 메모
-              </p>
-              <div className="mt-4 grid gap-3">
-                <SummaryRow label="최근 결과" value={latest ? `${formatDate(latest.completedAt)} · AQ ${formatAq(latest.aq)}` : "기록 없음"} />
-                <SummaryRow label="다음 목표" value={nextGoal} />
-                <SummaryRow label="연속 훈련" value={`${streakDays}일`} />
-              </div>
-            </section>
-          </aside>
+            }
+          >
+            <ReportContent embedded />
+          </Suspense>
         </section>
       </div>
     </main>
@@ -448,23 +282,6 @@ function StatCard({
   );
 }
 
-function ReportMetricCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-[20px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
-      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-        {label}
-      </p>
-      <p className="mt-2 text-lg font-black text-slate-950">{value}</p>
-    </div>
-  );
-}
-
 function QuickLink({ href, label }: { href: string; label: string }) {
   return (
     <Link
@@ -488,6 +305,228 @@ function SummaryRow({
     <div className="flex items-center justify-between gap-4 rounded-[20px] border border-sky-100 bg-white px-4 py-3">
       <span className="text-sm font-bold text-slate-600">{label}</span>
       <span className="text-sm font-black text-slate-950">{value}</span>
+    </div>
+  );
+}
+
+// 각 훈련 이력 1건을 카드 한 장으로 표현한다.
+// /report 페이지의 스텝 점수·측정 품질·AQ 추이 요약을 같은 카드 디자인 언어
+// (rounded-[24px], slate-200 border, slate-50 bg) 에 담아 /mypage 의 전체
+// 룩앤필과 통일시킨다. "전체 리포트 열기 →" 로 /report 로 이동 가능.
+function ReportSummaryCard({
+  entry,
+  aqDelta,
+  reportHref,
+}: {
+  entry: TrainingHistoryEntry;
+  aqDelta: number | null;
+  reportHref: string;
+}) {
+  const quality = entry.measurementQuality?.overall ?? "demo";
+  const qualityTone =
+    quality === "measured"
+      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+      : quality === "partial"
+        ? "bg-amber-50 text-amber-700 border-amber-200"
+        : "bg-slate-100 text-slate-600 border-slate-200";
+  const deltaTone =
+    aqDelta == null
+      ? "bg-slate-100 text-slate-500"
+      : aqDelta > 0
+        ? "bg-emerald-50 text-emerald-700"
+        : aqDelta < 0
+          ? "bg-rose-50 text-rose-700"
+          : "bg-slate-100 text-slate-600";
+  const deltaLabel =
+    aqDelta == null
+      ? "이전 비교 없음"
+      : `${aqDelta > 0 ? "+" : aqDelta === 0 ? "±" : ""}${aqDelta.toFixed(1)} vs 이전`;
+  const modeLabel = getTrainingModeLabel(entry);
+
+  // 언어 재활은 진행한 rehabStep 1개만 점수가 찍히므로 그 하나만 노출.
+  // 자가진단은 step 1~6 전체가 측정되므로 전부 노출.
+  // 노래방(sing)은 stepScores 를 쓰지 않으므로 카드에서 숨김.
+  const allStepKeys: Array<keyof TrainingHistoryEntry["stepScores"]> = [
+    "step1",
+    "step2",
+    "step3",
+    "step4",
+    "step5",
+    "step6",
+  ];
+  const stepKeys: Array<keyof TrainingHistoryEntry["stepScores"]> =
+    entry.trainingMode === "rehab"
+      ? entry.rehabStep
+        ? [`step${entry.rehabStep}` as keyof TrainingHistoryEntry["stepScores"]]
+        : []
+      : entry.trainingMode === "sing"
+        ? []
+        : allStepKeys;
+
+  return (
+    <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-lg font-black text-slate-900">{modeLabel}</span>
+            <span
+              className={`rounded-full border px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wider ${qualityTone}`}
+            >
+              {quality}
+            </span>
+          </div>
+          <p className="mt-1 text-sm font-medium text-slate-600">
+            {formatDate(entry.completedAt)}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <div className="text-3xl font-black tracking-tight text-slate-950">
+            AQ {formatAq(entry.aq)}
+          </div>
+          <span
+            className={`rounded-full px-2.5 py-0.5 text-[11px] font-black ${deltaTone}`}
+          >
+            {deltaLabel}
+          </span>
+        </div>
+      </div>
+
+      {stepKeys.length > 0 ? (
+        <div className="mt-5">
+          <p className="mb-2 text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+            Step 점수
+          </p>
+          <div
+            className={`grid gap-2 ${
+              stepKeys.length === 1
+                ? "grid-cols-1"
+                : "grid-cols-3 sm:grid-cols-6"
+            }`}
+          >
+            {stepKeys.map((key) => {
+              const stepNumber = Number(String(key).replace("step", "")) || 0;
+              const score = Number(entry.stepScores?.[key] ?? 0);
+              const safe = Number.isFinite(score)
+                ? Math.max(0, Math.min(100, score))
+                : 0;
+              const tone =
+                safe >= 80
+                  ? "bg-emerald-500"
+                  : safe >= 60
+                    ? "bg-sky-500"
+                    : safe >= 40
+                      ? "bg-amber-500"
+                      : "bg-rose-400";
+              return (
+                <div
+                  key={key}
+                  className="rounded-[16px] border border-slate-200 bg-white px-3 py-2"
+                >
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                    Step {stepNumber}
+                  </p>
+                  <p className="mt-1 text-sm font-black text-slate-900">
+                    {safe.toFixed(0)}
+                  </p>
+                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className={`h-full rounded-full ${tone}`}
+                      style={{ width: `${safe}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      {entry.facialAnalysisSnapshot ? (
+        <div className="mt-5">
+          <p className="mb-2 text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+            얼굴 분석 · 조음 요약
+          </p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <FacialMetric
+              label="비대칭 위험"
+              value={formatFacialPercent(entry.facialAnalysisSnapshot.asymmetryRisk)}
+              tone="rose"
+            />
+            <FacialMetric
+              label="조음 격차"
+              value={formatFacialPercent(entry.facialAnalysisSnapshot.articulationGap)}
+              tone="amber"
+            />
+            <FacialMetric
+              label="자음 정확도"
+              value={formatFacialScore(entry.facialAnalysisSnapshot.overallConsonant)}
+              tone="sky"
+            />
+            <FacialMetric
+              label="모음 정확도"
+              value={formatFacialScore(entry.facialAnalysisSnapshot.overallVowel)}
+              tone="emerald"
+            />
+          </div>
+          {entry.facialAnalysisSnapshot.articulationFaceMatchSummary ? (
+            <p className="mt-2 text-xs font-medium leading-5 text-slate-600">
+              {entry.facialAnalysisSnapshot.articulationFaceMatchSummary}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="mt-5 flex items-center justify-end">
+        <Link
+          href={reportHref}
+          className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-black text-white transition hover:bg-slate-800"
+        >
+          전체 리포트 열기
+          <ChevronRight className="h-4 w-4" />
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function formatFacialPercent(value: number | null | undefined) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "-";
+  // 0~1 범위면 퍼센트로, 0~100 범위면 그대로
+  const pct = n <= 1 ? n * 100 : n;
+  return `${pct.toFixed(1)}%`;
+}
+
+function formatFacialScore(value: number | null | undefined) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "-";
+  const scaled = n <= 1 ? n * 100 : n;
+  return scaled.toFixed(0);
+}
+
+function FacialMetric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "rose" | "amber" | "sky" | "emerald";
+}) {
+  const toneClass =
+    tone === "rose"
+      ? "text-rose-700"
+      : tone === "amber"
+        ? "text-amber-700"
+        : tone === "sky"
+          ? "text-sky-700"
+          : "text-emerald-700";
+  return (
+    <div className="rounded-[16px] border border-slate-200 bg-white px-3 py-2">
+      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+        {label}
+      </p>
+      <p className={`mt-1 text-sm font-black ${toneClass}`}>{value}</p>
     </div>
   );
 }

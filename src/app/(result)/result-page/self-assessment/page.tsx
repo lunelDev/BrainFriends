@@ -38,6 +38,7 @@ import {
   Printer,
 } from "lucide-react";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
+import { clearFirstDiagnosisFlow } from "@/lib/firstDiagnosisFlow";
 
 function getMeasurementQualityUi(level?: MeasurementQualityLevel) {
   switch (level) {
@@ -398,6 +399,8 @@ function ResultContent() {
   // --- 데이터 불러오기 및 내보내기 로직 (보존) ---
   useEffect(() => {
     setIsMounted(true);
+    // 결과 화면까지 도달했으면 최초 자가진단 흐름 종료 → 플래그 정리
+    clearFirstDiagnosisFlow();
     const managerSession =
       patientProfile && place
         ? new SessionManager(patientProfile as any, place).getSession()

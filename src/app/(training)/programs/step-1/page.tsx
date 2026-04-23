@@ -14,6 +14,10 @@ import { SessionManager } from "@/lib/kwab/SessionManager";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { buildVersionSnapshot } from "@/lib/analysis/versioning";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
+import {
+  clearFirstDiagnosisFlow,
+  isFirstDiagnosisFlow,
+} from "@/lib/firstDiagnosisFlow";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import { buildStep1TrainingData } from "@/features/steps/step1/utils";
@@ -208,6 +212,13 @@ function Step1Content() {
       sessionStorage.getItem("btt.trialMode") === "1";
     if (isTrialMode) {
       router.push("/");
+      return;
+    }
+    // 최초 자가진단 흐름이면 장소 선택이 아니라 활동 선택으로 돌아간다.
+    if (isFirstDiagnosisFlow()) {
+      clearFirstDiagnosisFlow();
+      saveTrainingExitProgress(placeParam, 1);
+      router.push("/select-page/mode");
       return;
     }
     saveTrainingExitProgress(placeParam, 1);

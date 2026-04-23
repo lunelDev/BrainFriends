@@ -1,5 +1,6 @@
 import { Activity, FileText } from "lucide-react";
 import { DetailCompareMetric, StepResultCard } from "@/lib/results/rehab/adapters";
+import { AcousticBlock } from "@/features/result/components/Step2AcousticBlock";
 
 type RehabImpression = {
   summary: string;
@@ -255,6 +256,9 @@ export function RehabDetailBlocks({
                 <p className="text-xs font-bold text-slate-700 leading-snug">"{item.text}"</p>
                 {item.score !== null && (
                   <p className="mt-1 text-[11px] font-black text-sky-700">점수 {item.score.toFixed(1)}점</p>
+                )}
+                {(safeStep === 2 || safeStep === 4 || safeStep === 5) && item.acoustic && (
+                  <AcousticBlock acoustic={item.acoustic} />
                 )}
                 {safeStep === 6 && item.userImage && (
                   <div className="aspect-video bg-slate-50 rounded-md mt-2 overflow-hidden border border-slate-100 flex items-center justify-center">

@@ -37,7 +37,19 @@ function isValidHistoryEntry(
 }
 
 function shouldPersistHistoryEntry(entry: TrainingHistoryEntry) {
+  // 로컬 개발에서는 step 일부가 demo/partial 이어도 치료사 화면에서 카운트가 보이게 통과시킨다.
+  // (운영에서는 기존 정책 유지: overall === "measured" 만 영구 저장)
+  if (process.env.NODE_ENV === "development") {
+    return entry.measurementQuality?.overall !== undefined;
+  }
   return entry.measurementQuality?.overall === "measured";
+}
+
+function isDevPersistenceBypass(entry: TrainingHistoryEntry) {
+  return (
+    process.env.NODE_ENV === "development" &&
+    entry.measurementQuality?.overall !== "measured"
+  );
 }
 
 export async function POST(req: Request) {
@@ -179,6 +191,8 @@ export async function POST(req: Request) {
       }).catch(() => undefined);
     }
 
+    const devBypass = isDevPersistenceBypass(body.historyEntry);
+
     await appendClinicalAuditLog(
       buildTrainingHistoryAuditLog({
         request: req,
@@ -186,6 +200,7 @@ export async function POST(req: Request) {
         sessionId: saved.sessionId,
         status: "success",
         historyEntry: body.historyEntry,
+        failureReason: devBypass ? "dev_persistence_bypass" : undefined,
         storageTargets: [
           "postgres:patient_pii",
           "postgres:patient_pseudonym_map",
@@ -196,7 +211,7 @@ export async function POST(req: Request) {
       }),
     );
 
-    return NextResponse.json({ ok: true, saved });
+    return NextResponse.json({ ok: true, saved, devBypass });
   } catch (error: any) {
     console.error("[clinical-results] failed to persist", error);
 

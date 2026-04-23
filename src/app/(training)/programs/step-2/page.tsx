@@ -16,9 +16,17 @@ import { PlaceType } from "@/constants/trainingData";
 import { AnalysisSidebar } from "@/components/training/AnalysisSidebar";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { RuntimeStatusBanner } from "@/components/training/RuntimeStatusBanner";
-import { SessionManager } from "@/lib/kwab/SessionManager";
+import {
+  SessionManager,
+  type AcousticSnapshot,
+} from "@/lib/kwab/SessionManager";
+import { callVoiceAnalysis } from "@/lib/audio/voiceAnalysisClient";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
+import {
+  clearFirstDiagnosisFlow,
+  isFirstDiagnosisFlow,
+} from "@/lib/firstDiagnosisFlow";
 import {
   analyzeArticulation,
   createInitialArticulationAnalyzerState,
@@ -408,6 +416,13 @@ function Step2Content() {
       sessionStorage.getItem("btt.trialMode") === "1";
     if (isTrialMode) {
       router.push("/");
+      return;
+    }
+    // 최초 자가진단 흐름이면 활동 선택으로 돌아간다.
+    if (isFirstDiagnosisFlow()) {
+      clearFirstDiagnosisFlow();
+      saveTrainingExitProgress(place, 2);
+      router.push("/select-page/mode");
       return;
     }
     saveTrainingExitProgress(place, 2);
@@ -816,6 +831,7 @@ function Step2Content() {
             dataSource: row.dataSource === "demo" ? "demo" : "measured",
             audioLevel: Number(row.audioLevel ?? 0),
             responseTime: Number(row.responseTime ?? 0),
+            acoustic: (row.acoustic as AcousticSnapshot | null | undefined) ?? null,
           })),
           averageSymmetry: avgSymmetry,
           averagePronunciation: avgFinalScore,
@@ -1042,6 +1058,12 @@ function Step2Content() {
         const speechVowelAccuracy = Number(result.details?.vowelAccuracy);
         const responseTimeMs = speechOnsetMsRef.current;
 
+        // Parselmouth 음향 분석. STT 와 별개 채널이라 실패해도 흐름을 막지 않는다.
+        // (DEV_MODE 에선 결정론적 더미 응답이 옴 — 비용/네트워크 0)
+        const acousticSnapshot: AcousticSnapshot | null = result.audioBlob
+          ? await callVoiceAnalysis(result.audioBlob)
+          : null;
+
         const consonantAccuracy = Number.isFinite(speechConsonantAccuracy)
           ? Math.max(0, Math.min(100, speechConsonantAccuracy))
           : blendArticulationAccuracy(visualConsonantAccuracy);
@@ -1092,6 +1114,7 @@ function Step2Content() {
           dataSource: "measured" as const,
           audioLevel: audioLevel,
           responseTime: responseTimeMs,
+          acoustic: acousticSnapshot,
         };
         articulationAggregateRef.current = {
           consonantSum: 0,

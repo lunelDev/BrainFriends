@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronRight, Sparkles, Trophy } from "lucide-react";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
@@ -10,6 +9,7 @@ import {
   type MeasurementQualityLevel,
   type TrainingHistoryEntry,
 } from "@/lib/kwab/SessionManager";
+import { setFirstDiagnosisFlow } from "@/lib/firstDiagnosisFlow";
 
 const MODE_CARDS = [
   {
@@ -166,30 +166,76 @@ export default function ModeSelectPage() {
     }
   }, [isLoading, patient, router]);
 
-  const historyEntries = useMemo(() => {
-    if (!patient) return [];
-    return SessionManager.getHistoryFor(patient).sort(
+  // 환자 홈은 "DB 가 원천(source of truth), 로컬캐시는 오프라인 보조" 구조로 간다.
+  //   1) 마운트 시 로컬캐시가 있으면 일단 그걸로 즉시 렌더 (deep offline 대응)
+  //   2) 이어서 `/api/training-history/mine` 을 호출해서 본인 DB 이력으로 덮어씀
+  //   → 다른 기기/브라우저에서 로그인해도 훈련 이력이 따라온다.
+  const [historyEntries, setHistoryEntries] = useState<TrainingHistoryEntry[]>([]);
+
+  useEffect(() => {
+    if (!patient) {
+      setHistoryEntries([]);
+      return;
+    }
+
+    // 로컬캐시 선행 로드 (ENABLE_LOCAL_HISTORY_CACHE 가 꺼져있으면 빈 배열)
+    const localRows = SessionManager.getHistoryFor(patient).sort(
       (a, b) => b.completedAt - a.completedAt,
     );
+    if (localRows.length > 0) {
+      setHistoryEntries(localRows);
+    }
+
+    let cancelled = false;
+    // 기존에 있던 /api/history/me 를 재사용 (mypage 가 같은 엔드포인트를 씀)
+    fetch("/api/history/me", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        if (cancelled) return;
+        const serverEntries = Array.isArray(body?.entries)
+          ? (body.entries as TrainingHistoryEntry[])
+          : null;
+        if (serverEntries) {
+          setHistoryEntries(
+            [...serverEntries].sort((a, b) => b.completedAt - a.completedAt),
+          );
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
   }, [patient]);
 
   const dashboard = useMemo(() => {
     const latest = historyEntries[0] ?? null;
-    const aqTrend = patient ? SessionManager.getAQTrendFor(patient) : null;
+    // AQ 추이: historyEntries 가 최신순 정렬이라 마지막이 가장 오래된 기록.
+    // 서버 이력을 기준으로 바로 계산해야 SessionManager 로컬캐시가 꺼져있어도 동작한다.
+    const chronological = [...historyEntries].sort(
+      (a, b) => a.completedAt - b.completedAt,
+    );
+    const trendLatest = chronological[chronological.length - 1] ?? null;
+    const trendPrevious =
+      chronological.length > 1 ? chronological[chronological.length - 2] : null;
+    const aqDelta =
+      trendLatest && trendPrevious
+        ? Number((trendLatest.aq - trendPrevious.aq).toFixed(1))
+        : null;
     const quality = getQualityUi(latest?.measurementQuality?.overall);
     return {
       todayTrainings: countTodayTrainings(historyEntries),
       latest,
-      recentAq: aqTrend?.latest?.aq ?? latest?.aq ?? null,
-      aqDelta: aqTrend?.delta ?? null,
+      recentAq: trendLatest?.aq ?? latest?.aq ?? null,
+      aqDelta,
       streakDays: buildStreak(historyEntries),
-      nextGoal: getNextGoal(aqTrend?.latest?.aq ?? latest?.aq ?? null),
+      nextGoal: getNextGoal(trendLatest?.aq ?? latest?.aq ?? null),
       quality,
       selfCount: countByMode(historyEntries, "self"),
       rehabCount: countByMode(historyEntries, "rehab"),
       singCount: countByMode(historyEntries, "sing"),
     };
-  }, [historyEntries, patient]);
+  }, [historyEntries]);
 
   const isFirstTraining = historyEntries.length === 0;
 
@@ -355,17 +401,17 @@ export default function ModeSelectPage() {
           />
         </section>
 
-        <section className="mt-8 grid flex-1 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)]">
+        <section className="mt-8 flex flex-1 flex-col gap-6">
           <article className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.22em] text-indigo-500">
                   훈련 리스트
                 </p>
-                <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+                <h2 className="mt-3 text-lg font-black tracking-tight text-slate-950 sm:text-xl lg:text-2xl">
                   나에게 맞는 훈련을 바로 시작하세요.
                 </h2>
-                <p className="mt-2 text-sm font-medium leading-6 text-slate-500">
+                <p className="mt-2 text-xs font-medium leading-5 text-slate-500 sm:text-sm sm:leading-6">
                   필요한 훈련을 빠르게 선택하고 최근 기록을 이어서 진행할 수 있습니다.
                 </p>
               </div>
@@ -411,10 +457,10 @@ export default function ModeSelectPage() {
                     </div>
 
                     <div className="flex min-w-0 flex-col justify-center">
-                      <h3 className="text-2xl font-black tracking-tight text-slate-950">
+                      <h3 className="text-lg font-black tracking-tight text-slate-950 sm:text-xl lg:text-2xl">
                         {card.title}
                       </h3>
-                      <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+                      <p className="mt-2 text-xs font-medium leading-5 text-slate-600 sm:text-sm sm:leading-6">
                         {card.desc}
                       </p>
                       <div className="mt-4 flex flex-wrap gap-2">
@@ -434,66 +480,6 @@ export default function ModeSelectPage() {
               })}
             </div>
           </article>
-
-          <aside className="space-y-6">
-            <section className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-sky-600">
-                최근 결과
-              </p>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-                최근 결과를 빠르게 확인하세요.
-              </h2>
-              {!dashboard.latest ? (
-                <p className="mt-4 text-sm font-medium leading-6 text-slate-600">
-                  아직 저장된 결과가 없습니다. 첫 훈련을 시작해 보세요.
-                </p>
-              ) : (
-                <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Pill>
-                      {dashboard.latest.trainingMode === "rehab"
-                        ? "언어 재활"
-                        : dashboard.latest.trainingMode === "sing"
-                          ? "브레인 노래방"
-                          : "자가 진단"}
-                    </Pill>
-                    <Pill subtle>{formatDate(dashboard.latest.completedAt)}</Pill>
-                  </div>
-                  <p className="mt-4 text-4xl font-black tracking-tight text-slate-950">
-                    {formatAq(dashboard.latest.aq)}
-                  </p>
-                  <p className="mt-2 text-sm font-medium text-slate-600">
-                    측정 품질은 {dashboard.quality.label}이며, 다음 목표는 {dashboard.nextGoal}입니다.
-                  </p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Link
-                      href="/report"
-                      className="rounded-full bg-slate-900 px-4 py-2 text-sm font-black text-white transition hover:bg-slate-800"
-                    >
-                      결과 보러 가기
-                    </Link>
-                    <Link
-                      href="/select-page/self-assessment"
-                      className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
-                    >
-                      다시 하기
-                    </Link>
-                  </div>
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-[32px] border border-slate-200 bg-[linear-gradient(180deg,#f7fbff_0%,#eef6ff_100%)] p-6 shadow-sm sm:p-8">
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-sky-700">
-                빠른 요약
-              </p>
-              <div className="mt-4 grid gap-3">
-                <SummaryRow label="연속 훈련" value={`${dashboard.streakDays}일`} />
-                <SummaryRow label="측정 품질" value={dashboard.quality.label} />
-                <SummaryRow label="다음 목표" value={dashboard.nextGoal} />
-              </div>
-            </section>
-          </aside>
         </section>
       </main>
 
@@ -503,7 +489,7 @@ export default function ModeSelectPage() {
             <p className="text-[11px] font-black uppercase tracking-[0.24em] text-orange-500">
               First Diagnosis
             </p>
-            <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+            <h2 className="mt-3 text-lg font-black tracking-tight text-slate-950 sm:text-xl lg:text-2xl">
               최초 1회는 자가진단이 필요합니다.
             </h2>
             <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
@@ -515,7 +501,16 @@ export default function ModeSelectPage() {
                 type="button"
                 onClick={() => {
                   setShowFirstDiagnosisModal(false);
-                  router.push("/select-page/self-assessment");
+                  // 최초 자가진단은 "우리집(home)" place 로 바로 step-1 진입.
+                  // self-assessment select 페이지에서 set 되던 trainingMode 플래그를
+                  // 건너뛰지 않도록 같이 set.
+                  if (typeof window !== "undefined") {
+                    sessionStorage.setItem("btt.trainingMode", "self");
+                  }
+                  // 최초 진단 흐름 표시 — step 페이지의 홈 버튼이 활동 선택(/select-page/mode)
+                  // 으로 돌아가도록 분기되는 근거가 된다.
+                  setFirstDiagnosisFlow();
+                  router.push("/programs/step-1?place=home");
                 }}
                 className="rounded-full bg-slate-900 px-5 py-3 text-sm font-black text-white transition hover:bg-slate-800"
               >
@@ -617,17 +612,3 @@ function Pill({
   );
 }
 
-function SummaryRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-[20px] border border-sky-100 bg-white px-4 py-3">
-      <span className="text-sm font-bold text-slate-600">{label}</span>
-      <span className="text-sm font-black text-slate-950">{value}</span>
-    </div>
-  );
-}

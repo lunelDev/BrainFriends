@@ -71,13 +71,7 @@ export default function SelectSingPage() {
             >
               활동선택
             </button>
-            <button
-              type="button"
-              onClick={() => router.push("/report?mode=sing")}
-              className="h-8 sm:h-9 min-w-[90px] sm:min-w-[98px] px-3 sm:px-4 rounded-full text-[11px] sm:text-xs font-black shadow-sm border bg-[#0B1A3A] text-white border-[#0B1A3A] hover:bg-[#09152f] transition-all"
-            >
-              리포트 보기
-            </button>
+            {/* "리포트 보기" 버튼 제거: /mypage 를 단일 이력 진입점으로 일원화. */}
             <button
               type="button"
               onClick={logout}

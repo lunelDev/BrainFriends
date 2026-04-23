@@ -178,7 +178,7 @@ function getSelfNextAction(params: {
   return "반응 속도와 발음 정확도를 중심으로 같은 단계 훈련을 한 번 더 반복해 보세요.";
 }
 
-function ReportContent() {
+export function ReportContent({ embedded = false }: { embedded?: boolean } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isHydrated, setIsHydrated] = useState(false);
@@ -861,64 +861,78 @@ function ReportContent() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="h-14 sm:h-16 px-4 sm:px-6 border-b border-orange-100 flex items-center justify-between bg-white sticky top-0 z-40">
-        <div className="flex items-center gap-3">
-          <img
-            src="/images/logo/logo.png"
-            alt="GOLDEN logo"
-            className="w-10 h-10 rounded-xl object-cover"
-          />
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">
-              Report
-            </p>
-            <h1 className="text-lg font-black">재활 활동 기록</h1>
+    <div
+      className={
+        embedded
+          ? "text-slate-900"
+          : "min-h-screen bg-slate-50 text-slate-900"
+      }
+    >
+      {embedded ? null : (
+        <header className="h-14 sm:h-16 px-4 sm:px-6 border-b border-orange-100 flex items-center justify-between bg-white sticky top-0 z-40">
+          <div className="flex items-center gap-3">
+            <img
+              src="/images/logo/logo.png"
+              alt="GOLDEN logo"
+              className="w-10 h-10 rounded-xl object-cover"
+            />
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">
+                Report
+              </p>
+              <h1 className="text-lg font-black">재활 활동 기록</h1>
+            </div>
           </div>
-        </div>
-        <button
-          type="button"
-          onClick={() =>
-            router.push(
-              modeFilter === "rehab"
-                ? "/select-page/speech-rehab"
-                : modeFilter === "sing"
-                  ? "/select-page/sing-training"
-                  : "/select-page/self-assessment",
-            )
-          }
-          aria-label="홈으로 이동"
-          title="홈"
-          className="w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition-colors flex items-center justify-center"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            className="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
+          <button
+            type="button"
+            onClick={() =>
+              router.push(
+                modeFilter === "rehab"
+                  ? "/select-page/speech-rehab"
+                  : modeFilter === "sing"
+                    ? "/select-page/sing-training"
+                    : "/select-page/self-assessment",
+              )
+            }
+            aria-label="홈으로 이동"
+            title="홈"
+            className="w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition-colors flex items-center justify-center"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M3 10.5 12 3l9 7.5"
-            />
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M5.5 9.5V21h13V9.5"
-            />
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M10 21v-5h4v5"
-            />
-          </svg>
-        </button>
-      </header>
+            <svg
+              viewBox="0 0 24 24"
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M3 10.5 12 3l9 7.5"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M5.5 9.5V21h13V9.5"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M10 21v-5h4v5"
+              />
+            </svg>
+          </button>
+        </header>
+      )}
 
-      <main className="w-full px-4 md:px-6 lg:px-8">
-        <div className="max-w-[1440px] mx-auto grid grid-cols-1 lg:grid-cols-[340px_minmax(0,1076px)] gap-4 lg:gap-6 lg:justify-center py-4 md:py-6 lg:py-8">
+      <section className={embedded ? "w-full" : "w-full px-4 md:px-6 lg:px-8"}>
+        <div
+          className={
+            embedded
+              ? "mx-auto grid grid-cols-1 gap-4 py-2 md:grid-cols-[minmax(220px,300px)_minmax(0,1fr)] md:gap-5"
+              : "max-w-[1440px] mx-auto grid grid-cols-1 lg:grid-cols-[minmax(280px,340px)_minmax(0,1076px)] gap-4 lg:gap-6 lg:justify-center py-4 md:py-6 lg:py-8"
+          }
+        >
           <HistorySidebar
           isRehabContext={isRehabContext}
           isSingContext={isSingContext}
@@ -972,7 +986,7 @@ function ReportContent() {
               선택된 리포트가 없습니다.
             </div>
           ) : selected.trainingMode === "sing" ? (
-            <div className="space-y-4 max-h-[calc(100vh-7rem)] overflow-y-auto pr-2 pb-24">
+            <div className={`space-y-4 ${embedded ? "" : "max-h-[calc(100vh-7rem)] overflow-y-auto pr-2 pb-24"}`}>
               <section className="rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white p-5 shadow-sm h-[140px] flex flex-col justify-center">
                 <p className="text-xs font-black opacity-90">
                   {selected.patientName || "사용자"} 님의 브레인 노래방 리포트
@@ -1202,7 +1216,7 @@ function ReportContent() {
               데이터가 없습니다.
             </div>
           ) : selected.trainingMode === "rehab" && rehabPrimaryStep ? (
-            <div className="space-y-4 max-h-[calc(100vh-7rem)] overflow-y-auto pr-2 pb-24">
+            <div className={`space-y-4 ${embedded ? "" : "max-h-[calc(100vh-7rem)] overflow-y-auto pr-2 pb-24"}`}>
               <section className="rounded-2xl bg-gradient-to-r from-sky-600 to-sky-500 text-white p-5 shadow-sm h-[140px] flex flex-col justify-center">
                 <p className="text-xs font-black opacity-90">
                   Step {rehabPrimaryStep.stepId} ·{" "}
@@ -1443,7 +1457,7 @@ function ReportContent() {
               </section>
             </div>
           ) : (
-            <div className="space-y-4 max-h-[calc(100vh-7rem)] overflow-y-auto pr-2 pb-24">
+            <div className={`space-y-4 ${embedded ? "" : "max-h-[calc(100vh-7rem)] overflow-y-auto pr-2 pb-24"}`}>
               <section className="rounded-2xl bg-gradient-to-r from-orange-600 to-orange-500 text-white p-5 shadow-sm h-[140px] flex flex-col justify-center">
                 <p className="text-xs font-black opacity-90">
                   {selected.patientName || "사용자"} 님의 자가진단 리포트
@@ -1575,16 +1589,23 @@ function ReportContent() {
           )}
           </section>
         </div>
-      </main>
+      </section>
 
     </div>
   );
 }
 
+// /report 라우트는 /mypage 로 흡수됐다. 직접 URL 접근/과거 북마크를 위해
+// 이 페이지는 /mypage 로 즉시 redirect 만 한다. ReportContent 본체는
+// named export 로 유지되어 /mypage 가 <ReportContent embedded /> 로 임베드한다.
 export default function ReportPage() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/mypage");
+  }, [router]);
   return (
-    <Suspense fallback={<div className="p-6">리포트 불러오는 중...</div>}>
-      <ReportContent />
-    </Suspense>
+    <div className="p-6 text-sm font-medium text-slate-600">
+      마이페이지로 이동 중…
+    </div>
   );
 }

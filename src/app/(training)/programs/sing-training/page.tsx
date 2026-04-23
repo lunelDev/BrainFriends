@@ -34,6 +34,8 @@ import {
   PronunciationAnalyzer,
   WhisperTranscriber,
 } from "@/lib/speech/SpeechAnalyzer";
+import { type AcousticSnapshot } from "@/lib/kwab/SessionManager";
+import { callVoiceAnalysis } from "@/lib/audio/voiceAnalysisClient";
 
 type Phase = "select" | "ready" | "calibrating" | "countdown" | "singing" | "result";
 
@@ -78,6 +80,8 @@ type SingResultEnvelope = {
     | "not_recorded"
     | "pending_result_sync";
   reviewAudioUploadError?: string | null;
+  // Parselmouth 음향 측정값 (REQ-ACOUSTIC-001~004). 결과 페이지 참고용.
+  acoustic?: AcousticSnapshot | null;
   governance: {
     catalogVersion: string;
     analysisVersion: string;
@@ -1083,6 +1087,11 @@ function BrainSingPageContent() {
       audioBlob: reviewAudio.blob,
       expectedLyrics,
     });
+    // Parselmouth 음향 측정값 (REQ-ACOUSTIC-001~004).
+    // 점수에는 영향 없음(참고 측정값) — 항상 안전한 shape 으로 반환됨.
+    const acousticSnapshot: AcousticSnapshot | null = reviewAudio.blob
+      ? await callVoiceAnalysis(reviewAudio.blob)
+      : null;
     const hasMeasuredPronunciation =
       pronunciation.consonantAccuracy != null &&
       pronunciation.vowelAccuracy != null &&
@@ -1218,6 +1227,7 @@ function BrainSingPageContent() {
         reviewAudioObjectKey: null,
         reviewAudioUploadState,
         reviewAudioUploadError,
+        acoustic: acousticSnapshot,
         governance: {
           catalogVersion:
             currentSong.governance.catalogVersion ?? SING_TRAINING_CATALOG_VERSION,

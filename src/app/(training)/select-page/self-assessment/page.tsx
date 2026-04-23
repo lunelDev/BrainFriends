@@ -180,13 +180,8 @@ export default function SelectPage() {
           >
             활동선택
           </button>
-          <button
-            type="button"
-            onClick={() => router.push("/report")}
-            className="h-8 sm:h-9 min-w-[90px] sm:min-w-[98px] px-3 sm:px-4 rounded-full text-[11px] sm:text-xs font-black shadow-sm border bg-[#0B1A3A] text-white border-[#0B1A3A] hover:bg-[#09152f] transition-all"
-          >
-            리포트 보기
-          </button>
+          {/* "리포트 보기" 버튼 제거: 이력 조회는 /mypage → 각 훈련 카드의
+              "결과 보기 →" 로 /report 로 이동하도록 단일 동선으로 정리. */}
           <button
             type="button"
             onClick={logout}

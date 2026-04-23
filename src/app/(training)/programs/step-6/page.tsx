@@ -15,6 +15,10 @@ import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { SessionManager } from "@/lib/kwab/SessionManager";
 import { saveTrainingExitProgress } from "@/lib/trainingExitProgress";
+import {
+  clearFirstDiagnosisFlow,
+  isFirstDiagnosisFlow,
+} from "@/lib/firstDiagnosisFlow";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import { calculateHangulStrokeCount } from "@/lib/text/hangulStroke";
 import { calculateArticulationWritingConsistency } from "@/lib/analysis/articulationAnalyzer";
@@ -114,6 +118,12 @@ function Step6Content() {
       sessionStorage.getItem("btt.trialMode") === "1";
     if (isTrialMode) {
       router.push("/");
+      return;
+    }
+    if (isFirstDiagnosisFlow()) {
+      clearFirstDiagnosisFlow();
+      saveTrainingExitProgress(place, 6);
+      router.push("/select-page/mode");
       return;
     }
     saveTrainingExitProgress(place, 6);

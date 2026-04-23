@@ -23,66 +23,60 @@ export default async function TherapistLayout({
   return (
     <main className="min-h-screen bg-[linear-gradient(180deg,#f5f7fb_0%,#eef4ff_100%)] px-4 py-8 sm:px-6">
       <div className="mx-auto max-w-7xl">
-        <section className="rounded-[32px] border border-slate-200 bg-white/90 p-6 shadow-sm backdrop-blur sm:p-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-[11px] font-black uppercase tracking-[0.26em] text-sky-600">
-                치료사 콘솔
-              </p>
-              <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
-                사용자 흐름은 단순하게 두고, 해석과 운영은 여기서 진행합니다.
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-slate-600">
-                치료사 화면은 사용자 화면과 분리된 운영 공간입니다. 사용자 조회, 결과 검토,
-                측정 품질 확인, V&V 및 보안 점검 같은 후속 작업을 이 화면에서 처리합니다.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {isAdmin ? (
-                <>
-                  <span className="rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-black text-slate-700">
-                    관리자 모드
-                  </span>
-                  <div className="inline-flex rounded-full border border-slate-200 bg-slate-100 p-1">
-                    <Link
-                      href="/select-page/mode"
-                      className="rounded-full px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-white"
-                    >
-                      사용자 화면
-                    </Link>
-                    <Link
-                      href="/therapist"
-                      className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-black text-white transition hover:bg-indigo-700"
-                    >
-                      치료사 화면
-                    </Link>
-                  </div>
-                </>
-              ) : null}
-            </div>
-          </div>
+        {/*
+          페이지 최상단의 글로벌 액션 바.
+          - 헤더 카드 위(페이지 가장 윗줄)에 로그아웃 버튼만 우측 정렬로 노출한다.
+          - 헤더 카드 안에 끼워넣지 않아 시각 노이즈가 줄고, 항상 같은 위치에서 접근 가능.
+        */}
+        <div className="mb-3 flex justify-end">
+          <TherapistLogoutButton />
+        </div>
 
-          <div className="mt-6 border-t border-slate-200 pt-6">
-            <div className="mb-4 flex flex-wrap gap-2">
+        {/*
+          관리자일 때만 운영 토글/관리자 진입/사용량 관리 버튼과 nav 카드가 노출된다.
+          치료사는 본문(종합 대시보드)으로 바로 진입하므로 헤더 카드 자체를 생략.
+        */}
+        {isAdmin ? (
+          <section className="rounded-[32px] border border-slate-200 bg-white/90 p-5 shadow-sm backdrop-blur sm:p-6">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700">
+                관리자 모드
+              </span>
+              <div className="inline-flex rounded-full border border-slate-200 bg-slate-100 p-1">
+                <Link
+                  href="/select-page/mode"
+                  className="rounded-full px-3 py-1.5 text-xs font-black text-slate-700 transition hover:bg-white"
+                >
+                  사용자 화면
+                </Link>
+                <Link
+                  href="/therapist"
+                  className="rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-indigo-700"
+                >
+                  치료사 화면
+                </Link>
+              </div>
               <Link
                 href="/admin"
-                className="rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-black text-sky-700 transition hover:bg-sky-100"
+                className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-black text-sky-700 transition hover:bg-sky-100"
               >
                 관리자 화면
               </Link>
               <Link
                 href="/tools/training-usage-admin"
-                className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
+                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-black text-slate-700 transition hover:bg-slate-100"
               >
                 사용량 관리
               </Link>
-              <TherapistLogoutButton />
             </div>
-            <TherapistShellNav />
-          </div>
-        </section>
 
-        <div className="mt-6">{children}</div>
+            <div className="mt-4 border-t border-slate-200 pt-4">
+              <TherapistShellNav isAdmin={isAdmin} />
+            </div>
+          </section>
+        ) : null}
+
+        <div className={isAdmin ? "mt-6" : ""}>{children}</div>
       </div>
     </main>
   );

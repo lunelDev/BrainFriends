@@ -25,6 +25,17 @@ export type TherapistPatientDetail = {
   loginId: string | null;
   birthDate: string | null;
   phone: string | null;
+  sex: "M" | "F" | "U" | null;
+  educationYears: number | null;
+  onsetDate: string | null;
+  daysSinceOnset: number | null;
+  hemiplegia: "Y" | "N" | null;
+  hemianopsia: "LEFT" | "RIGHT" | "NONE" | null;
+  hand: string | null;
+  therapistName: string | null;
+  therapistLoginId: string | null;
+  therapistUserId: string | null;
+  therapistOrganizationName: string | null;
 };
 
 type TherapistReportsListPayload = {
@@ -42,6 +53,11 @@ type TherapistReportDetailPayload = {
 type TherapistPatientNotePayload = {
   ok: boolean;
   note?: TherapistPatientNote | null;
+};
+
+type TherapistPatientNotesPayload = {
+  ok: boolean;
+  notes?: Record<string, TherapistPatientNote>;
 };
 
 export async function fetchTherapistReportsOverview() {
@@ -83,6 +99,24 @@ export async function fetchTherapistPatientDetail(patientId: string) {
     patient: payload.patient ?? null,
     entries: Array.isArray(payload.entries) ? payload.entries : [],
   };
+}
+
+export async function fetchTherapistPatientNotes() {
+  const response = await fetch("/api/therapist/reports/notes", {
+    cache: "no-store",
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | TherapistPatientNotesPayload
+    | null;
+
+  if (!response.ok || !payload?.ok) {
+    throw new Error(
+      (payload as { error?: string } | null)?.error ||
+        "failed_to_load_therapist_notes",
+    );
+  }
+
+  return payload.notes ?? {};
 }
 
 export async function fetchTherapistPatientNote(patientId: string) {
