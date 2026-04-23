@@ -1,0 +1,3 @@
+{
+  "/api/auth/find-login-id/route": "app/api/auth/find-login-id/route.js"
+}

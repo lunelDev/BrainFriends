@@ -1,0 +1,65 @@
+module.exports=[70406,(e,t,a)=>{t.exports=e.x("next/dist/compiled/@opentelemetry/api",()=>require("next/dist/compiled/@opentelemetry/api"))},93695,(e,t,a)=>{t.exports=e.x("next/dist/shared/lib/no-fallback-error.external.js",()=>require("next/dist/shared/lib/no-fallback-error.external.js"))},23862,e=>e.a(async(t,a)=>{try{let t=await e.y("pg-587764f78a6c7a9c");e.n(t),a()}catch(e){a(e)}},!0),12714,(e,t,a)=>{t.exports=e.x("node:fs/promises",()=>require("node:fs/promises"))},18622,(e,t,a)=>{t.exports=e.x("next/dist/compiled/next-server/app-page-turbo.runtime.prod.js",()=>require("next/dist/compiled/next-server/app-page-turbo.runtime.prod.js"))},56704,(e,t,a)=>{t.exports=e.x("next/dist/server/app-render/work-async-storage.external.js",()=>require("next/dist/server/app-render/work-async-storage.external.js"))},32319,(e,t,a)=>{t.exports=e.x("next/dist/server/app-render/work-unit-async-storage.external.js",()=>require("next/dist/server/app-render/work-unit-async-storage.external.js"))},24725,(e,t,a)=>{t.exports=e.x("next/dist/server/app-render/after-task-async-storage.external.js",()=>require("next/dist/server/app-render/after-task-async-storage.external.js"))},14747,(e,t,a)=>{t.exports=e.x("path",()=>require("path"))},54799,(e,t,a)=>{t.exports=e.x("crypto",()=>require("crypto"))},63528,e=>e.a(async(t,a)=>{try{var r=e.i(23862),n=t([r]);[r]=n.then?(await n)():n;let s=process.env.DATABASE_URL;function i(){if(!s)throw Error("missing_database_url");return global.__brainfriendsPgPool||(global.__brainfriendsPgPool=new r.Pool({connectionString:s,ssl:"require"===process.env.DATABASE_SSL&&{rejectUnauthorized:!1}})),global.__brainfriendsPgPool}s||console.warn("[db] DATABASE_URL is not configured. Database writes are disabled."),e.s(["getDbPool",()=>i]),a()}catch(e){a(e)}},!1),77545,e=>e.a(async(t,a)=>{try{var r=e.i(54799),n=e.i(63528),i=t([n]);function s(e){return(0,r.createHash)("sha256").update(e).digest("hex")}function o(e){let t=s(e).slice(0,32).split("");t[12]="5",t[16]=(3&parseInt(t[16],16)|8).toString(16);let a=t.join("");return`${a.slice(0,8)}-${a.slice(8,12)}-${a.slice(12,16)}-${a.slice(16,20)}-${a.slice(20,32)}`}function l(e){return[e.name.trim(),e.birthDate??"",e.gender,e.phone??"",e.language??"ko"].join("|")}function d(e){let t=l(e);return`psn_${s(t).slice(0,24)}`}async function u(e,t){let a=l(t),r=o(`patient:${a}`),n=`PT-${r.slice(0,8).toUpperCase()}`,i=d(t);return await e.query(`
+      INSERT INTO patient_pii (
+        patient_id,
+        patient_code,
+        full_name,
+        birth_date,
+        sex,
+        phone,
+        language,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+      ON CONFLICT (patient_id) DO UPDATE
+      SET
+        patient_code = EXCLUDED.patient_code,
+        full_name = EXCLUDED.full_name,
+        birth_date = EXCLUDED.birth_date,
+        sex = EXCLUDED.sex,
+        phone = EXCLUDED.phone,
+        language = EXCLUDED.language,
+        updated_at = NOW()
+    `,[r,n,t.name.trim(),t.birthDate||null,t.gender||"U",t.phone||null,t.language||"ko"]),await e.query(`
+      INSERT INTO patient_pseudonym_map (
+        patient_pseudonym_id,
+        patient_id,
+        mapping_version,
+        created_at
+      )
+      VALUES ($1, $2, $3, NOW())
+      ON CONFLICT (patient_pseudonym_id) DO UPDATE
+      SET
+        patient_id = EXCLUDED.patient_id,
+        mapping_version = EXCLUDED.mapping_version
+    `,[i,r,"pseudonym-map-v1"]),{patientId:r,patientCode:n,patientPseudonymId:i}}async function p(e){let t=(0,n.getDbPool)(),a=await t.connect();try{await a.query("BEGIN");let t=await u(a,e);return await a.query("COMMIT"),t}catch(e){throw await a.query("ROLLBACK"),e}finally{a.release()}}[n]=i.then?(await i)():i,e.s(["buildPatientPseudonymId",()=>d,"deterministicUuid",()=>o,"ensurePatientIdentity",()=>p,"hashValue",()=>s,"upsertPatientIdentity",()=>u]),a()}catch(e){a(e)}},!1),65093,e=>{"use strict";function t(){return"1"===process.env.VERCEL}e.s(["isServerPersistenceDisabled",()=>t])},64581,e=>e.a(async(t,a)=>{try{var r=e.i(63528),n=t([r]);async function i(e,t){await e.query(`
+      INSERT INTO clinical_media_objects (
+        media_id,
+        patient_pseudonym_id,
+        source_session_key,
+        training_type,
+        step_no,
+        media_type,
+        capture_role,
+        bucket_name,
+        object_key,
+        mime_type,
+        file_size_bytes,
+        duration_ms,
+        sha256_hash,
+        captured_at,
+        uploaded_at,
+        status
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::timestamptz, NOW(), $15
+      )
+      ON CONFLICT (media_id) DO UPDATE
+      SET
+        file_size_bytes = EXCLUDED.file_size_bytes,
+        duration_ms = EXCLUDED.duration_ms,
+        sha256_hash = EXCLUDED.sha256_hash,
+        status = EXCLUDED.status
+    `,[t.mediaId,t.patientPseudonymId,t.sourceSessionKey,t.trainingType,t.stepNo??null,t.mediaType,t.captureRole,t.bucketName,t.objectKey,t.mimeType,t.fileSizeBytes??null,t.durationMs??null,t.sha256Hash??null,t.capturedAt,t.status??"active"])}async function s(e){let t=(0,r.getDbPool)(),a=await t.connect();try{return await a.query("BEGIN"),await i(a,e),await a.query("COMMIT"),e}catch(e){throw await a.query("ROLLBACK"),e}finally{a.release()}}[r]=n.then?(await n)():n,e.s(["saveClinicalMediaRecord",()=>s]),a()}catch(e){a(e)}},!1),89198,e=>e.a(async(t,a)=>{try{var r=e.i(89171),n=e.i(77545),i=e.i(33667),s=e.i(64581),o=e.i(65093),l=t([n,s]);async function d(e){var t;let a=await e.json().catch(()=>({}));if(t=a.patient,!(t?.name?.trim()&&t?.gender&&t?.age))return r.NextResponse.json({ok:!1,error:"invalid_patient_payload"},{status:400});if(!a.mediaId||!a.sourceSessionKey||!a.trainingType||!a.mediaType||!a.captureRole||!a.mimeType||!a.objectKey)return r.NextResponse.json({ok:!1,error:"invalid_media_complete_payload"},{status:400});if((0,o.isServerPersistenceDisabled)())return r.NextResponse.json({ok:!0,skipped:!0,reason:"vercel_server_persistence_disabled"});try{await (0,i.assertObjectExists)(a.objectKey),await (0,n.ensurePatientIdentity)(a.patient);let e=(0,n.buildPatientPseudonymId)(a.patient),t=await (0,s.saveClinicalMediaRecord)({mediaId:a.mediaId,patientPseudonymId:e,sourceSessionKey:a.sourceSessionKey,trainingType:a.trainingType,stepNo:a.stepNo??null,mediaType:a.mediaType,captureRole:a.captureRole,bucketName:(0,i.getObjectStorageBucketName)(),objectKey:a.objectKey,mimeType:a.mimeType,fileSizeBytes:a.fileSizeBytes??null,durationMs:a.durationMs??null,sha256Hash:a.sha256Hash??null,capturedAt:a.capturedAt??new Date().toISOString()});return r.NextResponse.json({ok:!0,saved:t})}catch(e){return r.NextResponse.json({ok:!1,error:e?.message||"failed_to_complete_media_upload"},{status:500})}}[n,s]=l.then?(await l)():l,e.s(["POST",()=>d,"dynamic",0,"force-dynamic","runtime",0,"nodejs"]),a()}catch(e){a(e)}},!1),15306,e=>e.a(async(t,a)=>{try{var r=e.i(47909),n=e.i(74017),i=e.i(96250),s=e.i(59756),o=e.i(61916),l=e.i(74677),d=e.i(69741),u=e.i(16795),p=e.i(87718),c=e.i(95169),h=e.i(47587),m=e.i(66012),y=e.i(70101),_=e.i(26937),E=e.i(10372),g=e.i(93695);e.i(52474);var x=e.i(220),f=e.i(89198),R=t([f]);[f]=R.then?(await R)():R;let b=new r.AppRouteRouteModule({definition:{kind:n.RouteKind.APP_ROUTE,page:"/api/media/complete-upload/route",pathname:"/api/media/complete-upload",filename:"route",bundlePath:""},distDir:".next-sandbox4",relativeProjectDir:"",resolvedPagePath:"[project]/src/app/api/media/complete-upload/route.ts",nextConfigOutput:"",userland:f}),{workAsyncStorage:C,workUnitAsyncStorage:T,serverHooks:D}=b;function v(){return(0,i.patchFetch)({workAsyncStorage:C,workUnitAsyncStorage:T})}async function w(e,t,a){b.isDev&&(0,s.addRequestMeta)(e,"devRequestTimingInternalsEnd",process.hrtime.bigint());let r="/api/media/complete-upload/route";r=r.replace(/\/index$/,"")||"/";let i=await b.prepare(e,t,{srcPage:r,multiZoneDraftMode:!1});if(!i)return t.statusCode=400,t.end("Bad Request"),null==a.waitUntil||a.waitUntil.call(a,Promise.resolve()),null;let{buildId:f,params:R,nextConfig:v,parsedUrl:w,isDraftMode:C,prerenderManifest:T,routerServerContext:D,isOnDemandRevalidate:N,revalidateOnlyGenerated:A,resolvedPathname:P,clientReferenceManifest:S,serverActionsManifest:O}=i,$=(0,d.normalizeAppPath)(r),I=!!(T.dynamicRoutes[$]||T.routes[P]),U=async()=>((null==D?void 0:D.render404)?await D.render404(e,t,w,!1):t.end("This page could not be found"),null);if(I&&!C){let e=!!T.routes[P],t=T.dynamicRoutes[$];if(t&&!1===t.fallback&&!e){if(v.experimental.adapterPath)return await U();throw new g.NoFallbackError}}let j=null;!I||b.isDev||C||(j=P,j="/index"===j?"/":j);let k=!0===b.isDev||!I,q=I&&!k;O&&S&&(0,l.setManifestsSingleton)({page:r,clientReferenceManifest:S,serverActionsManifest:O});let L=e.method||"GET",H=(0,o.getTracer)(),M=H.getActiveScopeSpan(),K={params:R,prerenderManifest:T,renderOpts:{experimental:{authInterrupts:!!v.experimental.authInterrupts},cacheComponents:!!v.cacheComponents,supportsDynamicResponse:k,incrementalCache:(0,s.getRequestMeta)(e,"incrementalCache"),cacheLifeProfiles:v.cacheLife,waitUntil:a.waitUntil,onClose:e=>{t.on("close",e)},onAfterTaskError:void 0,onInstrumentationRequestError:(t,a,r,n)=>b.onRequestError(e,t,r,n,D)},sharedContext:{buildId:f}},B=new u.NodeNextRequest(e),X=new u.NodeNextResponse(t),F=p.NextRequestAdapter.fromNodeNextRequest(B,(0,p.signalFromNodeResponse)(t));try{let i=async e=>b.handle(F,K).finally(()=>{if(!e)return;e.setAttributes({"http.status_code":t.statusCode,"next.rsc":!1});let a=H.getRootSpanAttributes();if(!a)return;if(a.get("next.span_type")!==c.BaseServerSpan.handleRequest)return void console.warn(`Unexpected root span type '${a.get("next.span_type")}'. Please report this Next.js issue https://github.com/vercel/next.js`);let n=a.get("next.route");if(n){let t=`${L} ${n}`;e.setAttributes({"next.route":n,"http.route":n,"next.span_name":t}),e.updateName(t)}else e.updateName(`${L} ${r}`)}),l=!!(0,s.getRequestMeta)(e,"minimalMode"),d=async s=>{var o,d;let u=async({previousCacheEntry:n})=>{try{if(!l&&N&&A&&!n)return t.statusCode=404,t.setHeader("x-nextjs-cache","REVALIDATED"),t.end("This page could not be found"),null;let r=await i(s);e.fetchMetrics=K.renderOpts.fetchMetrics;let o=K.renderOpts.pendingWaitUntil;o&&a.waitUntil&&(a.waitUntil(o),o=void 0);let d=K.renderOpts.collectedTags;if(!I)return await (0,m.sendResponse)(B,X,r,K.renderOpts.pendingWaitUntil),null;{let e=await r.blob(),t=(0,y.toNodeOutgoingHttpHeaders)(r.headers);d&&(t[E.NEXT_CACHE_TAGS_HEADER]=d),!t["content-type"]&&e.type&&(t["content-type"]=e.type);let a=void 0!==K.renderOpts.collectedRevalidate&&!(K.renderOpts.collectedRevalidate>=E.INFINITE_CACHE)&&K.renderOpts.collectedRevalidate,n=void 0===K.renderOpts.collectedExpire||K.renderOpts.collectedExpire>=E.INFINITE_CACHE?void 0:K.renderOpts.collectedExpire;return{value:{kind:x.CachedRouteKind.APP_ROUTE,status:r.status,body:Buffer.from(await e.arrayBuffer()),headers:t},cacheControl:{revalidate:a,expire:n}}}}catch(t){throw(null==n?void 0:n.isStale)&&await b.onRequestError(e,t,{routerKind:"App Router",routePath:r,routeType:"route",revalidateReason:(0,h.getRevalidateReason)({isStaticGeneration:q,isOnDemandRevalidate:N})},!1,D),t}},p=await b.handleResponse({req:e,nextConfig:v,cacheKey:j,routeKind:n.RouteKind.APP_ROUTE,isFallback:!1,prerenderManifest:T,isRoutePPREnabled:!1,isOnDemandRevalidate:N,revalidateOnlyGenerated:A,responseGenerator:u,waitUntil:a.waitUntil,isMinimalMode:l});if(!I)return null;if((null==p||null==(o=p.value)?void 0:o.kind)!==x.CachedRouteKind.APP_ROUTE)throw Object.defineProperty(Error(`Invariant: app-route received invalid cache entry ${null==p||null==(d=p.value)?void 0:d.kind}`),"__NEXT_ERROR_CODE",{value:"E701",enumerable:!1,configurable:!0});l||t.setHeader("x-nextjs-cache",N?"REVALIDATED":p.isMiss?"MISS":p.isStale?"STALE":"HIT"),C&&t.setHeader("Cache-Control","private, no-cache, no-store, max-age=0, must-revalidate");let c=(0,y.fromNodeOutgoingHttpHeaders)(p.value.headers);return l&&I||c.delete(E.NEXT_CACHE_TAGS_HEADER),!p.cacheControl||t.getHeader("Cache-Control")||c.get("Cache-Control")||c.set("Cache-Control",(0,_.getCacheControlHeader)(p.cacheControl)),await (0,m.sendResponse)(B,X,new Response(p.value.body,{headers:c,status:p.value.status||200})),null};M?await d(M):await H.withPropagatedContext(e.headers,()=>H.trace(c.BaseServerSpan.handleRequest,{spanName:`${L} ${r}`,kind:o.SpanKind.SERVER,attributes:{"http.method":L,"http.target":e.url}},d))}catch(t){if(t instanceof g.NoFallbackError||await b.onRequestError(e,t,{routerKind:"App Router",routePath:$,routeType:"route",revalidateReason:(0,h.getRevalidateReason)({isStaticGeneration:q,isOnDemandRevalidate:N})},!1,D),I)throw t;return await (0,m.sendResponse)(B,X,new Response(null,{status:500})),null}}e.s(["handler",()=>w,"patchFetch",()=>v,"routeModule",()=>b,"serverHooks",()=>D,"workAsyncStorage",()=>C,"workUnitAsyncStorage",()=>T]),a()}catch(e){a(e)}},!1)];
+
+//# sourceMappingURL=%5Broot-of-the-server%5D__7cba9fb1._.js.map

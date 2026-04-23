@@ -1,0 +1,3 @@
+module.exports=[4657,a=>{"use strict";async function b(a,b){}function c(){}a.s(["cancelSpeechPlayback",()=>c,"speakKoreanText",()=>b])},64521,a=>{"use strict";function b(a){return a?a.replace(/([.!?。！？])\s*/g,"$1\n").replace(/\n{2,}/g,"\n").trim():a}function c(a){let b=(a||"").replace(/\s+/g,"").length;return b>=56?"text-lg md:text-xl lg:text-2xl":b>=36?"text-xl md:text-2xl lg:text-3xl":"text-2xl md:text-3xl lg:text-4xl"}a.s(["addSentenceLineBreaks",()=>b,"getResponsiveSentenceSizeClass",()=>c])}];
+
+//# sourceMappingURL=src_lib_d545036b._.js.map

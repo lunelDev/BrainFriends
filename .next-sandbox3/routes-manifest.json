@@ -1,0 +1,629 @@
+{
+  "version": 3,
+  "pages404": true,
+  "appType": "app",
+  "caseSensitive": false,
+  "basePath": "",
+  "redirects": [
+    {
+      "source": "/:path+/",
+      "destination": "/:path+",
+      "internal": true,
+      "priority": true,
+      "statusCode": 308,
+      "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))/$"
+    },
+    {
+      "source": "/mode-select",
+      "destination": "/select-page/mode",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/mode-select(?:/)?$"
+    },
+    {
+      "source": "/select",
+      "destination": "/select-page/self-assessment",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/select(?:/)?$"
+    },
+    {
+      "source": "/rehab",
+      "destination": "/select-page/speech-rehab",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/rehab(?:/)?$"
+    },
+    {
+      "source": "/select-sing",
+      "destination": "/select-page/sing-training",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/select-sing(?:/)?$"
+    },
+    {
+      "source": "/brain-sing",
+      "destination": "/programs/sing-training",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/brain-sing(?:/)?$"
+    },
+    {
+      "source": "/step-1",
+      "destination": "/programs/step-1",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/step-1(?:/)?$"
+    },
+    {
+      "source": "/step-2",
+      "destination": "/programs/step-2",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/step-2(?:/)?$"
+    },
+    {
+      "source": "/step-3",
+      "destination": "/programs/step-3",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/step-3(?:/)?$"
+    },
+    {
+      "source": "/step-4",
+      "destination": "/programs/step-4",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/step-4(?:/)?$"
+    },
+    {
+      "source": "/step-5",
+      "destination": "/programs/step-5",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/step-5(?:/)?$"
+    },
+    {
+      "source": "/step-6",
+      "destination": "/programs/step-6",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/step-6(?:/)?$"
+    },
+    {
+      "source": "/result",
+      "destination": "/result-page/self-assessment",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/result(?:/)?$"
+    },
+    {
+      "source": "/result-rehab",
+      "destination": "/result-page/speech-rehab",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/result-rehab(?:/)?$"
+    }
+  ],
+  "headers": [],
+  "rewrites": {
+    "beforeFiles": [],
+    "afterFiles": [],
+    "fallback": []
+  },
+  "dynamicRoutes": [
+    {
+      "page": "/admin/docs/[slug]",
+      "regex": "^/admin/docs/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPslug": "nxtPslug"
+      },
+      "namedRegex": "^/admin/docs/(?<nxtPslug>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/organizations/[organizationId]/therapists",
+      "regex": "^/api/organizations/([^/]+?)/therapists(?:/)?$",
+      "routeKeys": {
+        "nxtPorganizationId": "nxtPorganizationId"
+      },
+      "namedRegex": "^/api/organizations/(?<nxtPorganizationId>[^/]+?)/therapists(?:/)?$"
+    },
+    {
+      "page": "/select-page/game-mode/stage/[stageId]",
+      "regex": "^/select\\-page/game\\-mode/stage/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPstageId": "nxtPstageId"
+      },
+      "namedRegex": "^/select\\-page/game\\-mode/stage/(?<nxtPstageId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/therapist/patients/[patientId]",
+      "regex": "^/therapist/patients/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPpatientId": "nxtPpatientId"
+      },
+      "namedRegex": "^/therapist/patients/(?<nxtPpatientId>[^/]+?)(?:/)?$"
+    }
+  ],
+  "staticRoutes": [
+    {
+      "page": "/",
+      "regex": "^/(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/(?:/)?$"
+    },
+    {
+      "page": "/_global-error",
+      "regex": "^/_global\\-error(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_global\\-error(?:/)?$"
+    },
+    {
+      "page": "/_not-found",
+      "regex": "^/_not\\-found(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/admin",
+      "regex": "^/admin(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin(?:/)?$"
+    },
+    {
+      "page": "/api/admin/organizations",
+      "regex": "^/api/admin/organizations(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/admin/organizations(?:/)?$"
+    },
+    {
+      "page": "/api/admin/patient-links",
+      "regex": "^/api/admin/patient\\-links(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/admin/patient\\-links(?:/)?$"
+    },
+    {
+      "page": "/api/admin/reports",
+      "regex": "^/api/admin/reports(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/admin/reports(?:/)?$"
+    },
+    {
+      "page": "/api/admin/therapists",
+      "regex": "^/api/admin/therapists(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/admin/therapists(?:/)?$"
+    },
+    {
+      "page": "/api/auth/check-login-id",
+      "regex": "^/api/auth/check\\-login\\-id(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/auth/check\\-login\\-id(?:/)?$"
+    },
+    {
+      "page": "/api/auth/dev-login",
+      "regex": "^/api/auth/dev\\-login(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/auth/dev\\-login(?:/)?$"
+    },
+    {
+      "page": "/api/auth/find-login-id",
+      "regex": "^/api/auth/find\\-login\\-id(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/auth/find\\-login\\-id(?:/)?$"
+    },
+    {
+      "page": "/api/auth/login",
+      "regex": "^/api/auth/login(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/auth/login(?:/)?$"
+    },
+    {
+      "page": "/api/auth/logout",
+      "regex": "^/api/auth/logout(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/auth/logout(?:/)?$"
+    },
+    {
+      "page": "/api/auth/reset-password",
+      "regex": "^/api/auth/reset\\-password(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/auth/reset\\-password(?:/)?$"
+    },
+    {
+      "page": "/api/auth/session",
+      "regex": "^/api/auth/session(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/auth/session(?:/)?$"
+    },
+    {
+      "page": "/api/auth/signup",
+      "regex": "^/api/auth/signup(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/auth/signup(?:/)?$"
+    },
+    {
+      "page": "/api/client-storage-sync",
+      "regex": "^/api/client\\-storage\\-sync(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/client\\-storage\\-sync(?:/)?$"
+    },
+    {
+      "page": "/api/clinical-results",
+      "regex": "^/api/clinical\\-results(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/clinical\\-results(?:/)?$"
+    },
+    {
+      "page": "/api/evaluation-samples",
+      "regex": "^/api/evaluation\\-samples(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/evaluation\\-samples(?:/)?$"
+    },
+    {
+      "page": "/api/history/me",
+      "regex": "^/api/history/me(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/history/me(?:/)?$"
+    },
+    {
+      "page": "/api/kwab/final-result",
+      "regex": "^/api/kwab/final\\-result(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/kwab/final\\-result(?:/)?$"
+    },
+    {
+      "page": "/api/media/access",
+      "regex": "^/api/media/access(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/media/access(?:/)?$"
+    },
+    {
+      "page": "/api/media/complete-upload",
+      "regex": "^/api/media/complete\\-upload(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/media/complete\\-upload(?:/)?$"
+    },
+    {
+      "page": "/api/media/init-upload",
+      "regex": "^/api/media/init\\-upload(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/media/init\\-upload(?:/)?$"
+    },
+    {
+      "page": "/api/media/upload",
+      "regex": "^/api/media/upload(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/media/upload(?:/)?$"
+    },
+    {
+      "page": "/api/onboarding/status",
+      "regex": "^/api/onboarding/status(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/onboarding/status(?:/)?$"
+    },
+    {
+      "page": "/api/organization-requests",
+      "regex": "^/api/organization\\-requests(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/organization\\-requests(?:/)?$"
+    },
+    {
+      "page": "/api/organizations",
+      "regex": "^/api/organizations(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/organizations(?:/)?$"
+    },
+    {
+      "page": "/api/patient/link-care",
+      "regex": "^/api/patient/link\\-care(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/patient/link\\-care(?:/)?$"
+    },
+    {
+      "page": "/api/proxy/stt",
+      "regex": "^/api/proxy/stt(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/proxy/stt(?:/)?$"
+    },
+    {
+      "page": "/api/proxy/voice-analysis",
+      "regex": "^/api/proxy/voice\\-analysis(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/proxy/voice\\-analysis(?:/)?$"
+    },
+    {
+      "page": "/api/security-audit",
+      "regex": "^/api/security\\-audit(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/security\\-audit(?:/)?$"
+    },
+    {
+      "page": "/api/sing-results",
+      "regex": "^/api/sing\\-results(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/sing\\-results(?:/)?$"
+    },
+    {
+      "page": "/api/therapist/reports",
+      "regex": "^/api/therapist/reports(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/therapist/reports(?:/)?$"
+    },
+    {
+      "page": "/api/therapist/reports/note",
+      "regex": "^/api/therapist/reports/note(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/therapist/reports/note(?:/)?$"
+    },
+    {
+      "page": "/api/therapist/system/ai-evaluation-export",
+      "regex": "^/api/therapist/system/ai\\-evaluation\\-export(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/therapist/system/ai\\-evaluation\\-export(?:/)?$"
+    },
+    {
+      "page": "/api/therapist/system/vnv-export",
+      "regex": "^/api/therapist/system/vnv\\-export(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/therapist/system/vnv\\-export(?:/)?$"
+    },
+    {
+      "page": "/api/training-events",
+      "regex": "^/api/training\\-events(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/training\\-events(?:/)?$"
+    },
+    {
+      "page": "/favicon.ico",
+      "regex": "^/favicon\\.ico(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/favicon\\.ico(?:/)?$"
+    },
+    {
+      "page": "/find-id",
+      "regex": "^/find\\-id(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/find\\-id(?:/)?$"
+    },
+    {
+      "page": "/link-care",
+      "regex": "^/link\\-care(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/link\\-care(?:/)?$"
+    },
+    {
+      "page": "/mypage",
+      "regex": "^/mypage(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/mypage(?:/)?$"
+    },
+    {
+      "page": "/organization-register",
+      "regex": "^/organization\\-register(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/organization\\-register(?:/)?$"
+    },
+    {
+      "page": "/programs/lingo/association-clear",
+      "regex": "^/programs/lingo/association\\-clear(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/programs/lingo/association\\-clear(?:/)?$"
+    },
+    {
+      "page": "/programs/lingo/balloon",
+      "regex": "^/programs/lingo/balloon(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/programs/lingo/balloon(?:/)?$"
+    },
+    {
+      "page": "/programs/lingo/memory",
+      "regex": "^/programs/lingo/memory(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/programs/lingo/memory(?:/)?$"
+    },
+    {
+      "page": "/programs/lingo/sentence",
+      "regex": "^/programs/lingo/sentence(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/programs/lingo/sentence(?:/)?$"
+    },
+    {
+      "page": "/programs/lingo/tetris",
+      "regex": "^/programs/lingo/tetris(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/programs/lingo/tetris(?:/)?$"
+    },
+    {
+      "page": "/programs/lingo/word-assemble",
+      "regex": "^/programs/lingo/word\\-assemble(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/programs/lingo/word\\-assemble(?:/)?$"
+    },
+    {
+      "page": "/programs/lingo/word-select",
+      "regex": "^/programs/lingo/word\\-select(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/programs/lingo/word\\-select(?:/)?$"
+    },
+    {
+      "page": "/programs/sing-training",
+      "regex": "^/programs/sing\\-training(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/programs/sing\\-training(?:/)?$"
+    },
+    {
+      "page": "/programs/step-1",
+      "regex": "^/programs/step\\-1(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/programs/step\\-1(?:/)?$"
+    },
+    {
+      "page": "/programs/step-2",
+      "regex": "^/programs/step\\-2(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/programs/step\\-2(?:/)?$"
+    },
+    {
+      "page": "/programs/step-3",
+      "regex": "^/programs/step\\-3(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/programs/step\\-3(?:/)?$"
+    },
+    {
+      "page": "/programs/step-4",
+      "regex": "^/programs/step\\-4(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/programs/step\\-4(?:/)?$"
+    },
+    {
+      "page": "/programs/step-5",
+      "regex": "^/programs/step\\-5(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/programs/step\\-5(?:/)?$"
+    },
+    {
+      "page": "/programs/step-6",
+      "regex": "^/programs/step\\-6(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/programs/step\\-6(?:/)?$"
+    },
+    {
+      "page": "/report",
+      "regex": "^/report(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/report(?:/)?$"
+    },
+    {
+      "page": "/reset-password",
+      "regex": "^/reset\\-password(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/reset\\-password(?:/)?$"
+    },
+    {
+      "page": "/result-page/self-assessment",
+      "regex": "^/result\\-page/self\\-assessment(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/result\\-page/self\\-assessment(?:/)?$"
+    },
+    {
+      "page": "/result-page/sing-training",
+      "regex": "^/result\\-page/sing\\-training(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/result\\-page/sing\\-training(?:/)?$"
+    },
+    {
+      "page": "/result-page/speech-rehab",
+      "regex": "^/result\\-page/speech\\-rehab(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/result\\-page/speech\\-rehab(?:/)?$"
+    },
+    {
+      "page": "/select-page/game-mode",
+      "regex": "^/select\\-page/game\\-mode(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/select\\-page/game\\-mode(?:/)?$"
+    },
+    {
+      "page": "/select-page/mode",
+      "regex": "^/select\\-page/mode(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/select\\-page/mode(?:/)?$"
+    },
+    {
+      "page": "/select-page/self-assessment",
+      "regex": "^/select\\-page/self\\-assessment(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/select\\-page/self\\-assessment(?:/)?$"
+    },
+    {
+      "page": "/select-page/sing-training",
+      "regex": "^/select\\-page/sing\\-training(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/select\\-page/sing\\-training(?:/)?$"
+    },
+    {
+      "page": "/select-page/speech-rehab",
+      "regex": "^/select\\-page/speech\\-rehab(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/select\\-page/speech\\-rehab(?:/)?$"
+    },
+    {
+      "page": "/signup",
+      "regex": "^/signup(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/signup(?:/)?$"
+    },
+    {
+      "page": "/therapist",
+      "regex": "^/therapist(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/therapist(?:/)?$"
+    },
+    {
+      "page": "/therapist/patients",
+      "regex": "^/therapist/patients(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/therapist/patients(?:/)?$"
+    },
+    {
+      "page": "/therapist/results",
+      "regex": "^/therapist/results(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/therapist/results(?:/)?$"
+    },
+    {
+      "page": "/therapist/system",
+      "regex": "^/therapist/system(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/therapist/system(?:/)?$"
+    },
+    {
+      "page": "/therapist/system/evaluation",
+      "regex": "^/therapist/system/evaluation(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/therapist/system/evaluation(?:/)?$"
+    },
+    {
+      "page": "/therapist/system/organizations",
+      "regex": "^/therapist/system/organizations(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/therapist/system/organizations(?:/)?$"
+    },
+    {
+      "page": "/therapist/system/provision",
+      "regex": "^/therapist/system/provision(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/therapist/system/provision(?:/)?$"
+    },
+    {
+      "page": "/tools/admin-reports",
+      "regex": "^/tools/admin\\-reports(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/tools/admin\\-reports(?:/)?$"
+    },
+    {
+      "page": "/tools/sing-sync-manager",
+      "regex": "^/tools/sing\\-sync\\-manager(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/tools/sing\\-sync\\-manager(?:/)?$"
+    },
+    {
+      "page": "/tools/training-usage-admin",
+      "regex": "^/tools/training\\-usage\\-admin(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/tools/training\\-usage\\-admin(?:/)?$"
+    },
+    {
+      "page": "/tools/training-usage-timeline",
+      "regex": "^/tools/training\\-usage\\-timeline(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/tools/training\\-usage\\-timeline(?:/)?$"
+    }
+  ],
+  "dataRoutes": [],
+  "rsc": {
+    "header": "rsc",
+    "varyHeader": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+    "prefetchHeader": "next-router-prefetch",
+    "didPostponeHeader": "x-nextjs-postponed",
+    "contentTypeHeader": "text/x-component",
+    "suffix": ".rsc",
+    "prefetchSegmentHeader": "next-router-segment-prefetch",
+    "prefetchSegmentSuffix": ".segment.rsc",
+    "prefetchSegmentDirSuffix": ".segments",
+    "clientParamParsing": false,
+    "dynamicRSCPrerender": false
+  },
+  "rewriteHeaders": {
+    "pathHeader": "x-nextjs-rewritten-path",
+    "queryHeader": "x-nextjs-rewritten-query"
+  }
+}

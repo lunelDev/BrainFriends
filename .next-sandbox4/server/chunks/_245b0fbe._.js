@@ -1,0 +1,74 @@
+module.exports=[24646,e=>e.a(async(t,s)=>{try{var a=e.i(63528),i=e.i(77545),n=t([a,i]);function r(e){return"rehab"===e.trainingMode?"speech-rehab":"self-assessment"}async function o(e){var t;let s,n,{patient:o,historyEntry:l}=e,d=(0,a.getDbPool)(),u=await d.connect(),p=r(l),c=(s=r(l),`history-${s}-${l.historyId}`),y=(0,i.deterministicUuid)(`clinical-session:${l.sessionId}:${l.historyId}:${p}`),h=(0,i.deterministicUuid)(`training-result:${l.historyId}:${p}`),_=new Date(l.completedAt),g=function(e){if(e.rehabStep){let t=`step${e.rehabStep}`;return e.stepVersionSnapshots?.[t]??null}for(let t of["step6","step5","step4","step3","step2","step1"]){let s=e.stepVersionSnapshots?.[t];if(s)return s}return null}(l),E={...(t=l.stepDetails,{step1:(n=e=>(Array.isArray(e)?e:[]).map(e=>({...e,audioUrl:void 0,userImage:void 0,cameraFrameImage:void 0,cameraFrameFrames:void 0,imageData:void 0})))(t?.step1??[]),step2:n(t?.step2??[]),step3:n(t?.step3??[]),step4:n(t?.step4??[]),step5:n(t?.step5??[]),step6:n(t?.step6??[])}),__meta:{vnv:l.vnv??null}};try{await u.query("BEGIN");let{patientId:e,patientCode:t,patientPseudonymId:s}=await (0,i.upsertPatientIdentity)(u,o);return await u.query(`
+        INSERT INTO clinical_sessions (
+          session_id,
+          patient_pseudonym_id,
+          training_type,
+          source_session_key,
+          started_at,
+          completed_at,
+          algorithm_version,
+          catalog_version,
+          release_version,
+          status,
+          version_snapshot,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, NOW())
+        ON CONFLICT (session_id) DO UPDATE
+        SET
+          training_type = EXCLUDED.training_type,
+          source_session_key = EXCLUDED.source_session_key,
+          completed_at = EXCLUDED.completed_at,
+          algorithm_version = EXCLUDED.algorithm_version,
+          catalog_version = EXCLUDED.catalog_version,
+          release_version = EXCLUDED.release_version,
+          status = EXCLUDED.status,
+          version_snapshot = EXCLUDED.version_snapshot
+      `,[y,s,p,c,_,_,g?.algorithm_version??`${p}-unknown`,g?.config_version??null,g?.release_version??null,"completed",g?JSON.stringify(g):null]),await u.query(`
+        INSERT INTO language_training_results (
+          result_id,
+          session_id,
+          patient_pseudonym_id,
+          training_mode,
+          rehab_step,
+          aq,
+          step_scores,
+          step_details,
+          articulation_scores,
+          facial_analysis_snapshot,
+          measurement_quality,
+          step_version_snapshots,
+          source_history_id,
+          created_at
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          $4,
+          $5,
+          $6,
+          $7::jsonb,
+          $8::jsonb,
+          $9::jsonb,
+          $10::jsonb,
+          $11::jsonb,
+          $12::jsonb,
+          $13,
+          NOW()
+        )
+        ON CONFLICT (result_id) DO UPDATE
+        SET
+          training_mode = EXCLUDED.training_mode,
+          rehab_step = EXCLUDED.rehab_step,
+          aq = EXCLUDED.aq,
+          step_scores = EXCLUDED.step_scores,
+          step_details = EXCLUDED.step_details,
+          articulation_scores = EXCLUDED.articulation_scores,
+          facial_analysis_snapshot = EXCLUDED.facial_analysis_snapshot,
+          measurement_quality = EXCLUDED.measurement_quality,
+          step_version_snapshots = EXCLUDED.step_version_snapshots,
+          source_history_id = EXCLUDED.source_history_id
+      `,[h,y,s,l.trainingMode??"self",l.rehabStep??null,l.aq,JSON.stringify(l.stepScores),JSON.stringify(E),JSON.stringify(l.articulationScores??null),JSON.stringify(l.facialAnalysisSnapshot??null),JSON.stringify(l.measurementQuality??null),JSON.stringify(l.stepVersionSnapshots??null),l.historyId]),await u.query("COMMIT"),{patientId:e,patientCode:t,patientPseudonymId:s,sessionId:y,resultId:h,trainingType:p}}catch(e){throw await u.query("ROLLBACK"),e}finally{u.release()}}[a,i]=n.then?(await n)():n,e.s(["saveTrainingHistoryToDatabase",()=>o]),s()}catch(e){s(e)}},!1),48701,e=>e.a(async(t,s)=>{try{var a=e.i(89171),i=e.i(93458),n=e.i(24646),r=e.i(32476),o=e.i(70080),l=e.i(71106),d=e.i(65093),u=t([n,r,o,l]);async function p(e){var t,s,u;let p=await e.json().catch(()=>({})),c=await (0,i.cookies)(),y=c.get(r.AUTH_COOKIE_NAME)?.value;if(t=p.patient,!(t?.name?.trim()&&t?.gender&&t?.age))return await (0,o.appendClinicalAuditLog)((0,o.buildTrainingHistoryAuditLog)({request:e,patient:p.patient??null,status:"rejected",historyEntry:p.historyEntry??null,failureReason:"invalid_patient_payload",storageTargets:["data/audit/clinical-events.ndjson"]})),a.NextResponse.json({ok:!1,error:"invalid_patient_payload"},{status:400});if(s=p.historyEntry,!(s?.historyId&&s?.sessionId&&Number.isFinite(Number(s?.completedAt))&&Number.isFinite(Number(s?.aq))))return await (0,o.appendClinicalAuditLog)((0,o.buildTrainingHistoryAuditLog)({request:e,patient:p.patient,status:"rejected",historyEntry:null,failureReason:"invalid_history_entry_payload",storageTargets:["data/audit/clinical-events.ndjson"]})),a.NextResponse.json({ok:!1,error:"invalid_history_entry_payload"},{status:400});if(u=p.historyEntry,u.measurementQuality?.overall!=="measured")return await (0,o.appendClinicalAuditLog)((0,o.buildTrainingHistoryAuditLog)({request:e,patient:p.patient,sessionId:p.patient.sessionId,status:"skipped",historyEntry:p.historyEntry,failureReason:"non_measured_result_not_persisted",storageTargets:["data/audit/clinical-events.ndjson"]})),y&&await (0,l.recordTrainingUsageEvent)(y,{eventType:"clinical_result_skipped",eventStatus:"skipped",trainingType:"rehab"===p.historyEntry.trainingMode?"speech-rehab":"self-assessment",stepNo:p.historyEntry.rehabStep??null,pagePath:"rehab"===p.historyEntry.trainingMode?"/result-page/speech-rehab":"/result-page/self-assessment",sessionId:p.historyEntry.sessionId,payload:{historyId:p.historyEntry.historyId,measurementQuality:p.historyEntry.measurementQuality?.overall??null,requirementIds:p.historyEntry.vnv?.summary.requirementIds??[],testCaseIds:p.historyEntry.vnv?.summary.testCaseIds??[]}}).catch(()=>void 0),a.NextResponse.json({ok:!0,skipped:!0,reason:"non_measured_result_not_persisted"},{status:200});if((0,d.isServerPersistenceDisabled)())return await (0,o.appendClinicalAuditLog)((0,o.buildTrainingHistoryAuditLog)({request:e,patient:p.patient,sessionId:p.patient.sessionId,status:"skipped",historyEntry:p.historyEntry,failureReason:"vercel_server_persistence_disabled",storageTargets:[]})),a.NextResponse.json({ok:!0,skipped:!0,reason:"vercel_server_persistence_disabled"},{status:200});try{let t=await (0,n.saveTrainingHistoryToDatabase)({patient:p.patient,historyEntry:p.historyEntry});return y&&await (0,l.recordTrainingUsageEvent)(y,{eventType:"clinical_result_persisted",trainingType:"rehab"===p.historyEntry.trainingMode?"speech-rehab":"self-assessment",stepNo:p.historyEntry.rehabStep??null,pagePath:"rehab"===p.historyEntry.trainingMode?"/result-page/speech-rehab":"/result-page/self-assessment",sessionId:t.sessionId,payload:{historyId:p.historyEntry.historyId,resultId:t.resultId,aq:p.historyEntry.aq,requirementIds:p.historyEntry.vnv?.summary.requirementIds??[],testCaseIds:p.historyEntry.vnv?.summary.testCaseIds??[]}}).catch(()=>void 0),await (0,o.appendClinicalAuditLog)((0,o.buildTrainingHistoryAuditLog)({request:e,patient:p.patient,sessionId:t.sessionId,status:"success",historyEntry:p.historyEntry,storageTargets:["postgres:patient_pii","postgres:patient_pseudonym_map","postgres:clinical_sessions","postgres:language_training_results","data/audit/clinical-events.ndjson"]})),a.NextResponse.json({ok:!0,saved:t})}catch(t){if(console.error("[clinical-results] failed to persist",t),t?.message==="missing_database_url")return await (0,o.appendClinicalAuditLog)((0,o.buildTrainingHistoryAuditLog)({request:e,patient:p.patient,sessionId:p.patient.sessionId,status:"skipped",historyEntry:p.historyEntry,failureReason:"missing_database_url",storageTargets:["data/audit/clinical-events.ndjson"]})),a.NextResponse.json({ok:!0,skipped:!0,reason:"missing_database_url"},{status:200});return await (0,o.appendClinicalAuditLog)((0,o.buildTrainingHistoryAuditLog)({request:e,patient:p.patient,sessionId:p.patient.sessionId,status:"failed",historyEntry:p.historyEntry,failureReason:t?.message||"failed_to_persist_clinical_result",storageTargets:["data/audit/clinical-events.ndjson"]})),a.NextResponse.json({ok:!1,error:t?.message||"failed_to_persist_clinical_result"},{status:500})}}[n,r,o,l]=u.then?(await u)():u,e.s(["POST",()=>p,"dynamic",0,"force-dynamic","runtime",0,"nodejs"]),s()}catch(e){s(e)}},!1),65967,e=>e.a(async(t,s)=>{try{var a=e.i(47909),i=e.i(74017),n=e.i(96250),r=e.i(59756),o=e.i(61916),l=e.i(74677),d=e.i(69741),u=e.i(16795),p=e.i(87718),c=e.i(95169),y=e.i(47587),h=e.i(66012),_=e.i(70101),g=e.i(26937),E=e.i(10372),m=e.i(93695);e.i(52474);var v=e.i(220),f=e.i(48701),R=t([f]);[f]=R.then?(await R)():R;let I=new a.AppRouteRouteModule({definition:{kind:i.RouteKind.APP_ROUTE,page:"/api/clinical-results/route",pathname:"/api/clinical-results",filename:"route",bundlePath:""},distDir:".next-sandbox4",relativeProjectDir:"",resolvedPagePath:"[project]/src/app/api/clinical-results/route.ts",nextConfigOutput:"",userland:f}),{workAsyncStorage:w,workUnitAsyncStorage:T,serverHooks:D}=I;function C(){return(0,n.patchFetch)({workAsyncStorage:w,workUnitAsyncStorage:T})}async function b(e,t,s){I.isDev&&(0,r.addRequestMeta)(e,"devRequestTimingInternalsEnd",process.hrtime.bigint());let a="/api/clinical-results/route";a=a.replace(/\/index$/,"")||"/";let n=await I.prepare(e,t,{srcPage:a,multiZoneDraftMode:!1});if(!n)return t.statusCode=400,t.end("Bad Request"),null==s.waitUntil||s.waitUntil.call(s,Promise.resolve()),null;let{buildId:f,params:R,nextConfig:C,parsedUrl:b,isDraftMode:w,prerenderManifest:T,routerServerContext:D,isOnDemandRevalidate:A,revalidateOnlyGenerated:N,resolvedPathname:S,clientReferenceManifest:U,serverActionsManifest:L}=n,O=(0,d.normalizeAppPath)(a),$=!!(T.dynamicRoutes[O]||T.routes[S]),q=async()=>((null==D?void 0:D.render404)?await D.render404(e,t,b,!1):t.end("This page could not be found"),null);if($&&!w){let e=!!T.routes[S],t=T.dynamicRoutes[O];if(t&&!1===t.fallback&&!e){if(C.experimental.adapterPath)return await q();throw new m.NoFallbackError}}let x=null;!$||I.isDev||w||(x=S,x="/index"===x?"/":x);let k=!0===I.isDev||!$,j=$&&!k;L&&U&&(0,l.setManifestsSingleton)({page:a,clientReferenceManifest:U,serverActionsManifest:L});let P=e.method||"GET",H=(0,o.getTracer)(),M=H.getActiveScopeSpan(),X={params:R,prerenderManifest:T,renderOpts:{experimental:{authInterrupts:!!C.experimental.authInterrupts},cacheComponents:!!C.cacheComponents,supportsDynamicResponse:k,incrementalCache:(0,r.getRequestMeta)(e,"incrementalCache"),cacheLifeProfiles:C.cacheLife,waitUntil:s.waitUntil,onClose:e=>{t.on("close",e)},onAfterTaskError:void 0,onInstrumentationRequestError:(t,s,a,i)=>I.onRequestError(e,t,a,i,D)},sharedContext:{buildId:f}},F=new u.NodeNextRequest(e),K=new u.NodeNextResponse(t),V=p.NextRequestAdapter.fromNodeNextRequest(F,(0,p.signalFromNodeResponse)(t));try{let n=async e=>I.handle(V,X).finally(()=>{if(!e)return;e.setAttributes({"http.status_code":t.statusCode,"next.rsc":!1});let s=H.getRootSpanAttributes();if(!s)return;if(s.get("next.span_type")!==c.BaseServerSpan.handleRequest)return void console.warn(`Unexpected root span type '${s.get("next.span_type")}'. Please report this Next.js issue https://github.com/vercel/next.js`);let i=s.get("next.route");if(i){let t=`${P} ${i}`;e.setAttributes({"next.route":i,"http.route":i,"next.span_name":t}),e.updateName(t)}else e.updateName(`${P} ${a}`)}),l=!!(0,r.getRequestMeta)(e,"minimalMode"),d=async r=>{var o,d;let u=async({previousCacheEntry:i})=>{try{if(!l&&A&&N&&!i)return t.statusCode=404,t.setHeader("x-nextjs-cache","REVALIDATED"),t.end("This page could not be found"),null;let a=await n(r);e.fetchMetrics=X.renderOpts.fetchMetrics;let o=X.renderOpts.pendingWaitUntil;o&&s.waitUntil&&(s.waitUntil(o),o=void 0);let d=X.renderOpts.collectedTags;if(!$)return await (0,h.sendResponse)(F,K,a,X.renderOpts.pendingWaitUntil),null;{let e=await a.blob(),t=(0,_.toNodeOutgoingHttpHeaders)(a.headers);d&&(t[E.NEXT_CACHE_TAGS_HEADER]=d),!t["content-type"]&&e.type&&(t["content-type"]=e.type);let s=void 0!==X.renderOpts.collectedRevalidate&&!(X.renderOpts.collectedRevalidate>=E.INFINITE_CACHE)&&X.renderOpts.collectedRevalidate,i=void 0===X.renderOpts.collectedExpire||X.renderOpts.collectedExpire>=E.INFINITE_CACHE?void 0:X.renderOpts.collectedExpire;return{value:{kind:v.CachedRouteKind.APP_ROUTE,status:a.status,body:Buffer.from(await e.arrayBuffer()),headers:t},cacheControl:{revalidate:s,expire:i}}}}catch(t){throw(null==i?void 0:i.isStale)&&await I.onRequestError(e,t,{routerKind:"App Router",routePath:a,routeType:"route",revalidateReason:(0,y.getRevalidateReason)({isStaticGeneration:j,isOnDemandRevalidate:A})},!1,D),t}},p=await I.handleResponse({req:e,nextConfig:C,cacheKey:x,routeKind:i.RouteKind.APP_ROUTE,isFallback:!1,prerenderManifest:T,isRoutePPREnabled:!1,isOnDemandRevalidate:A,revalidateOnlyGenerated:N,responseGenerator:u,waitUntil:s.waitUntil,isMinimalMode:l});if(!$)return null;if((null==p||null==(o=p.value)?void 0:o.kind)!==v.CachedRouteKind.APP_ROUTE)throw Object.defineProperty(Error(`Invariant: app-route received invalid cache entry ${null==p||null==(d=p.value)?void 0:d.kind}`),"__NEXT_ERROR_CODE",{value:"E701",enumerable:!1,configurable:!0});l||t.setHeader("x-nextjs-cache",A?"REVALIDATED":p.isMiss?"MISS":p.isStale?"STALE":"HIT"),w&&t.setHeader("Cache-Control","private, no-cache, no-store, max-age=0, must-revalidate");let c=(0,_.fromNodeOutgoingHttpHeaders)(p.value.headers);return l&&$||c.delete(E.NEXT_CACHE_TAGS_HEADER),!p.cacheControl||t.getHeader("Cache-Control")||c.get("Cache-Control")||c.set("Cache-Control",(0,g.getCacheControlHeader)(p.cacheControl)),await (0,h.sendResponse)(F,K,new Response(p.value.body,{headers:c,status:p.value.status||200})),null};M?await d(M):await H.withPropagatedContext(e.headers,()=>H.trace(c.BaseServerSpan.handleRequest,{spanName:`${P} ${a}`,kind:o.SpanKind.SERVER,attributes:{"http.method":P,"http.target":e.url}},d))}catch(t){if(t instanceof m.NoFallbackError||await I.onRequestError(e,t,{routerKind:"App Router",routePath:O,routeType:"route",revalidateReason:(0,y.getRevalidateReason)({isStaticGeneration:j,isOnDemandRevalidate:A})},!1,D),$)throw t;return await (0,h.sendResponse)(F,K,new Response(null,{status:500})),null}}e.s(["handler",()=>b,"patchFetch",()=>C,"routeModule",()=>I,"serverHooks",()=>D,"workAsyncStorage",()=>w,"workUnitAsyncStorage",()=>T]),s()}catch(e){s(e)}},!1)];
+
+//# sourceMappingURL=_245b0fbe._.js.map

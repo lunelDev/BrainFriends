@@ -13,6 +13,8 @@
 - [SaMD 준비 부족 항목 체크리스트](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/samd-gap-checklist.md)
 - [시료 버전 고정 및 해시 생성 가이드](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/submission-version-guide.md)
 - [시험 환경 설명서](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/submission-test-environment.md)
+- [회원가입 필드 인벤토리](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/signup-field-inventory.md)
+- [Whisper vs Parselmouth 역할 경계](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/00-summary/whisper-vs-parselmouth-boundary.md) — 두 엔진의 역할 분리. Parselmouth 적용 step 은 step-2 / step-4 / step-5 / sing-training 만
 
 ## 2. SW V&V
 
@@ -22,6 +24,7 @@
 - [SW V&V 시험 결과서 템플릿](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/01-sw-vnv/sw-vnv-test-report-template.md)
 - [SW V&V 결함 / 재시험 기록서](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/01-sw-vnv/sw-vnv-defect-retest-log.md)
 - [SW V&V 실행 로그 정책](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/01-sw-vnv/sw-vnv-execution-log-policy.md)
+- [Parselmouth 음향분석 요구사항 목록](C:/Users/pc/Desktop/ProjectFiles/BrainFriends/docs/remediation/01-sw-vnv/parselmouth-requirements.md) — REQ-ACOUSTIC-001~051. step-1/3/6 은 미적용 (REQ-NA-001)
 
 ## 3. 사이버보안
 
