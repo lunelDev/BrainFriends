@@ -175,3 +175,15 @@ CREATE TABLE IF NOT EXISTS training_usage_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- /api/history/me/summary 페이지네이션 + /api/history/me/stats 집계에서
+-- patient_pseudonym_id 로 자주 필터링하고 clinical_sessions.completed_at DESC
+-- 로 정렬한다. 카디널리티가 쌓이면 full scan 비용이 커지므로 인덱스 보강.
+CREATE INDEX IF NOT EXISTS idx_ltr_pseudonym_completed
+  ON language_training_results (patient_pseudonym_id);
+
+CREATE INDEX IF NOT EXISTS idx_clinical_sessions_completed
+  ON clinical_sessions (patient_pseudonym_id, completed_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_sing_pseudonym
+  ON sing_results (patient_pseudonym_id);
+

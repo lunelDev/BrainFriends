@@ -55,3 +55,15 @@ coverage/
 next-env.d.ts
 .vercel
 data/audit/*.ndjson
+
+# ===============================
+# voice-analysis-service (Python FastAPI)
+# ===============================
+voice-analysis-service/.venv/
+voice-analysis-service/venv/
+voice-analysis-service/__pycache__/
+voice-analysis-service/**/__pycache__/
+voice-analysis-service/*.pyc
+voice-analysis-service/.pytest_cache/
+voice-analysis-service/.mypy_cache/
+voice-analysis-service/.ruff_cache/

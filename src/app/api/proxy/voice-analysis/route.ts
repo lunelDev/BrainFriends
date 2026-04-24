@@ -1,7 +1,7 @@
 // src/app/api/proxy/voice-analysis/route.ts
 //
 // Parselmouth (FastAPI) 음향 분석 프록시.
-// REQ-ACOUSTIC-001~004 (현재) 산출 → REQ-010~021 (확장 예정).
+// REQ-ACOUSTIC-001~004, 010~012, 020/021 (현재) 산출.
 // 자세한 역할 분리: docs/remediation/00-summary/whisper-vs-parselmouth-boundary.md
 // 산출 지표 정의:    docs/remediation/01-sw-vnv/parselmouth-requirements.md
 
@@ -30,6 +30,19 @@ type AcousticResult = {
     max_db: number | null;
   };
   voicing_ratio: number | null;
+  // REQ-ACOUSTIC-010 / 011 / 012. Praat 기본 파라미터 기준.
+  // jitter/shimmer 는 % 단위 (fraction × 100), hnr 은 dB.
+  jitter_local_pct: number | null;
+  shimmer_local_pct: number | null;
+  hnr_mean_db: number | null;
+  // REQ-ACOUSTIC-020 / 021. Formant F1/F2 (Hz) + 모음 mid-frame 시각(초).
+  // Praat Burg 방식, 성인 기본 파라미터 (max formant = 5500 Hz),
+  // voiced run 중 F1 분산 최소 구간의 mid-frame 에서 샘플링.
+  formants: {
+    f1_hz: number | null;
+    f2_hz: number | null;
+    mid_frame_time: number | null;
+  };
   measurement_quality: "measured" | "degraded" | "failed";
 };
 
@@ -46,6 +59,10 @@ const NULL_RESULT: AcousticResult = {
   f0: { mean_hz: null, std_hz: null, min_hz: null, max_hz: null },
   intensity: { mean_db: null, max_db: null },
   voicing_ratio: null,
+  jitter_local_pct: null,
+  shimmer_local_pct: null,
+  hnr_mean_db: null,
+  formants: { f1_hz: null, f2_hz: null, mid_frame_time: null },
   measurement_quality: "failed",
 };
 
@@ -70,6 +87,12 @@ const DEV_RESPONSE: AcousticResponse = {
     },
     intensity: { mean_db: 70.0, max_db: 72.0 },
     voicing_ratio: 0.95,
+    // DEV 더미: 건강한 성인 음성 참고치 기준 대충 잡음.
+    jitter_local_pct: 0.35,
+    shimmer_local_pct: 2.8,
+    hnr_mean_db: 22.0,
+    // 성인 남성 "아" 발음 참고치 (REQ-ACOUSTIC-020 / 021).
+    formants: { f1_hz: 700, f2_hz: 1200, mid_frame_time: 0.5 },
     measurement_quality: "measured",
   },
   version_snapshot: {

@@ -6,6 +6,7 @@ import { ChevronRight, LineChart, Sparkles, Target, Trophy } from "lucide-react"
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { SessionManager, type TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
 import { ReportContent } from "@/app/(training)/report/page";
+import { PrescriptionBanner } from "@/components/prescription/PrescriptionBanner";
 
 function formatAq(value: number | null | undefined) {
   if (!Number.isFinite(Number(value))) return "-";
@@ -173,6 +174,8 @@ export default function MyPage() {
   return (
     <main className="min-h-full flex-1 overflow-y-auto bg-[linear-gradient(180deg,#f6f8fc_0%,#eef5ff_100%)] px-4 py-6 pb-12 sm:px-6 sm:py-8">
       <div className="mx-auto max-w-6xl space-y-6">
+        {/* DTx 처방 상태 배너. 처방 없으면 코드 입력 폼, 활성이면 남은 일수/주간 진행률. */}
+        <PrescriptionBanner />
         <section className="rounded-[24px] sm:rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6 lg:p-8">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
@@ -272,7 +275,7 @@ function StatCard({
       </p>
       <p
         className={`mt-2 font-black tracking-tight text-slate-950 ${
-          compact ? "text-lg" : "text-3xl"
+          compact ? "text-base sm:text-lg" : "text-2xl sm:text-3xl"
         }`}
       >
         {value}

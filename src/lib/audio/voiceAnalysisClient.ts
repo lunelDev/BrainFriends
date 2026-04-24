@@ -28,6 +28,10 @@ function buildFallback(reason: string): AcousticSnapshot {
     f0: { mean_hz: null, std_hz: null, min_hz: null, max_hz: null },
     intensity: { mean_db: null, max_db: null },
     voicing_ratio: null,
+    jitter_local_pct: null,
+    shimmer_local_pct: null,
+    hnr_mean_db: null,
+    formants: { f1_hz: null, f2_hz: null, mid_frame_time: null },
     measurement_quality: "failed",
     version_snapshot: null,
     fallback: true,
@@ -95,6 +99,30 @@ export async function callVoiceAnalysis(
       },
       voicing_ratio:
         typeof result.voicing_ratio === "number" ? result.voicing_ratio : null,
+      jitter_local_pct:
+        typeof result.jitter_local_pct === "number"
+          ? result.jitter_local_pct
+          : null,
+      shimmer_local_pct:
+        typeof result.shimmer_local_pct === "number"
+          ? result.shimmer_local_pct
+          : null,
+      hnr_mean_db:
+        typeof result.hnr_mean_db === "number" ? result.hnr_mean_db : null,
+      formants: {
+        f1_hz:
+          typeof result?.formants?.f1_hz === "number"
+            ? result.formants.f1_hz
+            : null,
+        f2_hz:
+          typeof result?.formants?.f2_hz === "number"
+            ? result.formants.f2_hz
+            : null,
+        mid_frame_time:
+          typeof result?.formants?.mid_frame_time === "number"
+            ? result.formants.mid_frame_time
+            : null,
+      },
       measurement_quality:
         result.measurement_quality === "measured" ||
         result.measurement_quality === "degraded" ||

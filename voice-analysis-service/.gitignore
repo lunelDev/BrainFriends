@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+.venv/
+venv/
+env/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 임시 분석 파일.
+va_in_*
+va_out_*
+*.wav.tmp
+
+# 로컬 환경 변수.
+.env
+.env.local

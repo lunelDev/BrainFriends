@@ -105,7 +105,7 @@ function ResultModal({
       primaryLabel="단계 선택으로"
       onPrimary={onHome}
     >
-      <div className="mb-6 grid grid-cols-3 gap-3">
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <div className="rounded-[24px] border border-violet-500/22 bg-[#0c0820]/85 p-4 text-center">
           <span className="mb-2 block text-[11px] font-black text-violet-300/60">정리율</span>
           <strong className="text-3xl font-black text-violet-300">{successRate}%</strong>

@@ -168,7 +168,7 @@ function ResultModal({
             </div>
           ) : null}
 
-          <div className="mb-10 grid grid-cols-3 gap-3">
+          <div className="mb-10 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {[
               { label: "발성 시간", value: `${result.voicedSeconds}s`, sub: "Time" },
               { label: "평균 음량", value: result.averageVolume, sub: "Volume" },

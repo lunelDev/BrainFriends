@@ -739,6 +739,28 @@ export function AdminConsoleClient({
 
   return (
     <main className="min-h-screen bg-[#f4f6fb]">
+      {/* admin 용 상단 스트립 — 다른 화면(/therapist · /select-page/mode) 과 동일한
+          톤. 사용자 / 치료사 화면으로 빠르게 이동 가능. */}
+      <div className="flex items-center justify-between gap-3 bg-slate-900 px-4 py-2 text-white sm:px-6">
+        <div className="flex items-center gap-2 text-[11px] font-black sm:text-xs">
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          관리자 계정으로 로그인됨
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/select-page/mode"
+            className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-[11px] font-black text-white transition hover:bg-white/25 sm:text-xs"
+          >
+            사용자 화면 →
+          </Link>
+          <Link
+            href="/therapist"
+            className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-[11px] font-black text-white transition hover:bg-white/25 sm:text-xs"
+          >
+            치료사 화면 →
+          </Link>
+        </div>
+      </div>
       <div className="grid min-h-screen grid-cols-1 xl:grid-cols-[260px_minmax(0,1fr)]">
         <aside className="border-r border-slate-800 bg-[#171a2b] text-white">
           <div className="flex items-center justify-between border-b border-white/10 px-6 py-5">
@@ -800,18 +822,8 @@ export function AdminConsoleClient({
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  href="/select-page/mode"
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-50"
-                >
-                  사용자 화면
-                </Link>
-                <Link
-                  href="/therapist"
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-50"
-                >
-                  치료사 화면
-                </Link>
+                {/* "사용자 화면 / 치료사 화면" 은 상단 검정 스트립으로 이관되어 여기선 제거.
+                    로그아웃은 다른 진입점이 없어 이 자리에 그대로 유지. */}
                 <TherapistLogoutButton />
               </div>
             </div>

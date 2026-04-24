@@ -178,12 +178,113 @@ function getSelfNextAction(params: {
   return "반응 속도와 발음 정확도를 중심으로 같은 단계 훈련을 한 번 더 반복해 보세요.";
 }
 
+// 서버 요약 응답 형태. /api/history/me/summary 가 내려주는 item 구조.
+// (HistoryListItem 서버 타입과 키는 동일하지만, 클라에서는 'server type' 의존을 피해
+//  구조만 베껴 쓴다.)
+type HistorySummaryItem = {
+  historyId: string;
+  sessionId: string;
+  trainingMode: "self" | "rehab" | "sing";
+  rehabStep: number | null;
+  aq: number | null;
+  songKey: string | null;
+  completedAt: string;
+  measurementQuality: "measured" | "partial" | "demo" | null;
+  sourceSessionKey: string | null;
+};
+
+// HistorySidebar 는 현재 TrainingHistoryEntry[] 를 받고 있으므로, summary 를
+// "부분 채움(placeholder)" 형태로 업캐스팅해서 넘긴다. UI 에서 실제로 쓰는 필드
+// (historyId, sessionId, trainingMode, rehabStep, completedAt, aq, place,
+//  patientName, singResult.song, stepScores) 만 정확히 채우면 되고, 나머지는
+// 빈 껍데기로 둔다.
+function summaryToPartialEntry(
+  item: HistorySummaryItem,
+  patientName: string,
+): TrainingHistoryEntry {
+  const completedAtMs = new Date(item.completedAt).getTime();
+  const base: TrainingHistoryEntry = {
+    historyId: item.historyId,
+    sessionId: item.sessionId,
+    patientKey: "",
+    patientName,
+    age: 0,
+    educationYears: 0,
+    place:
+      item.trainingMode === "sing"
+        ? "brain-sing"
+        : item.trainingMode === "rehab"
+          ? "speech-rehab"
+          : "home",
+    trainingMode: item.trainingMode,
+    rehabStep: item.rehabStep == null ? undefined : item.rehabStep,
+    completedAt: completedAtMs,
+    aq: Number(item.aq ?? 0),
+    stepScores: {
+      step1: 0,
+      step2: 0,
+      step3: 0,
+      step4: 0,
+      step5: 0,
+      step6: 0,
+    },
+    stepDetails: {
+      step1: [],
+      step2: [],
+      step3: [],
+      step4: [],
+      step5: [],
+      step6: [],
+    },
+    measurementQuality: item.measurementQuality
+      ? {
+          overall: item.measurementQuality,
+          steps: {
+            step1: item.measurementQuality,
+            step2: item.measurementQuality,
+            step3: item.measurementQuality,
+            step4: item.measurementQuality,
+            step5: item.measurementQuality,
+            step6: item.measurementQuality,
+          },
+          notes: [],
+        }
+      : undefined,
+  };
+  if (item.trainingMode === "sing") {
+    base.singResult = {
+      song: item.songKey || "",
+      score: Number(item.aq ?? 0),
+      finalJitter: "-",
+      finalSi: "-",
+      rtLatency: "-",
+      finalConsonant: "-",
+      finalVowel: "-",
+      lyricAccuracy: "-",
+      transcript: "",
+      comment: "",
+      rankings: [],
+    };
+  }
+  return base;
+}
+
 export function ReportContent({ embedded = false }: { embedded?: boolean } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isHydrated, setIsHydrated] = useState(false);
-  const [history, setHistory] = useState<TrainingHistoryEntry[]>([]);
-  const [selected, setSelected] = useState<TrainingHistoryEntry | null>(null);
+  // summaryItems: 좌측 리스트 렌더링의 원천. 요약 응답만으로 채워짐.
+  const [summaryItems, setSummaryItems] = useState<HistorySummaryItem[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  // detailCache: 선택했을 때 받아온 full TrainingHistoryEntry 보관.
+  // 한 번 받은 historyId 는 재요청 스킵.
+  const [detailCache, setDetailCache] = useState<Map<string, TrainingHistoryEntry>>(
+    () => new Map(),
+  );
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [serverPatientName, setServerPatientName] = useState("");
   const modeFromQuery = searchParams.get("mode");
   const initialMode: "self" | "rehab" | "sing" =
@@ -215,75 +316,182 @@ export function ReportContent({ embedded = false }: { embedded?: boolean } = {})
     setModeFilter(initialMode);
   }, [initialMode]);
 
+  // patient 이름은 한번만 받으면 충분한데 summary 에는 없으므로
+  // /api/history/me/stats 에서 내려주지 않는다. 기존 /api/history/me 를 건드리지
+  // 않기로 했으니 patient 이름은 서버 세션 엔드포인트 /api/auth/session 에서
+  // 얻거나, 첫 detail fetch 에서 읽어오는 것으로 대체한다. 여기선 첫 detail 이
+  // 들어올 때 채워넣는다 (아래 loadDetail 참고).
+
+  // modeFilter 가 바뀔 때마다 summary 를 새로 받는다. cursor 는 리셋.
   useEffect(() => {
     let cancelled = false;
+    setIsLoadingSummary(true);
+    setSummaryItems([]);
+    setNextCursor(null);
 
-    const applyRows = (rows: TrainingHistoryEntry[], patientName?: string) => {
-      if (cancelled) return;
-      setHistory(rows);
-      setServerPatientName(String(patientName || rows[0]?.patientName || ""));
-      const preferredRows =
-        initialMode === "rehab"
-          ? rows.filter((r) => r.trainingMode === "rehab")
-          : initialMode === "sing"
-            ? rows.filter((r) => r.trainingMode === "sing")
-            : rows.filter((r) => r.trainingMode === "self" || !r.trainingMode);
-      setSelected(preferredRows[0] || rows[0] || null);
-    };
-
-    void fetch("/api/history/me", { cache: "no-store" })
+    void fetch(`/api/history/me/summary?mode=${modeFilter}&limit=20`, {
+      cache: "no-store",
+    })
       .then(async (response) => {
-        if (!response.ok) throw new Error("failed_to_load_server_history");
+        if (!response.ok) throw new Error("failed_to_load_history_summary");
         return response.json();
       })
       .then((payload) => {
-        const rows = Array.isArray(payload?.entries)
-          ? (payload.entries as TrainingHistoryEntry[])
+        if (cancelled) return;
+        const items = Array.isArray(payload?.items)
+          ? (payload.items as HistorySummaryItem[])
           : [];
-        applyRows(rows, payload?.patient?.name);
+        setSummaryItems(items);
+        setNextCursor(
+          typeof payload?.nextCursor === "string" ? payload.nextCursor : null,
+        );
       })
       .catch(() => {
-        applyRows([]);
+        if (cancelled) return;
+        setSummaryItems([]);
+        setNextCursor(null);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingSummary(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [initialMode]);
+  }, [modeFilter]);
 
-  const filteredHistory = useMemo(
-    () => {
-      const rows = history.filter((row) =>
-        modeFilter === "rehab"
-          ? row.trainingMode === "rehab" &&
-            (rehabStepFilter === "all" || Number(row.rehabStep) === rehabStepFilter)
-          : modeFilter === "sing"
-            ? row.trainingMode === "sing"
-            : row.trainingMode === "self" || !row.trainingMode,
-      );
-      return [...rows].sort((a, b) =>
-        sortOrder === "latest" ? b.completedAt - a.completedAt : a.completedAt - b.completedAt,
-      );
-    },
-    [history, modeFilter, rehabStepFilter, sortOrder],
+  // 클라이언트 측 정렬 / rehabStep 필터는 기존 UX 유지 (서버는 항상 최신순으로 내려줌).
+  const filteredSummary = useMemo(() => {
+    const rows = summaryItems.filter((row) =>
+      modeFilter === "rehab"
+        ? row.trainingMode === "rehab" &&
+          (rehabStepFilter === "all" || Number(row.rehabStep) === rehabStepFilter)
+        : modeFilter === "sing"
+          ? row.trainingMode === "sing"
+          : row.trainingMode === "self",
+    );
+    return [...rows].sort((a, b) => {
+      const ta = new Date(a.completedAt).getTime();
+      const tb = new Date(b.completedAt).getTime();
+      return sortOrder === "latest" ? tb - ta : ta - tb;
+    });
+  }, [summaryItems, modeFilter, rehabStepFilter, sortOrder]);
+
+  // HistorySidebar 가 요구하는 TrainingHistoryEntry[] 로 업캐스트.
+  // 실제로 sidebar 는 completedAt / trainingMode / rehabStep / aq / place /
+  // singResult.song 만 쓰므로 부분 채움만으로 충분하다.
+  const filteredHistory = useMemo<TrainingHistoryEntry[]>(
+    () =>
+      filteredSummary.map((item) => summaryToPartialEntry(item, serverPatientName)),
+    [filteredSummary, serverPatientName],
   );
 
+  // 선택 항목 관리: summary 가 새로 오면 첫 항목 자동 선택.
   useEffect(() => {
-    if (!filteredHistory.length) {
-      setSelected(null);
+    if (!filteredSummary.length) {
+      setSelectedHistoryId(null);
       return;
     }
-    if (!selected) {
-      setSelected(filteredHistory[0]);
-      return;
-    }
-    const exists = filteredHistory.some(
-      (row) => row.historyId === selected.historyId,
+    const exists = filteredSummary.some(
+      (row) => row.historyId === selectedHistoryId,
     );
-    if (!exists) {
-      setSelected(filteredHistory[0]);
+    if (!selectedHistoryId || !exists) {
+      setSelectedHistoryId(filteredSummary[0].historyId);
     }
-  }, [filteredHistory, selected]);
+  }, [filteredSummary, selectedHistoryId]);
+
+  // selectedHistoryId 가 바뀌면 detail 을 fetch — cache 히트면 재요청 스킵.
+  useEffect(() => {
+    if (!selectedHistoryId) return;
+    if (detailCache.has(selectedHistoryId)) return;
+
+    let cancelled = false;
+    setIsLoadingDetail(true);
+    void fetch(`/api/history/me/${encodeURIComponent(selectedHistoryId)}`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("failed_to_load_history_detail");
+        return response.json();
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        const entry = payload?.entry as TrainingHistoryEntry | undefined;
+        if (!entry) return;
+        setDetailCache((prev) => {
+          const next = new Map(prev);
+          next.set(selectedHistoryId, entry);
+          return next;
+        });
+        // detail 응답에 patientName 이 항상 들어있으므로 여기서 한 번 채움.
+        setServerPatientName((current) => current || String(entry.patientName || ""));
+      })
+      .catch(() => {
+        // 404 · 권한 에러 등은 조용히 무시하고 리스트만 유지.
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingDetail(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedHistoryId, detailCache]);
+
+  // 현재 상세 표시용 entry — cache 에 있으면 full, 없으면 summary 기반 placeholder.
+  const selected = useMemo<TrainingHistoryEntry | null>(() => {
+    if (!selectedHistoryId) return null;
+    const cached = detailCache.get(selectedHistoryId);
+    if (cached) return cached;
+    const summary = summaryItems.find((row) => row.historyId === selectedHistoryId);
+    if (!summary) return null;
+    return summaryToPartialEntry(summary, serverPatientName);
+  }, [selectedHistoryId, detailCache, summaryItems, serverPatientName]);
+
+  // 이전 동일 훈련 비교를 위해 "detail cache 안에 들어있는 엔트리들" 을 합친 배열.
+  // 과거 구현은 history(전체) 를 썼는데, 요약 기반으론 상세 비교 대상이 부족할 수
+  // 있어 cache 된 것만 이용한다. 이전 세션 비교 UI 는 필요 시 사용자가 해당 항목을
+  // 클릭하는 순간 cache 가 채워지는 구조.
+  const history = useMemo<TrainingHistoryEntry[]>(
+    () => Array.from(detailCache.values()).sort((a, b) => b.completedAt - a.completedAt),
+    [detailCache],
+  );
+
+  const handleSelectHistory = (row: TrainingHistoryEntry) => {
+    setSelectedHistoryId(row.historyId);
+  };
+
+  const handleLoadMore = () => {
+    if (!nextCursor || isLoadingMore) return;
+    setIsLoadingMore(true);
+    void fetch(
+      `/api/history/me/summary?mode=${modeFilter}&limit=20&cursor=${encodeURIComponent(
+        nextCursor,
+      )}`,
+      { cache: "no-store" },
+    )
+      .then(async (response) => {
+        if (!response.ok) throw new Error("failed_to_load_history_summary");
+        return response.json();
+      })
+      .then((payload) => {
+        const items = Array.isArray(payload?.items)
+          ? (payload.items as HistorySummaryItem[])
+          : [];
+        setSummaryItems((prev) => {
+          const seen = new Set(prev.map((row) => row.historyId));
+          const deduped = items.filter((row) => !seen.has(row.historyId));
+          return [...prev, ...deduped];
+        });
+        setNextCursor(
+          typeof payload?.nextCursor === "string" ? payload.nextCursor : null,
+        );
+      })
+      .catch(() => {
+        // 조용히 실패 — 사용자는 다시 버튼을 눌러볼 수 있다.
+      })
+      .finally(() => setIsLoadingMore(false));
+  };
 
   useEffect(() => {
     setOpenAllAccordions(false);
@@ -317,23 +525,32 @@ export function ReportContent({ embedded = false }: { embedded?: boolean } = {})
     });
   }, [filteredHistory, isSelectionMode]);
 
+  // 삭제 후 재fetch — summary 를 다시 받고, detail cache 는 삭제된 항목 기준으로
+  // 비워내기 어려우니 안전하게 전체 비움. 다시 선택하면 필요한 것만 새로 받는다.
   const reloadHistory = () => {
-    void fetch("/api/history/me", { cache: "no-store" })
+    setIsLoadingSummary(true);
+    setDetailCache(new Map());
+    void fetch(`/api/history/me/summary?mode=${modeFilter}&limit=20`, {
+      cache: "no-store",
+    })
       .then(async (response) => {
-        if (!response.ok) throw new Error("failed_to_load_server_history");
+        if (!response.ok) throw new Error("failed_to_load_history_summary");
         return response.json();
       })
       .then((payload) => {
-        const rows = Array.isArray(payload?.entries)
-          ? (payload.entries as TrainingHistoryEntry[])
+        const items = Array.isArray(payload?.items)
+          ? (payload.items as HistorySummaryItem[])
           : [];
-        setHistory(rows);
-        setServerPatientName(String(payload?.patient?.name || rows[0]?.patientName || ""));
+        setSummaryItems(items);
+        setNextCursor(
+          typeof payload?.nextCursor === "string" ? payload.nextCursor : null,
+        );
       })
       .catch(() => {
-        setHistory([]);
-        setServerPatientName("");
-      });
+        setSummaryItems([]);
+        setNextCursor(null);
+      })
+      .finally(() => setIsLoadingSummary(false));
   };
 
   const toggleHistorySelection = (historyId: string) => {
@@ -929,42 +1146,62 @@ export function ReportContent({ embedded = false }: { embedded?: boolean } = {})
         <div
           className={
             embedded
-              ? "mx-auto grid grid-cols-1 gap-4 py-2 md:grid-cols-[minmax(220px,300px)_minmax(0,1fr)] md:gap-5"
+              ? // /mypage 임베드: 인라인 style 로 2열 고정 (Tailwind JIT 이 arbitrary
+                //  grid-cols 를 런타임에 생성 못 하는 환경 대비)
+                "mx-auto grid gap-4 py-2"
               : "max-w-[1440px] mx-auto grid grid-cols-1 lg:grid-cols-[minmax(280px,340px)_minmax(0,1076px)] gap-4 lg:gap-6 lg:justify-center py-4 md:py-6 lg:py-8"
           }
+          style={
+            embedded
+              ? { gridTemplateColumns: "minmax(200px, 260px) minmax(0, 1fr)" }
+              : undefined
+          }
         >
-          <HistorySidebar
-          isRehabContext={isRehabContext}
-          isSingContext={isSingContext}
-          patientName={serverPatientName}
-          modeFilter={modeFilter}
-          sortOrder={sortOrder}
-          rehabStepFilter={rehabStepFilter}
-          isFilterOpen={isFilterOpen}
-          isSelectionMode={isSelectionMode}
-          showDeleteConfirm={showDeleteConfirm}
-          selectedHistoryIds={selectedHistoryIds}
-          filteredHistory={filteredHistory}
-          allRehabSelected={allRehabSelected}
-          selectionCheckedClass={selectionCheckedClass}
-          selectedHistoryId={selected?.historyId ?? null}
-          onManageIconClick={handleManageIconClick}
-          onSetModeFilter={setModeFilter}
-          onToggleFilterOpen={() => setIsFilterOpen((prev) => !prev)}
-          onSetSortOrder={(order) => {
-            setSortOrder(order);
-            setIsFilterOpen(false);
-          }}
-          onSetRehabStepFilter={(step) => {
-            setRehabStepFilter(step);
-            setIsFilterOpen(false);
-          }}
-          onDismissDeleteConfirm={() => setShowDeleteConfirm(false)}
-          onConfirmDeleteSelected={handleConfirmDeleteSelected}
-          onToggleSelectAll={handleToggleSelectAll}
-          onToggleHistorySelection={toggleHistorySelection}
-          onSelectHistory={setSelected}
-        />
+          <div className="flex flex-col gap-2">
+            <HistorySidebar
+              isRehabContext={isRehabContext}
+              isSingContext={isSingContext}
+              patientName={serverPatientName}
+              modeFilter={modeFilter}
+              sortOrder={sortOrder}
+              rehabStepFilter={rehabStepFilter}
+              isFilterOpen={isFilterOpen}
+              isSelectionMode={isSelectionMode}
+              showDeleteConfirm={showDeleteConfirm}
+              selectedHistoryIds={selectedHistoryIds}
+              filteredHistory={filteredHistory}
+              allRehabSelected={allRehabSelected}
+              selectionCheckedClass={selectionCheckedClass}
+              selectedHistoryId={selected?.historyId ?? null}
+              onManageIconClick={handleManageIconClick}
+              onSetModeFilter={setModeFilter}
+              onToggleFilterOpen={() => setIsFilterOpen((prev) => !prev)}
+              onSetSortOrder={(order) => {
+                setSortOrder(order);
+                setIsFilterOpen(false);
+              }}
+              onSetRehabStepFilter={(step) => {
+                setRehabStepFilter(step);
+                setIsFilterOpen(false);
+              }}
+              onDismissDeleteConfirm={() => setShowDeleteConfirm(false)}
+              onConfirmDeleteSelected={handleConfirmDeleteSelected}
+              onToggleSelectAll={handleToggleSelectAll}
+              onToggleHistorySelection={toggleHistorySelection}
+              onSelectHistory={handleSelectHistory}
+            />
+
+            {nextCursor ? (
+              <button
+                type="button"
+                onClick={handleLoadMore}
+                disabled={isLoadingMore}
+                className="self-center rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+              >
+                {isLoadingMore ? "더 불러오는 중..." : "더 보기"}
+              </button>
+            ) : null}
+          </div>
 
           <section
             className={`bg-white rounded-2xl p-4 md:p-5 border ${

@@ -58,9 +58,14 @@ export interface Step1Result {
   }>;
 }
 
-// ──────── Parselmouth 음향 분석 결과 (REQ-ACOUSTIC-001~004) ────────
+// ──────── Parselmouth 음향 분석 결과 (REQ-ACOUSTIC-001~012, 020/021) ────────
 // /api/proxy/voice-analysis 응답 shape 과 1:1 대응. step-2/4/5 와 sing-training
 // 에서 공통 사용. 산출 정의: docs/remediation/01-sw-vnv/parselmouth-requirements.md
+//  - REQ-001~004: Duration / F0 / Intensity / Voicing Ratio (기본)
+//  - REQ-010~012: Jitter / Shimmer / HNR (음질)
+//  - REQ-020/021: Formant F1/F2 + 모음 mid-frame
+//  - REQ-030   : measurement_quality 게이트
+//  - REQ-050   : version_snapshot
 export interface AcousticSnapshot {
   duration_sec: number | null;
   f0: {
@@ -74,6 +79,20 @@ export interface AcousticSnapshot {
     max_db: number | null;
   };
   voicing_ratio: number | null;
+  // REQ-010 Jitter (local), % 단위 (Praat 반환 fraction × 100)
+  jitter_local_pct: number | null;
+  // REQ-011 Shimmer (local), % 단위
+  shimmer_local_pct: number | null;
+  // REQ-012 HNR (Harmonics-to-Noise Ratio), dB
+  hnr_mean_db: number | null;
+  // REQ-020/021 Formant F1/F2 (Hz) + 모음 mid-frame 시각(초).
+  // Praat Burg 방식, 성인 기본 파라미터 (max formant = 5500 Hz),
+  // voiced run 중 F1 분산 최소 구간의 mid-frame 에서 샘플링.
+  formants: {
+    f1_hz: number | null;
+    f2_hz: number | null;
+    mid_frame_time: number | null;
+  };
   measurement_quality: "measured" | "degraded" | "failed";
   version_snapshot?: {
     parselmouth: string;

@@ -1,9 +1,9 @@
 {
   "2d21ff7a-75dc-5662-a7c4-eb52b1ed7987": {
     "patientId": "2d21ff7a-75dc-5662-a7c4-eb52b1ed7987",
-    "memo": "asdfasd",
-    "followUpState": "none",
-    "updatedAt": "2026-04-23T05:56:46.938Z",
+    "memo": "안녕하세요",
+    "followUpState": "monitor",
+    "updatedAt": "2026-04-24T00:40:26.163Z",
     "updatedBy": "박머수"
   }
 }

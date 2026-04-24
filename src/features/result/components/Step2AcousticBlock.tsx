@@ -84,27 +84,29 @@ function AcousticBlockImpl({ acoustic }: Props) {
           </span>
         )}
       </div>
-      <dl className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+      {/* 좁은 임베드 환경(예: /mypage 우측 상세 칼럼)에서 grid-cols-2 로 배치하면
+          카드 너비가 180px 내외가 되어 한글 라벨이 세로로 쌓인다 → 1열로 고정. */}
+      <dl className="grid grid-cols-1 gap-x-2 gap-y-0.5">
         <div className="flex items-baseline justify-between gap-1">
-          <dt className="text-[10px] font-bold text-slate-500">발화 시간</dt>
+          <dt className="whitespace-nowrap text-[10px] font-bold text-slate-500">발화 시간</dt>
           <dd className="text-[11px] font-black text-slate-800">
             {fmtSec(acoustic.duration_sec)}
           </dd>
         </div>
         <div className="flex items-baseline justify-between gap-1">
-          <dt className="text-[10px] font-bold text-slate-500">평균 음높이</dt>
+          <dt className="whitespace-nowrap text-[10px] font-bold text-slate-500">평균 음높이</dt>
           <dd className="text-[11px] font-black text-slate-800">
             {fmtHz(acoustic.f0?.mean_hz)}
           </dd>
         </div>
         <div className="flex items-baseline justify-between gap-1">
-          <dt className="text-[10px] font-bold text-slate-500">평균 음량</dt>
+          <dt className="whitespace-nowrap text-[10px] font-bold text-slate-500">평균 음량</dt>
           <dd className="text-[11px] font-black text-slate-800">
             {fmtDb(acoustic.intensity?.mean_db)}
           </dd>
         </div>
         <div className="flex items-baseline justify-between gap-1">
-          <dt className="text-[10px] font-bold text-slate-500">유성음 비율</dt>
+          <dt className="whitespace-nowrap text-[10px] font-bold text-slate-500">유성음 비율</dt>
           <dd className="text-[11px] font-black text-slate-800">
             {fmtRatio(acoustic.voicing_ratio)}
           </dd>

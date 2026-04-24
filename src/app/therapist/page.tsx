@@ -37,12 +37,13 @@ function formatDateTime(value?: string | null) {
   if (!value) return "기록 없음";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "기록 없음";
-  return date.toLocaleString("ko-KR", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  // SSR 과 클라이언트 locale 이 달라 오전/오후 ↔ AM/PM 이 섞이면 hydration 이 깨지므로
+  // 24h 고정 + 수동 포맷으로 양쪽 동일하게 찍는다.
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+  return `${mm}. ${dd}. ${hh}:${mi}`;
 }
 
 function getSaveStateLabel(entry: any) {
@@ -164,6 +165,9 @@ const ADMIN_QUICK_LINKS = [
 // 대시보드에서 중복 노출하던 RESULT_FILTER_LINKS/OPERATION_EXPORT_LINKS 는 제거.
 
 export default async function TherapistOverviewPage() {
+  // 정책: admin 이든 치료사든 /therapist 페이지는 완전히 동일하게 렌더한다.
+  // admin 전용 관리 UI 는 /admin 콘솔에서 별도로 접근 (우하단 floating pill 제공).
+  // 따라서 isAdminPreview 는 항상 false — 과거의 admin preview 모드는 제거됨.
   const cookieStore = await cookies();
   const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
 
@@ -175,7 +179,7 @@ export default async function TherapistOverviewPage() {
   const context = token
     ? await getAuthenticatedSessionContext(token).catch(() => null)
     : null;
-  const isAdminPreview = context?.userRole === "admin";
+  const isAdminPreview = false;
 
   if (token) {
     try {
@@ -326,18 +330,8 @@ export default async function TherapistOverviewPage() {
         needsAttentionCount > 0 ? "text-rose-600" : "text-emerald-600",
       bg: needsAttentionCount > 0 ? "bg-rose-50" : "bg-emerald-50",
     },
-    {
-      title: "최근 활동",
-      value: latestUsers[0]?.latestActivityAt
-        ? formatDateTime(latestUsers[0].latestActivityAt)
-        : "기록 없음",
-      note: latestUsers[0]?.patientName
-        ? `${latestUsers[0].patientName} 사용자`
-        : "최근 활동 사용자 없음",
-      icon: Clock3,
-      accent: "text-amber-500",
-      bg: "bg-amber-50",
-    },
+    // 사용자 수가 늘어나면 "최근 활동" 이 단일 사용자 한 명만 보여주는 카드라
+    // 가치가 떨어지고 이름 노출로 오히려 노이즈가 커짐 — 제거.
     {
       title: "누적 훈련",
       value: `${totalSelf + totalRehab + totalSing}건`,
@@ -349,14 +343,12 @@ export default async function TherapistOverviewPage() {
   ];
 
   const kpis = isAdminPreview ? adminKpis : therapistKpis;
-  const therapistName = context?.patient?.name ?? "치료사";
-  const heroEyebrow = isAdminPreview ? "관리자 미리보기" : "치료사 콘솔";
-  const heroTitle = isAdminPreview
-    ? `${therapistName}님, 운영 지표와 사용자 결과를 한 화면에서 확인합니다.`
-    : `${therapistName}님, 오늘 확인이 필요한 사용자를 먼저 살펴볼까요?`;
-  const heroDescription = isAdminPreview
-    ? "사용자 흐름은 단순하게 유지하고, 치료사 화면에서는 결과 해석과 운영 체크포인트를 함께 점검합니다."
-    : "사용자 검색 → 최근 확인이 필요한 사용자 → 사용자 상세 흐름으로 결과 해석에 집중합니다.";
+  // 로그인 계정 이름(관리자/치료사 구분)을 인사말에 직접 노출하면 상단 검정 스트립과
+  // 중복되고, 많은 사용자가 사용하는 상황에서 이름 개인화의 가치도 낮다 — 제거.
+  const heroEyebrow = "치료사 콘솔";
+  const heroTitle = "오늘 확인이 필요한 사용자를 먼저 살펴볼까요?";
+  const heroDescription =
+    "사용자 검색 → 최근 확인이 필요한 사용자 → 사용자 상세 흐름으로 결과 해석에 집중합니다.";
 
   return (
     <section className="space-y-6">
@@ -385,16 +377,11 @@ export default async function TherapistOverviewPage() {
             <p className="mt-3 max-w-xl text-sm font-medium leading-6 text-white/85">
               {heroDescription}
             </p>
-            <div className="mt-5 flex flex-wrap gap-2 text-[11px] font-black">
-              <Pill tone="dark">등록 사용자 {patients.length}명</Pill>
-              <Pill tone="dark">확인 필요 {needsAttentionCount}명</Pill>
-              <Pill tone="dark">자가진단 {totalSelf}건</Pill>
-              <Pill tone="dark">재활 {totalRehab}건</Pill>
-              <Pill tone="dark">노래 {totalSing}건</Pill>
-            </div>
+            {/* 등록 사용자 / 확인 필요 / 자가·재활·노래 pill 은 우측 KPI 카드와
+                내용이 완전히 중복되므로 제거. */}
           </div>
 
-          <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-4 xl:max-w-2xl">
+          <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-3 xl:max-w-xl">
             {kpis.map((item) => {
               const Icon = item.icon;
               return (
@@ -408,7 +395,7 @@ export default async function TherapistOverviewPage() {
                       {item.title}
                     </p>
                   </div>
-                  <p className="mt-3 text-2xl font-black text-white">{item.value}</p>
+                  <p className="mt-3 text-xl font-black text-white sm:text-2xl">{item.value}</p>
                   <p className="mt-1 line-clamp-2 text-[11px] font-medium text-white/85">
                     {item.note}
                   </p>
@@ -436,7 +423,7 @@ export default async function TherapistOverviewPage() {
           <p className="text-[11px] font-black uppercase tracking-[0.22em] text-amber-600">
             치료사 메모
           </p>
-          <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+          <h2 className="mt-3 text-lg font-black tracking-tight text-slate-950 sm:text-xl lg:text-2xl">
             최근 메모 / follow-up
           </h2>
           <p className="mt-2 text-sm font-medium leading-6 text-slate-500">
@@ -512,7 +499,7 @@ export default async function TherapistOverviewPage() {
             <p className="text-[11px] font-black uppercase tracking-[0.22em] text-emerald-600">
               결과 요약 패널
             </p>
-            <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+            <h2 className="mt-3 text-lg font-black tracking-tight text-slate-950 sm:text-xl lg:text-2xl">
               최근 저장 결과
             </h2>
             <p className="mt-2 text-sm font-medium leading-6 text-slate-500">
@@ -603,7 +590,7 @@ export default async function TherapistOverviewPage() {
               <p className="text-[11px] font-black uppercase tracking-[0.22em] text-violet-500">
                 사용자 상세 핵심 패널
               </p>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
+              <h2 className="mt-3 text-lg font-black tracking-tight text-slate-950 sm:text-xl lg:text-2xl">
                 최근 사용자 상태를 메인 화면에서 바로 확인합니다.
               </h2>
             </div>
@@ -704,7 +691,7 @@ export default async function TherapistOverviewPage() {
                   <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">
                     Step1~6 결과 요약
                   </p>
-                  <div className="mt-4 grid grid-cols-3 gap-3">
+                  <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
                     {featuredStepCards.map(([label, value]) => (
                       <div
                         key={label}
@@ -761,165 +748,10 @@ export default async function TherapistOverviewPage() {
       ) : null}
 
       {/*
-        치료사 리스트 + 협업 포인트는 기관/운영 단위 정보라 치료사 본인 의사결정에는 가치가 낮다.
-        관리자 미리보기에서만 노출.
-      */}
-      {isAdminPreview ? (
-        <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-          <article className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">
-                  치료사 리스트
-                </p>
-                <h3 className="mt-2 text-xl font-black text-slate-950">
-                  {isAdminPreview ? "등록된 치료사 계정" : "같은 기관 치료사 목록"}
-                </h3>
-              </div>
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-black text-slate-700">
-                {therapistColleagues.length}명
-              </span>
-            </div>
-            <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
-              {isAdminPreview
-                ? "관리자 미리보기에서는 등록된 치료사 계정을 확인합니다."
-                : "치료사 계정에서는 같은 기관에 소속된 치료사만 표시합니다."}
-            </p>
-
-            <div className="mt-5 overflow-hidden rounded-[24px] border border-slate-200">
-              <div className="grid grid-cols-[1fr_0.8fr_0.7fr_0.7fr] gap-3 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-slate-500">
-                <span>치료사</span>
-                <span>소속 / 로그인</span>
-                <span>담당 사용자</span>
-                <span>최근 로그인</span>
-              </div>
-              {therapistColleagues.length ? (
-                therapistColleagues.map((therapist) => (
-                  <div
-                    key={therapist.therapistUserId}
-                    className="grid grid-cols-[1fr_0.8fr_0.7fr_0.7fr] gap-3 border-t border-slate-200 px-4 py-4 text-sm"
-                  >
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-black text-slate-950">{therapist.therapistName}</p>
-                        {context?.userId === therapist.therapistUserId ? (
-                          <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-black text-sky-700">
-                            나
-                          </span>
-                        ) : null}
-                      </div>
-                      <p className="mt-1 text-xs font-medium text-slate-500">
-                        {therapist.organizationId || "기관 정보 없음"}
-                      </p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="font-semibold text-slate-700">
-                        {therapist.organizationName ?? "기관 정보 없음"}
-                      </p>
-                      <div className="text-xs font-bold text-slate-500">
-                        {therapist.loginId || "로그인 ID 없음"}
-                      </div>
-                      <div className="flex items-center gap-1 text-xs font-bold text-slate-500">
-                        <BadgeCheck className="h-3.5 w-3.5 text-emerald-600" />
-                        {therapist.approvalState === "pending"
-                          ? "승인 대기"
-                          : therapist.approvalState === "approved"
-                            ? "승인 완료"
-                            : "상태 확인"}
-                      </div>
-                    </div>
-                    <div className="font-semibold text-slate-700">
-                      {therapist.assignedPatientCount}명
-                    </div>
-                    <div className="font-semibold text-slate-700">
-                      {formatDateTime(therapist.lastLoginAt)}
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="px-4 py-8 text-sm font-semibold text-slate-500">
-                  {isAdminPreview
-                    ? "현재 표시할 치료사 계정이 없습니다."
-                    : "같은 기관에서 표시할 치료사 목록이 없습니다."}
-                </div>
-              )}
-            </div>
-          </article>
-
-          <aside className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-            <div className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-indigo-600" />
-              <h3 className="text-xl font-black text-slate-950">치료사 협업 포인트</h3>
-            </div>
-            <div className="mt-5 space-y-3">
-              <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-sm font-black text-slate-500">표시 범위</p>
-                <p className="mt-2 text-sm font-medium leading-6 text-slate-700">
-                  치료사 콘솔에서는 같은 기관 소속 치료사 정보만 확인하고, 사용자 데이터는 담당 배정 기준으로만 조회합니다.
-                </p>
-              </div>
-              <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-sm font-black text-slate-500">확인 항목</p>
-                <p className="mt-2 text-sm font-medium leading-6 text-slate-700">
-                  로그인 상태, 승인 상태, 담당 사용자 수를 함께 보면서 치료사 운영 현황을 확인합니다.
-                </p>
-              </div>
-              <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-sm font-black text-slate-500">다음 단계</p>
-                <p className="mt-2 text-sm font-medium leading-6 text-slate-700">
-                  이후에는 기관 관리자 기준의 치료사 승인과 사용자 배정 관리까지 연결하는 것이 맞습니다.
-                </p>
-              </div>
-            </div>
-          </aside>
-        </section>
-      ) : null}
-
-      {/*
-        Quick Links — 사용자 메인의 MODE_CARDS 패턴(이미지 자리에 그라디언트 + 아이콘).
-        섹션별 CTA 버튼과 중복되어 치료사에겐 노이즈. admin-only로 게이팅.
-      */}
-      {isAdminPreview ? (
-      <section className="grid gap-4 md:grid-cols-3">
-        {ADMIN_QUICK_LINKS.map((card) => {
-          const Icon = card.icon;
-          return (
-            <Link
-              key={card.href}
-              href={card.href}
-              className="group overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-            >
-              <div
-                className={`flex items-center justify-between bg-gradient-to-br ${card.accent} px-5 py-4 text-white`}
-              >
-                <span className="rounded-full border border-white/25 bg-white/15 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] backdrop-blur">
-                  {card.eyebrow}
-                </span>
-                <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15 backdrop-blur">
-                  <Icon className="h-5 w-5 text-white" />
-                </div>
-              </div>
-              <div className="px-5 py-5">
-                <h3 className="text-lg font-black tracking-tight text-slate-950">
-                  {card.title}
-                </h3>
-                <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
-                  {card.body}
-                </p>
-                <span className="mt-5 inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-black text-white transition group-hover:bg-indigo-600">
-                  {card.cta}
-                  <ChevronRight className="h-4 w-4" />
-                </span>
-              </div>
-            </Link>
-          );
-        })}
-      </section>
-      ) : null}
-
-      {/*
-        과거의 "즉시 실행 액션" 섹션(V&V 증적/AI 평가 내보내기 등)은 /therapist/system 단일 허브로 일원화.
-        대시보드에서는 ADMIN_QUICK_LINKS 의 "시스템 점검" 카드로 한 번만 노출한다.
+        admin / 치료사 공통 본문은 여기까지.
+        과거의 admin-only "등록된 치료사 계정 · 치료사 협업 포인트 · 결과 분석 보기 · 시스템 점검"
+        섹션은 이 페이지에서 제거 — 결과 분석/시스템 점검은 layout 의 TherapistShellNav 탭에서
+        이미 접근 가능하고, 치료사 전체 목록/협업 포인트 안내는 운영 성격이라 /admin 으로 분리.
       */}
     </section>
   );

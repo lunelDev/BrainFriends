@@ -670,7 +670,7 @@ export default function TherapistPatientDetailPage() {
                   ))}
                 </svg>
               </div>
-              <div className="mt-4 grid grid-cols-3 gap-3">
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <MiniMetric label="총 세션" value={`${entries.length}회`} />
                 <MiniMetric
                   label="AQ 변화"
@@ -826,7 +826,7 @@ export default function TherapistPatientDetailPage() {
                       Step 2/4/5 발화 합계 {latestAcousticSummary.total}건
                     </p>
                   </div>
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-3">
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-2 py-2">
                       <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">
                         실측

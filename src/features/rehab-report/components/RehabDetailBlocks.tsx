@@ -235,7 +235,10 @@ export function RehabDetailBlocks({
             className={`grid gap-2 ${
               stepResultCards.length === 3
                 ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3"
-                : "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5"
+                : // 과거엔 lg:grid-cols-5 라 좁은 임베드 환경에선 카드가
+                  // 180px 내외로 좁아져 내부 라벨이 세로로 찢어짐 →
+                  // 최대 4열로 낮추고 5열은 매우 넓은 xl 뷰포트 한정.
+                  "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
             }`}
           >
             {stepResultCards.map((item) => (

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { TherapistAdminChromeBar } from "@/app/therapist/_components/TherapistAdminChromeBar";
 import { ChevronRight, Sparkles, Trophy } from "lucide-react";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import {
@@ -10,6 +11,15 @@ import {
   type TrainingHistoryEntry,
 } from "@/lib/kwab/SessionManager";
 import { setFirstDiagnosisFlow } from "@/lib/firstDiagnosisFlow";
+
+// /api/history/me/stats 응답 타입. 서버 집계값만 사용하도록 클라에서도 동일 구조 명시.
+type HistoryStats = {
+  totalSelf: number;
+  totalRehab: number;
+  totalSing: number;
+  latestAq: number | null;
+  latestCompletedAt: string | null;
+};
 
 const MODE_CARDS = [
   {
@@ -151,6 +161,7 @@ function countByMode(
 export default function ModeSelectPage() {
   const router = useRouter();
   const { patient, ageGroup, isLoading } = useTrainingSession();
+  const isAdmin = patient?.userRole === "admin";
   const [isMounted, setIsMounted] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showFirstDiagnosisModal, setShowFirstDiagnosisModal] = useState(false);
@@ -167,38 +178,43 @@ export default function ModeSelectPage() {
   }, [isLoading, patient, router]);
 
   // 환자 홈은 "DB 가 원천(source of truth), 로컬캐시는 오프라인 보조" 구조로 간다.
-  //   1) 마운트 시 로컬캐시가 있으면 일단 그걸로 즉시 렌더 (deep offline 대응)
-  //   2) 이어서 `/api/training-history/mine` 을 호출해서 본인 DB 이력으로 덮어씀
-  //   → 다른 기기/브라우저에서 로그인해도 훈련 이력이 따라온다.
+  // 기존에는 /api/history/me 로 전체 이력을 긁어와 카운트를 클라에서 계산했는데,
+  // 이력이 커지면 응답이 수 MB 로 부풀어 홈 첫 렌더가 느려진다.
+  // 이제는 /api/history/me/stats 로 서버가 집계한 값만 받아 KPI 를 채우고,
+  // AQ 추이 / streak 은 로컬캐시(엔트리 기반)로만 계산한다. 로컬캐시가 꺼져있으면
+  // 해당 UI 는 기본값으로 표시된다.
   const [historyEntries, setHistoryEntries] = useState<TrainingHistoryEntry[]>([]);
+  const [stats, setStats] = useState<HistoryStats | null>(null);
 
   useEffect(() => {
     if (!patient) {
       setHistoryEntries([]);
+      setStats(null);
       return;
     }
 
-    // 로컬캐시 선행 로드 (ENABLE_LOCAL_HISTORY_CACHE 가 꺼져있으면 빈 배열)
+    // 로컬캐시 선행 로드 (ENABLE_LOCAL_HISTORY_CACHE 가 꺼져있으면 빈 배열).
+    // AQ 추이 / streak / today count 는 이 로컬 엔트리 기반으로만 계산.
     const localRows = SessionManager.getHistoryFor(patient).sort(
       (a, b) => b.completedAt - a.completedAt,
     );
-    if (localRows.length > 0) {
-      setHistoryEntries(localRows);
-    }
+    setHistoryEntries(localRows);
 
     let cancelled = false;
-    // 기존에 있던 /api/history/me 를 재사용 (mypage 가 같은 엔드포인트를 씀)
-    fetch("/api/history/me", { cache: "no-store" })
+    fetch("/api/history/me/stats", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((body) => {
         if (cancelled) return;
-        const serverEntries = Array.isArray(body?.entries)
-          ? (body.entries as TrainingHistoryEntry[])
-          : null;
-        if (serverEntries) {
-          setHistoryEntries(
-            [...serverEntries].sort((a, b) => b.completedAt - a.completedAt),
-          );
+        const serverStats = body?.stats as HistoryStats | undefined;
+        if (serverStats) {
+          setStats({
+            totalSelf: Number(serverStats.totalSelf ?? 0),
+            totalRehab: Number(serverStats.totalRehab ?? 0),
+            totalSing: Number(serverStats.totalSing ?? 0),
+            latestAq:
+              serverStats.latestAq == null ? null : Number(serverStats.latestAq),
+            latestCompletedAt: serverStats.latestCompletedAt ?? null,
+          });
         }
       })
       .catch(() => undefined);
@@ -211,7 +227,6 @@ export default function ModeSelectPage() {
   const dashboard = useMemo(() => {
     const latest = historyEntries[0] ?? null;
     // AQ 추이: historyEntries 가 최신순 정렬이라 마지막이 가장 오래된 기록.
-    // 서버 이력을 기준으로 바로 계산해야 SessionManager 로컬캐시가 꺼져있어도 동작한다.
     const chronological = [...historyEntries].sort(
       (a, b) => a.completedAt - b.completedAt,
     );
@@ -223,21 +238,40 @@ export default function ModeSelectPage() {
         ? Number((trendLatest.aq - trendPrevious.aq).toFixed(1))
         : null;
     const quality = getQualityUi(latest?.measurementQuality?.overall);
+
+    // 카운트는 서버 stats 가 원천. stats 가 아직 도착 전이면 0 으로 표시.
+    const selfCount = stats?.totalSelf ?? 0;
+    const rehabCount = stats?.totalRehab ?? 0;
+    const singCount = stats?.totalSing ?? 0;
+    // recentAq: 서버 latestAq 우선, 없으면 로컬 최신 AQ 로 fallback.
+    const recentAq =
+      stats?.latestAq ?? trendLatest?.aq ?? latest?.aq ?? null;
+
     return {
       todayTrainings: countTodayTrainings(historyEntries),
       latest,
-      recentAq: trendLatest?.aq ?? latest?.aq ?? null,
+      recentAq,
       aqDelta,
+      // 서버가 streak 을 아직 안 내려주므로 로컬 엔트리 기반으로 대충 계산.
+      // stats.latestCompletedAt 으로 "마지막 훈련일" 정도는 안다.
       streakDays: buildStreak(historyEntries),
-      nextGoal: getNextGoal(trendLatest?.aq ?? latest?.aq ?? null),
+      latestCompletedAtIso: stats?.latestCompletedAt ?? null,
+      nextGoal: getNextGoal(recentAq),
       quality,
-      selfCount: countByMode(historyEntries, "self"),
-      rehabCount: countByMode(historyEntries, "rehab"),
-      singCount: countByMode(historyEntries, "sing"),
+      selfCount,
+      rehabCount,
+      singCount,
     };
-  }, [historyEntries]);
+  }, [historyEntries, stats]);
 
-  const isFirstTraining = historyEntries.length === 0;
+  // "처음 훈련인가?" 판정도 서버 stats 기준. 로컬 캐시가 꺼져있을 수 있으므로
+  // 서버 집계가 원천이다. stats 가 아직 null(로딩 중)이면 false 로 본다(=첫 진단
+  // 모달 띄우지 않음). 네트워크 실패 대비 로컬 기록이 있으면 즉시 false.
+  const totalTrainings = stats
+    ? stats.totalSelf + stats.totalRehab + stats.totalSing
+    : null;
+  const isFirstTraining =
+    (totalTrainings == null ? historyEntries.length : totalTrainings) === 0;
 
   const moveToSelectedMode = (path: string, title: string) => {
     if (isFirstTraining) {
@@ -279,6 +313,8 @@ export default function ModeSelectPage() {
 
   return (
     <div className="flex min-h-full flex-col overflow-x-hidden bg-[linear-gradient(180deg,#f6f8fc_0%,#eef5ff_100%)] text-slate-900">
+      {/* admin 전용 sticky 상단 바 — 일반 사용자에겐 숨김 */}
+      <TherapistAdminChromeBar isAdmin={isAdmin} />
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-center gap-4">
@@ -301,40 +337,18 @@ export default function ModeSelectPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {patient?.userRole === "admin" ? (
-              <>
-                <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-2 text-xs font-black text-slate-700">
-                  관리자 모드
-                </span>
-                <div className="inline-flex rounded-full border border-slate-200 bg-slate-100 p-1">
-                  <button
-                    onClick={() => router.push("/select-page/mode")}
-                    className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-black text-white transition hover:bg-indigo-700"
-                  >
-                    사용자 화면
-                  </button>
-                  <button
-                    onClick={() => router.push("/therapist")}
-                    className="rounded-full px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-white"
-                  >
-                    치료사 화면
-                  </button>
-                </div>
-              </>
-            ) : patient?.userRole === "therapist" ? (
+            {/*
+              과거엔 admin 일 때 헤더에 "관리자 모드 뱃지 + 사용자/치료사 토글 + 관리자 화면"
+              버튼들을 같이 노출했는데, 그 때문에 admin 이 보는 화면이 실제 환자 화면과
+              시각적으로 달라졌다. 정책 통일: admin 도 이 페이지에선 환자와 동일하게
+              렌더하고, 관리 진입점은 우하단 floating pill 로만 제공.
+            */}
+            {patient?.userRole === "therapist" ? (
               <button
                 onClick={() => router.push("/therapist")}
                 className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
               >
                 치료사 콘솔
-              </button>
-            ) : null}
-            {patient?.userRole === "admin" ? (
-              <button
-                onClick={() => router.push("/admin")}
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
-              >
-                관리자 화면
               </button>
             ) : null}
             <button
@@ -416,7 +430,7 @@ export default function ModeSelectPage() {
                 </p>
               </div>
               <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700">
-                최근 기록 {historyEntries.length}건
+                최근 기록 {dashboard.selfCount + dashboard.rehabCount + dashboard.singCount}건
               </div>
             </div>
 
@@ -527,6 +541,7 @@ export default function ModeSelectPage() {
           </div>
         </div>
       ) : null}
+
     </div>
   );
 }

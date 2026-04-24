@@ -45,12 +45,13 @@ function formatDateTime(value?: string | null) {
   if (!value) return "기록 없음";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "기록 없음";
-  return date.toLocaleString("ko-KR", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  // SSR(Node, ko-KR) 과 브라우저 locale 이 다를 때 "오후"/"PM" 이 뒤바뀌어
+  // hydration mismatch 가 발생한다. 24h 고정 + 수동 포맷으로 양쪽 동일하게 찍는다.
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+  return `${mm}. ${dd}. ${hh}:${mi}`;
 }
 
 function getPatientRisk(patient: TherapistPatientRow): PatientRisk {
@@ -146,15 +147,15 @@ export function TherapistPatientListPanel({
             장기 미접속·활동 없음 환자가 위로 정렬됩니다. 행을 누르면 환자 상세로 이동합니다.
           </p>
         </div>
-        <label className="block sm:min-w-[280px]">
+        <label className="block w-full min-w-0 sm:w-auto sm:min-w-[280px]">
           <span className="sr-only">환자 검색</span>
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="이름, 코드, 로그인 ID, 가명 ID"
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-3 text-sm font-bold text-slate-700 placeholder:font-medium placeholder:text-slate-400 focus:border-sky-300 focus:bg-white focus:outline-none"
+              placeholder="검색"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 pl-10 pr-3 py-2.5 text-xs font-bold text-slate-700 placeholder:font-medium placeholder:text-slate-400 focus:border-sky-300 focus:bg-white focus:outline-none"
             />
           </div>
         </label>

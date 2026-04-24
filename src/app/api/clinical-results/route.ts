@@ -3,13 +3,18 @@ import { cookies } from "next/headers";
 import type { PatientProfile } from "@/lib/patientStorage";
 import type { TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
 import { saveTrainingHistoryToDatabase } from "@/lib/server/clinicalResultsDb";
-import { AUTH_COOKIE_NAME } from "@/lib/server/accountAuth";
+import {
+  AUTH_COOKIE_NAME,
+  getAuthenticatedSessionContext,
+} from "@/lib/server/accountAuth";
 import {
   appendClinicalAuditLog,
   buildTrainingHistoryAuditLog,
 } from "@/lib/server/auditLog";
 import { recordTrainingUsageEvent } from "@/lib/server/trainingUsageEventsDb";
 import { isServerPersistenceDisabled } from "@/lib/server/persistenceMode";
+import { getActivePrescriptionForPatient } from "@/lib/server/prescriptionsDb";
+import { recordSession as recordPrescriptionSession } from "@/lib/server/prescriptionSessionsDb";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -189,6 +194,33 @@ export async function POST(req: Request) {
           testCaseIds: body.historyEntry.vnv?.summary.testCaseIds ?? [],
         },
       }).catch(() => undefined);
+
+      // DTx 처방 순응도(adherence) 기록.
+      // 학습 저장은 이미 성공한 상태 — 처방 기록 실패는 조용히 무시한다.
+      // (처방 테이블 미적용, 처방 없음, 만료 등 모든 사유 공통)
+      try {
+        const ctx = await getAuthenticatedSessionContext(sessionToken);
+        if (ctx && ctx.userRole === "patient") {
+          const rx = await getActivePrescriptionForPatient(ctx.userId);
+          if (rx) {
+            const programCode =
+              typeof body.historyEntry.rehabStep === "number"
+                ? `step-${body.historyEntry.rehabStep}`
+                : body.historyEntry.trainingMode === "rehab"
+                  ? "speech-rehab"
+                  : "self-assessment";
+            await recordPrescriptionSession({
+              prescriptionId: rx.id,
+              prescriptionStartsAt: rx.startsAt,
+              programCode,
+              trainingResultId: saved.resultId ?? null,
+              completed: true,
+            }).catch(() => undefined);
+          }
+        }
+      } catch {
+        /* prescriptions 테이블 미적용 등 — 학습 흐름은 유지 */
+      }
     }
 
     const devBypass = isDevPersistenceBypass(body.historyEntry);

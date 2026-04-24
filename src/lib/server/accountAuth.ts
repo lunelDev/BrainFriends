@@ -18,7 +18,10 @@ export const AUTH_COOKIE_NAME = "brainfriends_session";
 const SESSION_TTL_DAYS = 30;
 const BUILTIN_ADMIN_LOGIN_ID = "admin";
 const BUILTIN_ADMIN_PASSWORD = "0000";
-export type UserRole = "patient" | "admin" | "therapist";
+// DTx 처방자(prescriber) 는 치료사와 별도 역할.
+// 기존 therapist 계정은 그대로 두고, 의사/처방권자만 신규로 부여.
+// DB 저장값은 app_users.user_role 컬럼 문자열 그대로.
+export type UserRole = "patient" | "admin" | "therapist" | "prescriber";
 
 export type SignupAccountInput = {
   userRole?: UserRole;
@@ -161,6 +164,7 @@ function calcDaysSinceOnset(onsetDate: string) {
 function normalizeUserRole(value: string | null | undefined): UserRole {
   if (value === "admin") return "admin";
   if (value === "therapist") return "therapist";
+  if (value === "prescriber") return "prescriber";
   return "patient";
 }
 
