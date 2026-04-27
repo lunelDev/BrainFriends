@@ -12,6 +12,7 @@ import {
   getAuthenticatedSessionContext,
 } from "@/lib/server/accountAuth";
 import { redeemPrescription } from "@/lib/server/prescriptionsDb";
+import { safeAppendAccess } from "@/lib/server/auditLog";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,6 +46,17 @@ export async function POST(req: Request) {
 
   try {
     const rx = await redeemPrescription({ code, patientUserId: ctx.userId });
+    await safeAppendAccess({
+      request: req,
+      action: "redeem",
+      operatorUserId: ctx.userId,
+      operatorUserRole: ctx.userRole,
+      subjectUserId: rx.patientUserId,
+      subjectPseudonymId: rx.patientPseudonymId,
+      resourceType: "prescription",
+      resourceId: rx.id,
+      httpStatus: 200,
+    });
     return NextResponse.json({ ok: true, prescription: rx });
   } catch (err) {
     const message = err instanceof Error ? err.message : "redeem_failed";
@@ -53,6 +65,16 @@ export async function POST(req: Request) {
     if (message === "prescription_not_found") status = 404;
     else if (message === "prescription_owner_mismatch") status = 403;
     else if (message.startsWith("prescription_")) status = 400;
+    await safeAppendAccess({
+      request: req,
+      action: "redeem",
+      status: "failed",
+      operatorUserId: ctx.userId,
+      operatorUserRole: ctx.userRole,
+      resourceType: "prescription",
+      httpStatus: status,
+      failureReason: message,
+    });
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }

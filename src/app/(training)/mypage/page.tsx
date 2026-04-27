@@ -7,6 +7,7 @@ import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { SessionManager, type TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
 import { ReportContent } from "@/app/(training)/report/page";
 import { PrescriptionBanner } from "@/components/prescription/PrescriptionBanner";
+import { AdverseEventReportButton } from "@/components/adverse-events/AdverseEventReportButton";
 
 function formatAq(value: number | null | undefined) {
   if (!Number.isFinite(Number(value))) return "-";
@@ -186,10 +187,11 @@ export default function MyPage() {
                 최근 결과와 훈련 흐름을 한 번에 확인하고, 다음 훈련으로 바로 이어갈 수 있습니다.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {/* 상단 "결과 리포트 보기" 토글은 제거: 각 기록 카드에 있는
                   "결과 보기 →" 가 해당 항목을 지정해 리포트 뷰로 넘어가고,
                   report 뷰 안의 "기록 목록으로" 로 다시 되돌아오므로 중복임. */}
+              <AdverseEventReportButton />
               <Link
                 href="/select-page/mode"
                 className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"

@@ -7,7 +7,13 @@ import type { VersionSnapshot } from "@/lib/analysis/versioning";
 import { buildPatientPseudonymId } from "@/lib/server/patientIdentityDb";
 
 export type AuditEventStatus = "success" | "failed" | "skipped" | "rejected";
-export type OperatorUserRole = "patient" | "therapist" | "admin" | "system";
+export type OperatorUserRole =
+  | "patient"
+  | "therapist"
+  | "admin"
+  | "prescriber"
+  | "anonymous"
+  | "system";
 export type AuditAlgorithmVersions =
   | VersionSnapshot
   | Record<string, VersionSnapshot | null | undefined>
@@ -85,6 +91,114 @@ export async function appendClinicalAuditLog(entry: ClinicalAuditLogEntry) {
   await mkdir(auditDir, { recursive: true });
   await appendFile(logPath, `${JSON.stringify(entry)}\n`, "utf8");
   return logPath;
+}
+
+/**
+ * 경량 접근 감사 로그.
+ *
+ * 임상 데이터를 만지는 모든 API 가 호출해야 한다 (read 포함).
+ * 식약처 사이버보안 가이드라인 § "접근 제어 및 감사 로그" 충족 목적.
+ *
+ * 기존 appendClinicalAuditLog (상세 결과용) 와 분리한 이유:
+ *   - read 트래픽이 너무 많아 결과 스키마(feature_values, threshold 등) 를
+ *     매번 채우는 것은 비현실적.
+ *   - 대신 "누가 / 언제 / 어떤 자원에 / 어떤 행위를 / 결과는 무엇" 5W1H 만 기록.
+ *   - 같은 디렉토리(data/audit) 의 별도 파일(access-events.ndjson) 에 적재.
+ */
+
+export type ClinicalAccessAction =
+  | "read"
+  | "create"
+  | "update"
+  | "delete"
+  | "redeem"
+  | "revoke"
+  | "list"
+  | "export";
+
+export type ClinicalAccessAuditEntry = {
+  audit_event_id: string;
+  event_type: string;
+  action: ClinicalAccessAction;
+  status: AuditEventStatus;
+  timestamp: string;
+  operator_user_id: string | null;
+  operator_user_role: OperatorUserRole;
+  subject_user_id: string | null; // 데이터 대상자(환자) — 없으면 null
+  subject_pseudonym_id: string | null;
+  resource_type: string; // ex: "prescription", "training_history", "patient_report"
+  resource_id: string | null;
+  route: string; // request URL pathname
+  method: string; // GET/POST/...
+  http_status: number | null;
+  failure_reason: string | null;
+  device_info: AuditDeviceInfo;
+};
+
+export type AppendClinicalAccessInput = {
+  request: Request;
+  action: ClinicalAccessAction;
+  status?: AuditEventStatus;
+  operatorUserId?: string | null;
+  operatorUserRole?: OperatorUserRole;
+  subjectUserId?: string | null;
+  subjectPseudonymId?: string | null;
+  resourceType: string;
+  resourceId?: string | null;
+  httpStatus?: number | null;
+  failureReason?: string | null;
+};
+
+export async function appendClinicalAccessAuditLog(
+  input: AppendClinicalAccessInput,
+): Promise<string> {
+  const url = new URL(input.request.url);
+  const seed = [
+    input.operatorUserId ?? "anon",
+    input.action,
+    input.resourceType,
+    input.resourceId ?? "-",
+    new Date().toISOString(),
+  ].join("|");
+
+  const entry: ClinicalAccessAuditEntry = {
+    audit_event_id: buildAuditEventId("acc", seed),
+    event_type: `${input.resourceType}.${input.action}`,
+    action: input.action,
+    status: input.status ?? "success",
+    timestamp: new Date().toISOString(),
+    operator_user_id: input.operatorUserId ?? null,
+    operator_user_role: input.operatorUserRole ?? "anonymous",
+    subject_user_id: input.subjectUserId ?? null,
+    subject_pseudonym_id: input.subjectPseudonymId ?? null,
+    resource_type: input.resourceType,
+    resource_id: input.resourceId ?? null,
+    route: url.pathname,
+    method: input.request.method,
+    http_status: input.httpStatus ?? null,
+    failure_reason: input.failureReason ?? null,
+    device_info: buildAuditDeviceInfo(input.request),
+  };
+
+  const auditDir = path.join(process.cwd(), "data", "audit");
+  const logPath = path.join(auditDir, "access-events.ndjson");
+  await mkdir(auditDir, { recursive: true });
+  await appendFile(logPath, `${JSON.stringify(entry)}\n`, "utf8");
+  return logPath;
+}
+
+/**
+ * 절대 throw 하지 않는 안전 래퍼. 라우트 정상 흐름에서 audit 실패가
+ * 응답 차단으로 번지지 않도록 사용한다.
+ */
+export async function safeAppendAccess(
+  input: AppendClinicalAccessInput,
+): Promise<void> {
+  try {
+    await appendClinicalAccessAuditLog(input);
+  } catch (err) {
+    console.error("[audit/access] failed to write entry:", err);
+  }
 }
 
 export function buildSingTrainingAuditLog(params: {

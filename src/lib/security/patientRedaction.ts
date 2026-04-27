@@ -1,6 +1,6 @@
 export interface PatientBootstrap {
   patientId: string;
-  role: "admin" | "patient" | "therapist";
+  role: "admin" | "patient" | "therapist" | "prescriber";
   displayName: string;
 }
 

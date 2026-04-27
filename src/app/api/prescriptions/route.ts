@@ -15,6 +15,7 @@ import {
   createPrescription,
   listPrescriptionsByPrescriber,
 } from "@/lib/server/prescriptionsDb";
+import { safeAppendAccess } from "@/lib/server/auditLog";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,7 +32,7 @@ function parseProgramScope(raw: unknown): string[] | null {
   return cleaned.length ? cleaned : null;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const cookieStore = await cookies();
   const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
   if (!token) {
@@ -40,15 +41,43 @@ export async function GET() {
 
   const ctx = await getAuthenticatedSessionContext(token);
   if (!ctx || !isAllowedPrescriber(ctx.userRole)) {
+    await safeAppendAccess({
+      request: req,
+      action: "list",
+      status: "rejected",
+      operatorUserId: ctx?.userId ?? null,
+      operatorUserRole: ctx?.userRole ?? "anonymous",
+      resourceType: "prescription",
+      httpStatus: 403,
+      failureReason: "forbidden",
+    });
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 
   try {
     const rows = await listPrescriptionsByPrescriber(ctx.userId);
+    await safeAppendAccess({
+      request: req,
+      action: "list",
+      operatorUserId: ctx.userId,
+      operatorUserRole: ctx.userRole,
+      resourceType: "prescription",
+      httpStatus: 200,
+    });
     return NextResponse.json({ ok: true, prescriptions: rows });
   } catch (err) {
     const message = err instanceof Error ? err.message : "list_failed";
     console.error("[prescriptions][GET]", message);
+    await safeAppendAccess({
+      request: req,
+      action: "list",
+      status: "failed",
+      operatorUserId: ctx.userId,
+      operatorUserRole: ctx.userRole,
+      resourceType: "prescription",
+      httpStatus: 500,
+      failureReason: message,
+    });
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
@@ -116,6 +145,17 @@ export async function POST(req: Request) {
       sessionsPerWeek,
       sessionMinutes,
     });
+    await safeAppendAccess({
+      request: req,
+      action: "create",
+      operatorUserId: ctx.userId,
+      operatorUserRole: ctx.userRole,
+      subjectUserId: row.patientUserId,
+      subjectPseudonymId: row.patientPseudonymId,
+      resourceType: "prescription",
+      resourceId: row.id,
+      httpStatus: 200,
+    });
     return NextResponse.json({ ok: true, prescription: row });
   } catch (err) {
     const message = err instanceof Error ? err.message : "create_failed";
@@ -124,6 +164,18 @@ export async function POST(req: Request) {
       message.startsWith("invalid_") || message === "empty_program_scope"
         ? 400
         : 500;
+    await safeAppendAccess({
+      request: req,
+      action: "create",
+      status: "failed",
+      operatorUserId: ctx.userId,
+      operatorUserRole: ctx.userRole,
+      subjectUserId: patientUserId,
+      subjectPseudonymId: patientPseudonymId,
+      resourceType: "prescription",
+      httpStatus: status,
+      failureReason: message,
+    });
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }

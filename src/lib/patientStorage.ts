@@ -4,7 +4,7 @@ import type { PatientBootstrap } from "@/lib/security/patientRedaction";
 
 export interface PatientProfile {
   sessionId: string;
-  userRole?: "patient" | "admin" | "therapist";
+  userRole?: "patient" | "admin" | "therapist" | "prescriber";
   organizationId?: string | null;
   hasAssignedTherapist?: boolean;
   name: string;
@@ -41,7 +41,9 @@ function getBootstrappedPatientProfile(): PatientProfile | null {
         ? "admin"
         : patient.role === "therapist"
           ? "therapist"
-          : "patient",
+          : patient.role === "prescriber"
+            ? "prescriber"
+            : "patient",
     organizationId: null,
     hasAssignedTherapist: false,
     name: patient.displayName,

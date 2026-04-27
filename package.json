@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "echo 'Lint skipped'",
     "test:vnv": "tsx src/lib/vnv/runDeterministicChecks.ts",
-    "test:vnv:record": "tsx src/lib/vnv/runDeterministicChecks.ts --record"
+    "test:vnv:record": "tsx src/lib/vnv/runDeterministicChecks.ts --record",
+    "security:sbom": "node scripts/generate-sbom.mjs",
+    "security:audit": "node scripts/run-npm-audit.mjs",
+    "security:all": "npm run security:sbom && npm run security:audit"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1008.0",

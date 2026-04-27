@@ -15,7 +15,10 @@ import {
 import { upsertPatientIdentity } from "@/lib/server/patientIdentityDb";
 
 export const AUTH_COOKIE_NAME = "brainfriends_session";
-const SESSION_TTL_DAYS = 30;
+// 의료기기 사이버보안 가이드라인 권고치(7-14일) 중 7일 채택.
+// DTx/SaMD 심사 시 30일은 길다는 지적이 표준.
+// 환자/치료사/처방자 모두 동일 TTL — 처방자 별도 단축은 2FA 도입 후 추가 검토.
+const SESSION_TTL_DAYS = 7;
 const BUILTIN_ADMIN_LOGIN_ID = "admin";
 const BUILTIN_ADMIN_PASSWORD = "0000";
 // DTx 처방자(prescriber) 는 치료사와 별도 역할.
