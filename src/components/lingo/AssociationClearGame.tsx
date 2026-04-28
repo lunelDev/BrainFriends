@@ -11,6 +11,7 @@ import {
   type GameModeAssociationClearNodePayload,
 } from "@/constants/gameModeStagePayloads";
 import { markGameModeStageCleared } from "@/lib/gameModeProgress";
+import { useRegionMissionMark } from "@/hooks/useRegionMissionMark";
 import { normalizeWord } from "@/lib/lingo/normalizeWord";
 
 type SpeechWindow = Window &
@@ -129,6 +130,8 @@ export default function AssociationClearGame({ onBack }: { onBack?: () => void }
   const roadmapStageId = Number(searchParams.get("roadmapStage") || "0");
   const roadmapNodeId =
     searchParams.get("roadmapNode") || searchParams.get("roadmapSection") || "";
+  // 신규 권역/도시/미션 진행률 마킹 — KoreaMapMenu 에서 진입한 경우만 동작.
+  const regionMission = useRegionMissionMark();
   const nodePayload = getGameModeNodePayload(roadmapStageId, roadmapNodeId);
   const associationPayload =
     nodePayload?.gameType === "association_clear"
@@ -229,8 +232,12 @@ export default function AssociationClearGame({ onBack }: { onBack?: () => void }
         markGameModeStageCleared(roadmapStageId, roadmapNodeId, "association_clear");
         roadmapClearMarkedRef.current = true;
       }
+      // 신규 권역/도시/미션 진입 경로 — 멱등 마킹.
+      if (cleared) {
+        regionMission.markCleared();
+      }
     },
-    [roadmapNodeId, roadmapStageId, stopRecognition],
+    [regionMission, roadmapNodeId, roadmapStageId, stopRecognition],
   );
 
   const onRecognizedWord = useCallback(

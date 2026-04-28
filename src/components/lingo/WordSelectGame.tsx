@@ -11,6 +11,7 @@ import {
   type SelectWord,
 } from "@/constants/gameModeStagePayloads";
 import { markGameModeStageCleared } from "@/lib/gameModeProgress";
+import { useRegionMissionMark } from "@/hooks/useRegionMissionMark";
 import { normalizeWord } from "@/lib/lingo/normalizeWord";
 
 type SpeechWindow = Window &
@@ -128,6 +129,7 @@ export default function WordSelectGame({ onBack }: { onBack?: () => void }) {
   const roadmapStageId = Number(searchParams.get("roadmapStage") || "0");
   const roadmapNodeId =
     searchParams.get("roadmapNode") || searchParams.get("roadmapSection") || "";
+  const regionMission = useRegionMissionMark();
   const nodePayload = getGameModeNodePayload(roadmapStageId, roadmapNodeId);
   const selectPayload =
     nodePayload?.gameType === "word_select"
@@ -211,8 +213,11 @@ export default function WordSelectGame({ onBack }: { onBack?: () => void }) {
         markGameModeStageCleared(roadmapStageId, roadmapNodeId, "word_select");
         roadmapClearMarkedRef.current = true;
       }
+      if (cleared) {
+        regionMission.markCleared();
+      }
     },
-    [roadmapNodeId, roadmapStageId, stopRecognition],
+    [regionMission, roadmapNodeId, roadmapStageId, stopRecognition],
   );
 
   const onRecognizedWord = useCallback(

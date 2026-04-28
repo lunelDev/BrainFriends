@@ -12,6 +12,7 @@ import {
 } from "@/lib/client/mediaStreamRegistry";
 import { createPreferredCameraStream } from "@/lib/media/cameraPreferences";
 import { markGameModeStageCleared } from "@/lib/gameModeProgress";
+import { useRegionMissionMark } from "@/hooks/useRegionMissionMark";
 import {
   getGameModeNodePayload,
   getGameModeWordHunterStageMission,
@@ -231,6 +232,7 @@ export default function CategorySortGame({ onBack }: { onBack?: () => void }) {
   const roadmapStageId = Number(searchParams.get("roadmapStage") || "0");
   const roadmapNodeId =
     searchParams.get("roadmapNode") || searchParams.get("roadmapSection") || "";
+  const regionMission = useRegionMissionMark();
   const nodePayload = getGameModeNodePayload(roadmapStageId, roadmapNodeId);
   const memoryPayload =
     nodePayload?.gameType === "memory" ? (nodePayload.payload as GameModeMemoryNodePayload) : null;
@@ -369,8 +371,11 @@ export default function CategorySortGame({ onBack }: { onBack?: () => void }) {
         markGameModeStageCleared(roadmapStageId, roadmapNodeId, "memory");
         roadmapClearMarkedRef.current = true;
       }
+      if (cleared) {
+        regionMission.markCleared();
+      }
     },
-    [roadmapNodeId, roadmapStageId, stopAudioMonitor, stopCamera, stopRecognition],
+    [regionMission, roadmapNodeId, roadmapStageId, stopAudioMonitor, stopCamera, stopRecognition],
   );
 
   const applyRecognizedTranscript = useCallback(

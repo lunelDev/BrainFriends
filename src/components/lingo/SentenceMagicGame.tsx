@@ -23,6 +23,7 @@ import {
 } from "@/constants/gameModeStagePayloads";
 import { useAudioAnalyzer } from "@/lib/audio/useAudioAnalyzer";
 import { markGameModeStageCleared } from "@/lib/gameModeProgress";
+import { useRegionMissionMark } from "@/hooks/useRegionMissionMark";
 import { deterministicShuffle } from "@/lib/lingo/deterministicShuffle";
 
 type SentenceQuestion = (typeof SENTENCE_EXAMPLE_QUESTIONS)[number];
@@ -521,6 +522,7 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
   const roadmapStageId = Number(searchParams.get("roadmapStage") || "0");
   const roadmapNodeId =
     searchParams.get("roadmapNode") || searchParams.get("roadmapSection") || "";
+  const regionMission = useRegionMissionMark();
   const roadmapNodePayload = getGameModeNodePayload(roadmapStageId, roadmapNodeId);
   const roadmapSentenceGameType =
     roadmapNodePayload?.gameType === "sentence_build" ||
@@ -620,14 +622,19 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
   const battleEnded = isBattleFinished(playerHp, enemyHp);
 
   useEffect(() => {
-    if (!battleModal || roadmapClearMarkedRef.current) return;
-    if (roadmapStageId < 1 || !roadmapNodeId) return;
-    if (battleModal.enemyHp > 0) return;
-    if (!roadmapSentenceGameType) return;
-
-    markGameModeStageCleared(roadmapStageId, roadmapNodeId, roadmapSentenceGameType);
-    roadmapClearMarkedRef.current = true;
-  }, [battleModal, roadmapNodeId, roadmapSentenceGameType, roadmapStageId]);
+    if (!battleModal || battleModal.enemyHp > 0) return;
+    if (
+      roadmapStageId >= 1 &&
+      roadmapNodeId &&
+      roadmapSentenceGameType &&
+      !roadmapClearMarkedRef.current
+    ) {
+      markGameModeStageCleared(roadmapStageId, roadmapNodeId, roadmapSentenceGameType);
+      roadmapClearMarkedRef.current = true;
+    }
+    // 신규 권역 진입 경로 진행률 마킹.
+    regionMission.markCleared();
+  }, [battleModal, regionMission, roadmapNodeId, roadmapSentenceGameType, roadmapStageId]);
 
   useEffect(() => {
     setSupported(isRecordingSupported());

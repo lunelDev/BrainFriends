@@ -287,3 +287,178 @@ export function hasClearedGameModeSubstage(
     `${Math.max(1, stageId)}:${sectionId}:${substageId}`,
   );
 }
+
+// ===========================================================================
+// 신규 시스템 — 권역·도시·미션 진행 상태
+//
+// 기존 GameModeProgress 와 충돌하지 않도록 별도 localStorage 키.
+// 잠금 해제 룰:
+//   - 미션 N 클리어 → N+1 잠금 풀림
+//   - 도시의 모든 미션(5개) 클리어 → 같은 권역 다음 도시 풀림
+//   - 권역의 모든 도시 클리어 → 다음 권역 풀림
+//   - 첫 진입 시 수도권만 자동 해제
+// ===========================================================================
+
+const REGION_PROGRESS_KEY = "brainfriends_region_mission_progress";
+const REGION_FIRST_HINT_KEY = "brainfriends_region_first_hint_dismissed";
+
+export type RegionMissionProgress = {
+  // "regionId/cityId/missionId" 형식의 완료 마커
+  completedMissions: string[];
+  updatedAt: number;
+};
+
+const DEFAULT_REGION_PROGRESS: RegionMissionProgress = {
+  completedMissions: [],
+  updatedAt: 0,
+};
+
+function readRegionProgress(): RegionMissionProgress {
+  if (typeof window === "undefined") return { ...DEFAULT_REGION_PROGRESS };
+  try {
+    const raw = window.localStorage.getItem(REGION_PROGRESS_KEY);
+    if (!raw) return { ...DEFAULT_REGION_PROGRESS };
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return { ...DEFAULT_REGION_PROGRESS };
+    const completedMissions = Array.isArray((parsed as Record<string, unknown>).completedMissions)
+      ? ((parsed as Record<string, unknown>).completedMissions as unknown[]).filter(
+          (entry): entry is string => typeof entry === "string",
+        )
+      : [];
+    return {
+      completedMissions,
+      updatedAt: Number((parsed as Record<string, unknown>).updatedAt ?? 0) || 0,
+    };
+  } catch {
+    return { ...DEFAULT_REGION_PROGRESS };
+  }
+}
+
+function writeRegionProgress(progress: RegionMissionProgress) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(REGION_PROGRESS_KEY, JSON.stringify(progress));
+  } catch {
+    /* quota exceeded 등 무시 */
+  }
+}
+
+export function getRegionMissionProgress(): RegionMissionProgress {
+  return readRegionProgress();
+}
+
+export function markRegionMissionCompleted(input: {
+  regionId: string;
+  cityId: string;
+  missionId: string;
+}) {
+  const key = `${input.regionId}/${input.cityId}/${input.missionId}`;
+  const progress = readRegionProgress();
+  if (!progress.completedMissions.includes(key)) {
+    progress.completedMissions = [...progress.completedMissions, key];
+    progress.updatedAt = Date.now();
+    writeRegionProgress(progress);
+  }
+  return progress;
+}
+
+export function isRegionMissionCompleted(
+  progress: RegionMissionProgress,
+  regionId: string,
+  cityId: string,
+  missionId: string,
+): boolean {
+  return progress.completedMissions.includes(
+    `${regionId}/${cityId}/${missionId}`,
+  );
+}
+
+/**
+ * 미션 잠금 해제 여부.
+ * 같은 도시 안에서 order 이전 미션이 모두 완료되었는지 검사.
+ */
+export function isRegionMissionUnlocked(
+  progress: RegionMissionProgress,
+  regionId: string,
+  cityId: string,
+  missionsInCity: Array<{ id: string; order: number }>,
+  targetMissionId: string,
+): boolean {
+  const target = missionsInCity.find((m) => m.id === targetMissionId);
+  if (!target) return false;
+  if (target.order <= 1) return true; // 첫 미션은 항상 풀림 (도시 자체는 잠금 가능)
+  const prerequisites = missionsInCity.filter((m) => m.order < target.order);
+  return prerequisites.every((m) =>
+    isRegionMissionCompleted(progress, regionId, cityId, m.id),
+  );
+}
+
+/**
+ * 도시 잠금 해제 여부.
+ * 같은 권역 안 이전 도시들이 모두 클리어 (= 모든 미션 완료) 됐는지.
+ * 권역의 첫 도시는 권역이 풀리면 자동 풀림.
+ */
+export function isRegionCityUnlocked(
+  progress: RegionMissionProgress,
+  regionId: string,
+  citiesInRegion: Array<{ id: string; missions: Array<{ id: string }> }>,
+  targetCityId: string,
+): boolean {
+  const targetIndex = citiesInRegion.findIndex((c) => c.id === targetCityId);
+  if (targetIndex < 0) return false;
+  if (targetIndex === 0) return true;
+  const previousCities = citiesInRegion.slice(0, targetIndex);
+  return previousCities.every((c) => isRegionCityCleared(progress, regionId, c));
+}
+
+export function isRegionCityCleared(
+  progress: RegionMissionProgress,
+  regionId: string,
+  city: { id: string; missions: Array<{ id: string }> },
+): boolean {
+  if (city.missions.length === 0) return false; // 미션 없는 도시는 클리어 판정 X
+  return city.missions.every((m) =>
+    isRegionMissionCompleted(progress, regionId, city.id, m.id),
+  );
+}
+
+/**
+ * 권역 잠금 해제 여부.
+ * 첫 권역(metro=수도권) 은 항상 자동 해제.
+ * 나머지는 이전 권역의 모든 도시 클리어 시 풀림.
+ */
+export function isRegionUnlocked(
+  progress: RegionMissionProgress,
+  regions: Array<{
+    id: string;
+    cities: Array<{ id: string; missions: Array<{ id: string }> }>;
+  }>,
+  targetRegionId: string,
+): boolean {
+  const targetIndex = regions.findIndex((r) => r.id === targetRegionId);
+  if (targetIndex < 0) return false;
+  if (targetIndex === 0) return true;
+  const previousRegions = regions.slice(0, targetIndex);
+  return previousRegions.every((r) => {
+    if (r.cities.length === 0) return true; // 빈 권역은 통과
+    return r.cities.every((c) => isRegionCityCleared(progress, r.id, c));
+  });
+}
+
+export function isRegionFirstHintDismissed(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem(REGION_FIRST_HINT_KEY) === "1";
+  } catch {
+    return true;
+  }
+}
+
+export function dismissRegionFirstHint() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(REGION_FIRST_HINT_KEY, "1");
+  } catch {
+    /* noop */
+  }
+}

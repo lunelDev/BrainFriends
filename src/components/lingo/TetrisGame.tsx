@@ -21,6 +21,7 @@ import {
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import LingoResultModalShell from "@/components/lingo/LingoResultModalShell";
 import { markGameModeStageCleared } from "@/lib/gameModeProgress";
+import { useRegionMissionMark } from "@/hooks/useRegionMissionMark";
 import { playLingoSuccessSound } from "@/lib/audio/playLingoSuccessSound";
 
 // ─── 블록 상수 ─────────────────────────────────────────────────────────────────
@@ -1191,6 +1192,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
   const roadmapStageId = Number(searchParams.get("roadmapStage") || "0");
   const roadmapNodeId =
     searchParams.get("roadmapNode") || searchParams.get("roadmapSection") || "";
+  const regionMission = useRegionMissionMark();
   const roadmapNodePayload = getGameModeNodePayload(roadmapStageId, roadmapNodeId);
   const customTetrisWordPool =
     roadmapNodePayload?.gameType === "tetris"
@@ -1332,13 +1334,14 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
       : null;
 
   useEffect(() => {
-    if (!gameResult || roadmapClearMarkedRef.current) return;
-    if (roadmapStageId < 1 || !roadmapNodeId) return;
-    if (!gameResult.survived) return;
-
-    markGameModeStageCleared(roadmapStageId, roadmapNodeId, "tetris");
-    roadmapClearMarkedRef.current = true;
-  }, [gameResult, roadmapNodeId, roadmapStageId]);
+    if (!gameResult || !gameResult.survived) return;
+    if (roadmapStageId >= 1 && roadmapNodeId && !roadmapClearMarkedRef.current) {
+      markGameModeStageCleared(roadmapStageId, roadmapNodeId, "tetris");
+      roadmapClearMarkedRef.current = true;
+    }
+    // 신규 권역 진입경로 진행률 마킹 (멱등).
+    regionMission.markCleared();
+  }, [gameResult, regionMission, roadmapNodeId, roadmapStageId]);
 
   const refreshAudioInputDevices = useCallback(async () => {
     try {

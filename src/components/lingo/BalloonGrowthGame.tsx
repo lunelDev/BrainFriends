@@ -8,6 +8,7 @@ import { BALLOON_GROWTH_DIFFICULTIES } from "@/data/balloonGrowthData";
 import { useBalloonAudioInput } from "@/lib/audio/useBalloonAudioInput";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import { markGameModeStageCleared } from "@/lib/gameModeProgress";
+import { useRegionMissionMark } from "@/hooks/useRegionMissionMark";
 
 type BalloonResult = {
   type: "success" | "fail";
@@ -345,6 +346,7 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
   const roadmapStageId = Number(searchParams.get("roadmapStage") || "0");
   const roadmapNodeId =
     searchParams.get("roadmapNode") || searchParams.get("roadmapSection") || "";
+  const regionMission = useRegionMissionMark();
   const stageMapHref =
     roadmapStageId >= 1
       ? `/select-page/game-mode/stage/${roadmapStageId}`
@@ -807,9 +809,12 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
 
   useEffect(() => {
     if (phase !== "success") return;
-    if (roadmapStageId < 1 || !roadmapNodeId) return;
-    markGameModeStageCleared(roadmapStageId, roadmapNodeId, "balloon");
-  }, [phase, roadmapNodeId, roadmapStageId]);
+    if (roadmapStageId >= 1 && roadmapNodeId) {
+      markGameModeStageCleared(roadmapStageId, roadmapNodeId, "balloon");
+    }
+    // 신규 권역 진입 경로 진행률 마킹.
+    regionMission.markCleared();
+  }, [phase, regionMission, roadmapNodeId, roadmapStageId]);
 
   function handleRestart() {
     stop();

@@ -10,6 +10,7 @@ import {
   type GameModeWordAssembleNodePayload,
 } from "@/constants/gameModeStagePayloads";
 import { markGameModeStageCleared } from "@/lib/gameModeProgress";
+import { useRegionMissionMark } from "@/hooks/useRegionMissionMark";
 import { normalizeWord } from "@/lib/lingo/normalizeWord";
 
 type SpeechWindow = Window &
@@ -133,6 +134,7 @@ export default function WordAssembleGame({ onBack }: { onBack?: () => void }) {
   const roadmapStageId = Number(searchParams.get("roadmapStage") || "0");
   const roadmapNodeId =
     searchParams.get("roadmapNode") || searchParams.get("roadmapSection") || "";
+  const regionMission = useRegionMissionMark();
   const nodePayload = getGameModeNodePayload(roadmapStageId, roadmapNodeId);
   const assemblePayload =
     nodePayload?.gameType === "word_assemble"
@@ -216,8 +218,11 @@ export default function WordAssembleGame({ onBack }: { onBack?: () => void }) {
         markGameModeStageCleared(roadmapStageId, roadmapNodeId, "word_assemble");
         roadmapClearMarkedRef.current = true;
       }
+      if (cleared) {
+        regionMission.markCleared();
+      }
     },
-    [roadmapNodeId, roadmapStageId, stopRecognition],
+    [regionMission, roadmapNodeId, roadmapStageId, stopRecognition],
   );
 
   const onRecognizedWord = useCallback(
