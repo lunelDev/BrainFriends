@@ -385,8 +385,14 @@ export async function listTherapistPatientReportSummaries(sessionToken: string) 
 
 export async function listTherapistReportValidationSample(sessionToken: string) {
   const context = await resolveScopedContext(sessionToken);
+
+  // 정책:
+  //   - 본 화면(/therapist/results)은 "치료사 본인 담당 환자의 검토 샘플" 만 노출.
+  //   - admin 이 모든 환자 결과를 보려면 /admin 콘솔을 사용한다.
+  //   - admin 이 치료사 콘솔에 들어온 경우엔 빈 배열을 반환해 화면에서 별도
+  //     안내(예: "관리자 콘솔에서 전체 결과를 확인하세요") 를 띄우게 한다.
   if (context.userRole === "admin") {
-    return listAdminReportValidationSample(sessionToken);
+    return [] satisfies TrainingHistoryEntry[];
   }
 
   const summaries = await listTherapistPatientReportSummaries(sessionToken);

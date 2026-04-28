@@ -27,6 +27,18 @@ export type UserTotpRow = {
 const FAILED_LOCK_THRESHOLD = 5;
 const LOCK_DURATION_MS = 5 * 60 * 1000;
 
+function isTotpStorageUnavailable(error: unknown) {
+  const message =
+    error instanceof Error ? error.message : String(error ?? "");
+  return (
+    message === "missing_database_url" ||
+    /user_2fa_totp/.test(message) ||
+    /ECONNREFUSED|ENOTFOUND|database|connect|timeout|terminating connection/i.test(
+      message,
+    )
+  );
+}
+
 function rowToTotp(row: Record<string, unknown>): UserTotpRow {
   return {
     userId: String(row.user_id),
@@ -46,12 +58,19 @@ function rowToTotp(row: Record<string, unknown>): UserTotpRow {
 }
 
 export async function getUserTotp(userId: string): Promise<UserTotpRow | null> {
-  const pool = getDbPool();
-  const r = await pool.query(
-    `SELECT * FROM user_2fa_totp WHERE user_id = $1 LIMIT 1`,
-    [userId],
-  );
-  return r.rows[0] ? rowToTotp(r.rows[0]) : null;
+  try {
+    const pool = getDbPool();
+    const r = await pool.query(
+      `SELECT * FROM user_2fa_totp WHERE user_id = $1 LIMIT 1`,
+      [userId],
+    );
+    return r.rows[0] ? rowToTotp(r.rows[0]) : null;
+  } catch (error) {
+    if (isTotpStorageUnavailable(error)) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function upsertPendingTotpSecret(input: {

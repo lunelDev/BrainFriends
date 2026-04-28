@@ -878,14 +878,29 @@ export default function TherapistPatientDetailPage() {
                     <p className="mt-2 text-sm font-semibold text-slate-600">{formatDate(entry.completedAt)}</p>
                   </div>
                   <div className="flex flex-wrap gap-2 text-xs font-black">
-                    <span className="rounded-full bg-white px-3 py-1 text-slate-700">
-                      AQ {Number(entry.aq ?? 0).toFixed(1)}
-                    </span>
+                    {/*
+                      자가진단(self) = 6 step 모두 거쳐 종합 AQ 산출.
+                      언어재활(rehab) = 단일 step 만 진행 → AQ 종합 표시는 임상적으로 모순.
+                      따라서 trainingMode 에 따라 표시를 분기한다.
+                      - self  : AQ 종합 + V&V
+                      - rehab : 해당 step 점수 + V&V
+                      - sing  : 곡 점수(AQ 자리) + V&V
+                    */}
+                    {entry.trainingMode === "rehab" && entry.rehabStep ? (
+                      <span className="rounded-full bg-white px-3 py-1 text-slate-700">
+                        Step {entry.rehabStep} 점수 {Number(
+                          (entry.stepScores as Record<string, number | null | undefined>)?.[
+                            `step${entry.rehabStep}`
+                          ] ?? 0,
+                        ).toFixed(0)}
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-white px-3 py-1 text-slate-700">
+                        AQ {Number(entry.aq ?? 0).toFixed(1)}
+                      </span>
+                    )}
                     <span className="rounded-full bg-white px-3 py-1 text-slate-700">
                       V&V {entry.vnv?.summary.requirementIds.length ?? 0}
-                    </span>
-                    <span className="rounded-full bg-white px-3 py-1 text-slate-700">
-                      Step4 {Number(entry.stepScores.step4 ?? 0).toFixed(0)}
                     </span>
                     <button
                       type="button"
@@ -954,6 +969,36 @@ export default function TherapistPatientDetailPage() {
                 {isSavingNote ? "저장 중..." : "메모 저장"}
               </button>
             </div>
+
+            {/* 최근 메모 5건 히스토리. 새 메모를 저장하면 history[0] 으로 추가됨. */}
+            {note?.history && note.history.length > 0 ? (
+              <div className="mt-6 border-t border-slate-200 pt-5">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                    최근 메모
+                  </p>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-black text-slate-700">
+                    최근 {Math.min(note.history.length, 5)}건
+                  </span>
+                </div>
+                <ul className="mt-3 space-y-2">
+                  {note.history.slice(0, 5).map((entry) => (
+                    <li
+                      key={entry.id}
+                      className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                    >
+                      <div className="flex items-center justify-between gap-2 text-[11px] font-bold text-slate-500">
+                        <span>{formatDate(new Date(entry.updatedAt).getTime())}</span>
+                        <span className="truncate text-slate-400">{entry.updatedBy}</span>
+                      </div>
+                      <p className="mt-2 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-slate-800">
+                        {entry.memo}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </section>
 
           <section className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">

@@ -130,17 +130,30 @@ function buildPatientPseudonymId({ name, birthDate, gender, phone, language }) {
 }
 
 // ───────── 시드 데이터 정의 ─────────
-// 최근 4주에 걸쳐 자가진단 3회 + 언어재활 2회. AQ 점수를 조금씩 변동시킴.
+//
+// 임상적 일관성:
+//   - 자가진단(self): 6단계 모두 거쳐 AQ 종합 산출. step_scores 6개 모두 채움.
+//   - 언어재활(rehab): 단일 step 만 진행 → AQ 종합은 임상적으로 모순.
+//     이 시드에선 entry.score 가 "그 step 의 점수" 를 나타내고, DB 의
+//     aq 컬럼(NOT NULL) 도 같은 값으로 박는다. 다른 step 들은 null.
+//   - UI 는 trainingMode 로 분기해서 self → AQ, rehab → "Step N 점수" 로 표시.
 const SEED_ENTRIES = [
   { kind: "self",  daysAgo: 1,  aq: 64.2, label: "최근 자가진단 #3" },
   { kind: "self",  daysAgo: 6,  aq: 58.7, label: "최근 자가진단 #2" },
   { kind: "self",  daysAgo: 14, aq: 55.1, label: "최근 자가진단 #1" },
-  { kind: "rehab", daysAgo: 3,  aq: 62.4, rehabStep: 2, label: "언어재활 Step2" },
-  { kind: "rehab", daysAgo: 9,  aq: 60.8, rehabStep: 4, label: "언어재활 Step4" },
+  { kind: "rehab", daysAgo: 3,  score: 62.4, rehabStep: 2, label: "언어재활 Step2" },
+  { kind: "rehab", daysAgo: 9,  score: 60.8, rehabStep: 4, label: "언어재활 Step4" },
 ];
 
-function buildStepScores(aq) {
-  // 단순: AQ 근방으로 각 step 에 약간의 분산
+function buildStepScores(entry) {
+  // 자가진단: AQ 근방으로 각 step 에 분산.
+  // 언어재활: 해당 step 만 점수, 나머지 step 은 null.
+  if (entry.kind === "rehab" && entry.rehabStep) {
+    const out = { step1: null, step2: null, step3: null, step4: null, step5: null, step6: null };
+    out[`step${entry.rehabStep}`] = Math.max(0, Math.min(100, Math.round(entry.score * 10) / 10));
+    return out;
+  }
+  const aq = entry.aq;
   const j = (d) => Math.max(0, Math.min(100, Math.round((aq + d) * 10) / 10));
   return {
     step1: j(+4),
@@ -274,7 +287,7 @@ async function main() {
     console.log(`[seed] 삽입 예정 rows = ${SEED_ENTRIES.length}`);
     for (const e of SEED_ENTRIES) {
       console.log(
-        `   - ${e.label} | kind=${e.kind}${e.rehabStep ? ` step${e.rehabStep}` : ""} | AQ=${e.aq} | completedAt=${e.daysAgo}일 전`,
+        `   - ${e.label} | kind=${e.kind}${e.rehabStep ? ` step${e.rehabStep}` : ""} | ${e.kind === "rehab" ? `Step${e.rehabStep} 점수=${e.score}` : `AQ=${e.aq}`} | completedAt=${e.daysAgo}일 전`,
       );
     }
     if (!apply) {
@@ -307,9 +320,11 @@ async function main() {
       const resultId = deterministicUuid(`training-result:${historyId}:${trainingType}`);
       const completedAt = new Date(Date.now() - entry.daysAgo * 24 * 60 * 60 * 1000);
 
-      const stepScores = buildStepScores(entry.aq);
+      // rehab 은 entry.score(해당 step 점수), self 는 entry.aq(종합) 를 기준값으로 사용.
+      const baseValue = entry.kind === "rehab" ? entry.score : entry.aq;
+      const stepScores = buildStepScores(entry);
       const measurementQuality = buildMeasurementQualitySnapshot(entry.kind, entry.rehabStep);
-      const stepDetails = buildStepDetails(entry.aq);
+      const stepDetails = buildStepDetails(baseValue);
       const versionSnapshot = {
         algorithm_version: `${trainingType}-seed-v1`,
         config_version: "seed-v1",
@@ -379,7 +394,7 @@ async function main() {
           pseudonymId,
           entry.kind === "rehab" ? "rehab" : "self",
           entry.rehabStep ?? null,
-          entry.aq,
+          baseValue,
           JSON.stringify(stepScores),
           JSON.stringify(stepDetails),
           JSON.stringify({

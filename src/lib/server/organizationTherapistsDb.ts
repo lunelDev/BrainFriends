@@ -124,3 +124,17 @@ export async function listApprovedTherapistsByOrganization(
     a.therapistName.localeCompare(b.therapistName, "ko"),
   );
 }
+
+export async function isApprovedTherapistInOrganization(input: {
+  organizationId: string;
+  therapistUserId: string;
+}) {
+  const organizationId = String(input.organizationId ?? "").trim();
+  const therapistUserId = String(input.therapistUserId ?? "").trim();
+  if (!organizationId || !therapistUserId) {
+    return false;
+  }
+
+  const therapists = await listApprovedTherapistsByOrganization(organizationId);
+  return therapists.some((item) => item.therapistUserId === therapistUserId);
+}

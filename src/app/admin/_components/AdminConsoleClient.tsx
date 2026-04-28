@@ -867,6 +867,35 @@ export function AdminConsoleClient({
                       note="시험기관 문의, 품목·등급, GMP/사용적합성 확인"
                     />
                   </div>
+
+                  {/*
+                    공인성적서 시험 의뢰·실행 시 관리자가 한 화면에서 V&V 증적·AI 평가셋·
+                    사이버보안 이벤트를 한 번에 점검할 수 있는 진입점.
+                    원래 /therapist/system 에 있었으나 admin 만 접근 가능해 의미가 어색했고,
+                    이제 관리자 콘솔의 본 섹션에서 직접 진입한다.
+                  */}
+                  <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-700">
+                          시험 증적 운영 콘솔
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-amber-900">
+                          SW V&amp;V 추적성 / AI 평가셋 분포 / 사이버보안 감사 이벤트를
+                          한 화면에서 점검하고 증적 JSON 을 내려받습니다.
+                        </p>
+                        <p className="mt-1 text-xs font-medium text-amber-800/80">
+                          KTL 시험 의뢰·진행 시 첨부할 V&amp;V·AI 증적 export 가 여기 있습니다.
+                        </p>
+                      </div>
+                      <Link
+                        href="/therapist/system"
+                        className="rounded-full bg-amber-600 px-4 py-2 text-sm font-black text-white transition hover:bg-amber-700"
+                      >
+                        시스템 점검 열기
+                      </Link>
+                    </div>
+                  </div>
                 </section>
 
                 <section className="grid gap-6 xl:grid-cols-3">

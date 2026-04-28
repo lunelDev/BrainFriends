@@ -9,6 +9,7 @@ import { redactPatientForClient } from "@/lib/security/patientRedaction";
 type LoginForm = {
   loginId: string;
   password: string;
+  totpCode: string;
 };
 
 export default function LoginPage() {
@@ -16,17 +17,25 @@ export default function LoginPage() {
   const [form, setForm] = useState<LoginForm>({
     loginId: "",
     password: "",
+    totpCode: "",
   });
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+  const [requiresTotp, setRequiresTotp] = useState(false);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [pendingPatient, setPendingPatient] = useState<PatientProfile | null>(
     null,
   );
   const [isRequestingPermissions, setIsRequestingPermissions] = useState(false);
+
+  const isLocalDevHost = () => {
+    if (typeof window === "undefined") return false;
+    const { hostname } = window.location;
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  };
 
   const bootstrapPatient = (patient: PatientProfile) => {
     if (typeof window !== "undefined") {
@@ -83,7 +92,7 @@ export default function LoginPage() {
       return;
     }
 
-    if (!patient.organizationId || !patient.hasAssignedTherapist) {
+    if ((!patient.organizationId || !patient.hasAssignedTherapist) && !isLocalDevHost()) {
       if (typeof window !== "undefined") {
         window.sessionStorage.removeItem("btt.trialMode");
       }
@@ -120,7 +129,7 @@ export default function LoginPage() {
       return;
     }
 
-    if (!patient.organizationId || !patient.hasAssignedTherapist) {
+    if ((!patient.organizationId || !patient.hasAssignedTherapist) && !isLocalDevHost()) {
       if (typeof window !== "undefined") {
         window.sessionStorage.removeItem("btt.trialMode");
       }
@@ -170,6 +179,9 @@ export default function LoginPage() {
 
   const updateField = (key: keyof LoginForm, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+    if (key === "loginId" || key === "password") {
+      setRequiresTotp(false);
+    }
   };
 
   const submit = async () => {
@@ -181,20 +193,55 @@ export default function LoginPage() {
       return;
     }
 
+    if (requiresTotp && form.totpCode.trim().length !== 6) {
+      setError("인증 앱의 6자리 코드를 입력해 주세요.");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
+      let response: Response;
+      try {
+        response = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            loginId: form.loginId,
+            password: form.password,
+            totpCode: form.totpCode,
+          }),
+        });
+      } catch {
+        setError("서버 연결이 끊겨 로그인할 수 없습니다. 서버 상태를 확인해 주세요.");
+        return;
+      }
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload?.patient) {
+        if (payload?.error === "totp_required") {
+          setRequiresTotp(true);
+          setError("인증 앱의 6자리 코드를 입력해 주세요.");
+          return;
+        }
+
+        if (payload?.error === "invalid_totp_code") {
+          setRequiresTotp(true);
+          setError("인증 코드가 올바르지 않습니다.");
+          return;
+        }
+
+        if (payload?.error === "locked_too_many_failures") {
+          setRequiresTotp(true);
+          setError("인증 코드 입력이 잠시 잠겼습니다. 잠시 후 다시 시도해 주세요.");
+          return;
+        }
+
         setError(
           payload?.error === "invalid_credentials"
             ? "로그인 정보가 일치하지 않습니다."
             : payload?.error === "approval_pending"
               ? "치료사 계정은 관리자 승인 후 로그인할 수 있습니다."
+            : response.status >= 500
+              ? "서버 연결이 끊겨 로그인할 수 없습니다. 서버 상태를 확인해 주세요."
             : "로그인에 실패했습니다.",
         );
         return;
@@ -288,6 +335,23 @@ export default function LoginPage() {
                   </button>
                 </div>
               </Field>
+              {requiresTotp ? (
+                <Field label="인증 코드">
+                  <input
+                    className="input-style"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={form.totpCode}
+                    onChange={(e) =>
+                      updateField(
+                        "totpCode",
+                        e.target.value.replace(/\D/g, "").slice(0, 6),
+                      )
+                    }
+                    placeholder="인증 앱 6자리 코드"
+                  />
+                </Field>
+              ) : null}
             </div>
 
             {notice ? (

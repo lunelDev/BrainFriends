@@ -8,11 +8,19 @@ import {
 import type { PatientProfile } from "@/lib/patientStorage";
 import { getDbPool } from "@/lib/server/postgres";
 import { getAvailableOrganizationById } from "@/lib/server/organizationCatalogDb";
+import { isApprovedTherapistInOrganization } from "@/lib/server/organizationTherapistsDb";
 import {
   hasFallbackPatientTherapistAssignment,
   upsertFallbackPatientTherapistAssignment,
 } from "@/lib/server/patientTherapistAssignments";
 import { upsertPatientIdentity } from "@/lib/server/patientIdentityDb";
+import {
+  authenticateLocalAccount,
+  getLocalPatientProfileFromSession,
+  getLocalSessionContext,
+  invalidateLocalSession,
+  upsertLocalAuthAccount,
+} from "@/lib/server/localAuthFallback";
 
 export const AUTH_COOKIE_NAME = "brainfriends_session";
 // 의료기기 사이버보안 가이드라인 권고치(7-14일) 중 7일 채택.
@@ -271,6 +279,17 @@ function validatePassword(password: string) {
   return password.length >= 6;
 }
 
+function isDatabaseUnavailableError(error: unknown) {
+  const message =
+    error instanceof Error ? error.message : String(error ?? "");
+  return (
+    message === "missing_database_url" ||
+    /ECONNREFUSED|ENOTFOUND|database|connect|timeout|terminating connection/i.test(
+      message,
+    )
+  );
+}
+
 export function sanitizeLoginId(value: string) {
   return normalizeLoginId(value);
 }
@@ -369,7 +388,12 @@ export async function createAccount(input: SignupAccountInput) {
   const userRole = normalizeUserRole(input.userRole);
   const organizationId = String(input.organizationId ?? "").trim() || null;
   const therapistUserId = String(input.therapistUserId ?? "").trim() || null;
-  const approvalState = input.approvalState === "pending" ? "pending" : "approved";
+  const approvalState =
+    input.approvalState === "approved" || input.approvalState === "pending"
+      ? input.approvalState
+      : userRole === "patient" || userRole === "admin"
+        ? "approved"
+        : "pending";
   const loginId = normalizeLoginId(input.loginId);
   const name = normalizeName(input.name);
   const birthDate = normalizeBirthDate(input.birthDate);
@@ -395,6 +419,10 @@ export async function createAccount(input: SignupAccountInput) {
     throw new Error("invalid_signup_payload");
   }
 
+  if (userRole === "patient" && (!organizationId || !therapistUserId)) {
+    throw new Error("missing_patient_assignment");
+  }
+
   const educationYears = Number(input.educationYears ?? 0);
   const onsetDate = String(input.onsetDate ?? "");
   const gender =
@@ -412,11 +440,10 @@ export async function createAccount(input: SignupAccountInput) {
 
   try {
     await client.query("BEGIN");
-
-    // (이름 + 뒷4자리) 식별 키를 저장할 컬럼을 defensive 하게 보장.
-    // 기존 행은 NULL 이므로 기존 데이터의 중복 여부는 비교되지 않음 — 이후 생성분부터 차단.
-    await client.query(
-      `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS identity_key_hash VARCHAR(64) NULL`,
+    const canStoreIdentityKeyHash = await columnExists(
+      client,
+      "app_users",
+      "identity_key_hash",
     );
 
     const existing = await client.query(
@@ -429,12 +456,14 @@ export async function createAccount(input: SignupAccountInput) {
 
     // 이름 + 뒷자리 4자 동일한 계정이 이미 있으면 차단.
     // (생년월일이 달라도 동일 인물일 개연성이 크다는 사용자 정책.)
-    const identityDup = await client.query(
-      `SELECT user_id FROM app_users WHERE identity_key_hash = $1 LIMIT 1`,
-      [identityKeyHash],
-    );
-    if (identityDup.rowCount) {
-      throw new Error("duplicate_identity");
+    if (canStoreIdentityKeyHash) {
+      const identityDup = await client.query(
+        `SELECT user_id FROM app_users WHERE identity_key_hash = $1 LIMIT 1`,
+        [identityKeyHash],
+      );
+      if (identityDup.rowCount) {
+        throw new Error("duplicate_identity");
+      }
     }
 
     const patientProfile = {
@@ -476,22 +505,13 @@ export async function createAccount(input: SignupAccountInput) {
       await ensureOrganizationRecord(client, organizationId);
     }
 
-    if (userRole === "patient" && therapistUserId) {
-      const therapistCheck = await client.query(
-        `
-          SELECT
-            u.user_id::text AS user_id
-          FROM app_users u
-          WHERE u.user_id = $1::uuid
-            AND u.user_role = 'therapist'
-            ${canStoreOrganizationId ? "AND u.organization_id = $2::uuid" : ""}
-            ${canStoreApprovalState ? "AND COALESCE(u.approval_state, 'approved') = 'approved'" : ""}
-          LIMIT 1
-        `,
-        canStoreOrganizationId ? [therapistUserId, organizationId] : [therapistUserId],
-      );
+    if (userRole === "patient" && therapistUserId && organizationId) {
+      const therapistCheck = await isApprovedTherapistInOrganization({
+        organizationId,
+        therapistUserId,
+      });
 
-      if (!therapistCheck.rowCount) {
+      if (!therapistCheck) {
         throw new Error("invalid_therapist");
       }
     }
@@ -538,7 +558,6 @@ export async function createAccount(input: SignupAccountInput) {
       "login_id",
       "login_key_hash",
       "password_hash",
-      "identity_key_hash",
     ];
     const userValues: Array<string | null> = [
       userId,
@@ -547,8 +566,12 @@ export async function createAccount(input: SignupAccountInput) {
       loginId,
       loginKeyHash,
       hashPassword(input.password),
-      identityKeyHash,
     ];
+
+    if (canStoreIdentityKeyHash) {
+      userColumns.push("identity_key_hash");
+      userValues.push(identityKeyHash);
+    }
 
     if (canStoreOrganizationId) {
       userColumns.push("organization_id");
@@ -609,6 +632,25 @@ export async function createAccount(input: SignupAccountInput) {
     }
 
     await client.query("COMMIT");
+    await upsertLocalAuthAccount({
+      userId,
+      patientId,
+      loginId,
+      passwordHash: hashPassword(input.password),
+      userRole,
+      approvalState,
+      organizationId,
+      hasAssignedTherapist: Boolean(userRole === "patient" && therapistUserId),
+      fullName: name,
+      birthDate,
+      sex: gender,
+      phone: phoneLast4,
+      educationYears,
+      onsetDate,
+      daysSinceOnset: calcDaysSinceOnset(onsetDate) ?? undefined,
+      hemiplegia,
+      hemianopsia,
+    });
     return { userId, patientId };
   } catch (error) {
     await client.query("ROLLBACK");
@@ -624,10 +666,11 @@ export async function authenticateAccount(input: LoginAccountInput) {
     throw new Error("invalid_login_payload");
   }
 
-  const pool = getDbPool();
-  const client = await pool.connect();
+  let client: any = null;
 
   try {
+    const pool = getDbPool();
+    client = await pool.connect();
     const canStoreOrganizationId = await columnExists(
       client,
       "app_users",
@@ -747,16 +790,22 @@ export async function authenticateAccount(input: LoginAccountInput) {
         hemianopsia: row.hemianopsia,
       }),
     };
+  } catch (error) {
+    if (isDatabaseUnavailableError(error) && process.env.NODE_ENV !== "production") {
+      return authenticateLocalAccount(input);
+    }
+    throw error;
   } finally {
-    client.release();
+    client?.release();
   }
 }
 
 export async function getPatientProfileFromSession(sessionToken: string) {
-  const pool = getDbPool();
-  const client = await pool.connect();
+  let client: any = null;
 
   try {
+    const pool = getDbPool();
+    client = await pool.connect();
     const canStoreOrganizationId = await columnExists(
       client,
       "app_users",
@@ -834,16 +883,22 @@ export async function getPatientProfileFromSession(sessionToken: string) {
       hemiplegia: row.hemiplegia,
       hemianopsia: row.hemianopsia,
     });
+  } catch (error) {
+    if (isDatabaseUnavailableError(error) && process.env.NODE_ENV !== "production") {
+      return getLocalPatientProfileFromSession(sessionToken);
+    }
+    throw error;
   } finally {
-    client.release();
+    client?.release();
   }
 }
 
 export async function getAuthenticatedSessionContext(sessionToken: string) {
-  const pool = getDbPool();
-  const client = await pool.connect();
+  let client: any = null;
 
   try {
+    const pool = getDbPool();
+    client = await pool.connect();
     const canStoreApprovalState = await columnExists(
       client,
       "app_users",
@@ -911,16 +966,29 @@ export async function getAuthenticatedSessionContext(sessionToken: string) {
         hemianopsia: row.hemianopsia,
       }),
     };
+  } catch (error) {
+    if (isDatabaseUnavailableError(error) && process.env.NODE_ENV !== "production") {
+      return getLocalSessionContext(sessionToken);
+    }
+    throw error;
   } finally {
-    client.release();
+    client?.release();
   }
 }
 
 export async function invalidateSession(sessionToken: string) {
-  const pool = getDbPool();
-  await pool.query(`DELETE FROM auth_sessions WHERE session_token_hash = $1`, [
-    sha256(sessionToken),
-  ]);
+  try {
+    const pool = getDbPool();
+    await pool.query(`DELETE FROM auth_sessions WHERE session_token_hash = $1`, [
+      sha256(sessionToken),
+    ]);
+  } catch (error) {
+    if (isDatabaseUnavailableError(error) && process.env.NODE_ENV !== "production") {
+      await invalidateLocalSession(sessionToken);
+      return;
+    }
+    throw error;
+  }
 }
 
 export async function isLoginIdAvailable(loginIdInput: string) {

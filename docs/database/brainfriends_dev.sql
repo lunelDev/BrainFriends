@@ -52,6 +52,9 @@ ALTER TABLE app_users
 ALTER TABLE app_users
   ADD COLUMN IF NOT EXISTS approval_state VARCHAR(20) NOT NULL DEFAULT 'approved';
 
+ALTER TABLE app_users
+  ADD COLUMN IF NOT EXISTS identity_key_hash VARCHAR(64) NULL;
+
 CREATE TABLE IF NOT EXISTS auth_sessions (
   session_id UUID PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES app_users(user_id),
@@ -186,4 +189,3 @@ CREATE INDEX IF NOT EXISTS idx_clinical_sessions_completed
 
 CREATE INDEX IF NOT EXISTS idx_sing_pseudonym
   ON sing_results (patient_pseudonym_id);
-

@@ -317,10 +317,14 @@ export default function TherapistResultsPage() {
           ) : !summary.recent.length ? (
             <div className="rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-6">
               <p className="text-base font-black text-slate-900">
-                현재 필터 조건에 맞는 저장 결과가 없습니다.
+                {entries.length === 0
+                  ? "표시할 결과가 없습니다."
+                  : "현재 필터 조건에 맞는 저장 결과가 없습니다."}
               </p>
               <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
-                필터를 초기화하거나, 저장 실패/측정 완료 조건만 따로 확인해 보세요.
+                {entries.length === 0
+                  ? "본 화면은 본인이 담당 중인 환자의 결과만 표시합니다. 전체 사용자 조회는 관리자 콘솔(/admin)을 사용하세요."
+                  : "필터를 초기화하거나, 저장 실패/측정 완료 조건만 따로 확인해 보세요."}
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
@@ -404,20 +408,11 @@ export default function TherapistResultsPage() {
                       </p>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      <Link
-                        href="/tools/admin-reports"
-                        className="rounded-full bg-violet-700 px-4 py-2 text-sm font-black text-white transition hover:bg-violet-800"
-                      >
-                        관리자 리포트
-                      </Link>
-                      <Link
-                        href="/therapist/system"
-                        className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
-                      >
-                        시스템 점검
-                      </Link>
-                    </div>
+                    {/*
+                      카드 단위 진입 버튼 제거 — "관리자 리포트" 와 "시스템 점검" 둘 다
+                      카드별로 띄울 의미가 없었음. 시스템 점검은 관리자 콘솔(/admin) 의
+                      "공인성적서·SaMD" 섹션에서 진입하도록 통합.
+                    */}
                   </div>
                 </div>
               );
@@ -433,8 +428,7 @@ export default function TherapistResultsPage() {
         <ul className="mt-4 space-y-3 text-sm font-medium leading-6 text-slate-700">
           <li>임상 해석이나 보고에는 측정 완료 결과를 우선 사용합니다.</li>
           <li>내보내기 전에는 V&amp;V가 연결된 결과인지 먼저 확인합니다.</li>
-          <li>관리자 리포트는 전체 사용자 정보와 미디어 검토가 필요할 때 사용합니다.</li>
-          <li>저장 실패나 이벤트 조사에는 시스템 점검 화면을 사용합니다.</li>
+          <li>본 화면은 본인이 담당 중인 환자의 결과만 표시합니다. 전체 사용자 조회·시험 증적·저장 실패 점검은 관리자 콘솔(/admin)에서 사용합니다.</li>
         </ul>
 
         <div className="mt-6 rounded-[24px] border border-violet-200 bg-white p-4">

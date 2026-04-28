@@ -23,6 +23,7 @@ import {
 } from "@/constants/gameModeStagePayloads";
 import { useAudioAnalyzer } from "@/lib/audio/useAudioAnalyzer";
 import { markGameModeStageCleared } from "@/lib/gameModeProgress";
+import { deterministicShuffle } from "@/lib/lingo/deterministicShuffle";
 
 type SentenceQuestion = (typeof SENTENCE_EXAMPLE_QUESTIONS)[number];
 type SentenceMode = (typeof SENTENCE_MAGIC_MODES)[number];
@@ -44,8 +45,14 @@ type BattleModal = {
   isLast: boolean;
 };
 
-function shuffleWords(words: string[]) {
-  return [...words].sort(() => Math.random() - 0.5);
+// 결정론 셔플 — 같은 시드 → 항상 같은 결과.
+// 의료기기 결정론 요구사항(IEC 62304 / 식약처 AI 성능평가) 충족 목적.
+// 호출자는 매 라운드마다 다른 seed 를 넘기되, 세션 단위로 결정된 baseSeed
+// 에서 파생되도록 한다. 이렇게 하면:
+//   - 같은 세션 안: 같은 단어 → 같은 셔플 → 점수 재현 가능
+//   - 세션 간: 학습 효과 차단 위해 다른 셔플
+function shuffleWords(words: string[], seed: number) {
+  return deterministicShuffle(words, seed);
 }
 
 function isRecordingSupported() {
@@ -543,8 +550,24 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
   const [battleModal, setBattleModal] = useState<BattleModal | null>(null);
   const [battleDetailsOpen, setBattleDetailsOpen] = useState(false);
   const [serverError, setServerError] = useState("");
+
+  // 결정론 셔플 시드. 컴포넌트 마운트 시 1회 결정 후 라운드마다 +1.
+  // 현재 단계는 시드를 외부 결과 메타에 저장하지 않지만, 같은 마운트(=같은 세션)
+  // 안에서는 단어 셔플이 재현 가능하다.
+  // (TODO: 점수 저장 흐름 보강 시 baseSeed 도 결과 메타에 함께 저장.)
+  const baseSeedRef = useRef<number | null>(null);
+  if (baseSeedRef.current === null) {
+    baseSeedRef.current = (Date.now() & 0x7fffffff) || 1;
+  }
+  const roundCounterRef = useRef(0);
+  const nextShuffleSeed = () => {
+    const seed = (baseSeedRef.current ?? 1) + roundCounterRef.current;
+    roundCounterRef.current += 1;
+    return seed;
+  };
+
   const [shuffledWords, setShuffledWords] = useState<string[]>(() =>
-    shuffleWords(SENTENCE_EXAMPLE_QUESTIONS[0].answer),
+    shuffleWords(SENTENCE_EXAMPLE_QUESTIONS[0].answer, nextShuffleSeed()),
   );
   const {
     volume,
@@ -629,7 +652,7 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
     setRecognitionText("");
     setAccuracyScore(0);
     setBattleDetailsOpen(false);
-    setShuffledWords(shuffleWords(questions[nextIndex].answer));
+    setShuffledWords(shuffleWords(questions[nextIndex].answer, nextShuffleSeed()));
     setServerError("");
   }
 

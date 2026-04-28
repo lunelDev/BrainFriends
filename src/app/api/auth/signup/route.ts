@@ -307,6 +307,8 @@ export async function POST(req: Request) {
           ? 400
         : message === "invalid_therapist"
           ? 400
+        : message === "missing_patient_assignment"
+          ? 400
         : message === "account_already_exists"
           ? 409
         : message === "duplicate_identity"

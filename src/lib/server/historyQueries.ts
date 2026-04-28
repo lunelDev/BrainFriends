@@ -1,5 +1,6 @@
 import { getDbPool } from "@/lib/server/postgres";
 import { buildPatientProfile, getAuthenticatedSessionContext } from "@/lib/server/accountAuth";
+import type { PatientProfile } from "@/lib/patientStorage";
 import type {
   SingHistoryResult,
   TrainingMode,
@@ -60,7 +61,7 @@ export async function getAuthenticatedHistoryContext(sessionToken: string) {
 export async function listHistoryForAuthenticatedUser(
   sessionToken: string,
 ): Promise<{
-  patient: ReturnType<typeof buildPatientProfile>;
+  patient: PatientProfile;
   history: TrainingHistorySummary[];
   entries: TrainingHistoryEntry[];
 }> {
