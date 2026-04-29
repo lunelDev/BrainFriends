@@ -608,9 +608,14 @@ export const REGION_MISSIONS: RegionConfig[] = [
     shortLabel: "제",
     color: "#378ADD",
     description: "한라산과 바다",
-    pin: { x: 32, y: 92 },
+    pin: { x: 24, y: 92 },
     cities: [
-      { id: "jeju", name: "제주", description: "성산일출봉과 한라산", missions: [] },
+      {
+        id: "jeju",
+        name: "제주",
+        description: "성산일출봉과 한라산",
+        missions: [],
+      },
     ],
   },
 ];
@@ -620,7 +625,10 @@ export function getRegionById(regionId: string): RegionConfig | null {
   return REGION_MISSIONS.find((r) => r.id === regionId) ?? null;
 }
 
-export function getCityById(regionId: string, cityId: string): CityConfig | null {
+export function getCityById(
+  regionId: string,
+  cityId: string,
+): CityConfig | null {
   const region = getRegionById(regionId);
   return region?.cities.find((c) => c.id === cityId) ?? null;
 }
@@ -635,7 +643,5 @@ export function getMissionById(
 }
 
 export function listAllMissions(): MissionConfig[] {
-  return REGION_MISSIONS.flatMap((r) =>
-    r.cities.flatMap((c) => c.missions),
-  );
+  return REGION_MISSIONS.flatMap((r) => r.cities.flatMap((c) => c.missions));
 }
