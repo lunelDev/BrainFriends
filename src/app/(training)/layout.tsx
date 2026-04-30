@@ -6,6 +6,7 @@ import { TrainingProvider, useTraining } from "./TrainingContext";
 import FaceTracker from "@/components/diagnosis/FaceTracker";
 import { DeveloperKpiPanel } from "@/components/training/DeveloperKpiPanel";
 import { stopRegisteredMediaStreams } from "@/lib/client/mediaStreamRegistry";
+import { gazeAccumulator } from "@/lib/training/gazeAccumulator";
 
 function stopAllAttachedMediaStreams() {
   if (typeof document === "undefined") return;
@@ -224,6 +225,12 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
               const faceDetected = Boolean(m.faceDetected);
               const landmarks = Array.isArray(m.landmarks) ? m.landmarks : [];
 
+              const gaze = m.gaze || {};
+              // 시선(보조 채널) 누적기 — 세션 내내 record. 결과 페이지에서 report() 사용.
+              gazeAccumulator.record({
+                centeredScore: Number(gaze.centeredScore ?? 0),
+                irisDetected: Boolean(gaze.irisDetected),
+              });
               updateSidebar({
                 facialSymmetry: m.symmetryScore / 100,
                 staticFacialSymmetry: (m.staticSymmetryScore || m.symmetryScore) / 100,
@@ -236,6 +243,11 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
                 trackingQuality: (m.trackingQualityPct || 0) / 100,
                 faceDetected,
                 landmarks, // Context로 좌표 전달
+                gazeXNorm: Number(gaze.gazeX ?? 0),
+                gazeYNorm: Number(gaze.gazeY ?? 0),
+                gazeCentered: Number(gaze.centeredScore ?? 0) / 100,
+                gazeAttention: Number(gaze.attentionScore ?? 0) / 100,
+                irisDetected: Boolean(gaze.irisDetected),
               });
 
               if (!faceDetected || landmarks.length === 0) {

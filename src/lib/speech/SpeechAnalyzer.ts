@@ -2,6 +2,16 @@
  * 음성 인식 및 자모음 정밀 분석 시스템
  */
 
+import type { SttUseCase } from "@/lib/speech/sttPolicy";
+import { buildKoreanSttPrompt } from "@/lib/speech/sttPrompt";
+import { resolveSttRuntime } from "@/lib/speech/sttRuntime";
+import { transcribeWithWasmStt } from "@/lib/speech/wasmSttAdapter";
+import {
+  resolveSttReviewOutcome,
+  toReviewRequiredStatus,
+  type SttReviewStatus,
+} from "@/lib/speech/sttReview";
+
 export interface SpeechAnalysisResult {
   transcript: string;
   confidence: number;
@@ -10,6 +20,10 @@ export interface SpeechAnalysisResult {
   audioLevel: number;
   audioBlob?: Blob;
   errorReason?: string;
+  sttStatus: SttReviewStatus;
+  sttDetailStatus?: SttReviewStatus;
+  reviewRequired: boolean;
+  reviewReason?: string | null;
   // ✅ 상세 점수 추가
   details?: {
     consonantAccuracy: number;
@@ -153,7 +167,51 @@ export class AudioRecorder {
 export class WhisperTranscriber {
   async transcribe(
     audioBlob: Blob,
-  ): Promise<{ text: string; confidence: number }> {
+    options?: {
+      targetText?: string;
+      useCase?: SttUseCase;
+    },
+  ): Promise<{
+    text: string;
+    confidence: number;
+    sttStatus: SttReviewStatus;
+    sttDetailStatus: SttReviewStatus;
+    reviewRequired: boolean;
+    reviewReason: string | null;
+  }> {
+    const useCase = options?.useCase ?? "daily_training";
+    const runtime = resolveSttRuntime({ useCase });
+
+    if (runtime.engine === "mock_stt") {
+      return {
+        text: "테스트 모드 응답입니다.",
+        confidence: 0.99,
+        sttStatus: "ok",
+        sttDetailStatus: "ok",
+        reviewRequired: false,
+        reviewReason: null,
+      };
+    }
+
+    if (runtime.engine === "disabled") {
+      throw new Error(`stt_policy_blocked:${runtime.reason}`);
+    }
+
+    if (runtime.engine === "wasm_whisper") {
+      const result = await transcribeWithWasmStt(audioBlob, {
+        targetText: options?.targetText,
+        useCase,
+      });
+      return {
+        text: result.text,
+        confidence: result.confidence,
+        sttStatus: "ok",
+        sttDetailStatus: "ok",
+        reviewRequired: false,
+        reviewReason: null,
+      };
+    }
+
     const mimeToExt: Record<string, string> = {
       "audio/webm": "webm",
       "audio/mp4": "m4a",
@@ -168,24 +226,41 @@ export class WhisperTranscriber {
     formData.append("model", "whisper-1");
     formData.append("language", "ko");
     formData.append("response_format", "verbose_json");
+    formData.append("sttUseCase", useCase);
+    const prompt = buildKoreanSttPrompt(options?.targetText);
+    if (prompt) formData.append("targetText", prompt);
 
     const response = await fetch("/api/proxy/stt", {
       method: "POST",
       body: formData,
     });
     const data = await response.json();
+    const outcome = resolveSttReviewOutcome({
+      text: data?.text,
+      fallback: Boolean(data?.fallback),
+      reason:
+        typeof data?.reviewReason === "string"
+          ? data.reviewReason
+          : typeof data?.reason === "string"
+            ? data.reason
+            : null,
+      responseOk: response.ok,
+    });
 
     if (!response.ok) {
       const reason =
-        typeof data?.reason === "string"
-          ? data.reason
-          : `http_${response.status}`;
+        outcome.reason ??
+        (typeof data?.reason === "string" ? data.reason : `http_${response.status}`);
       throw new Error(`stt_proxy_error:${reason}`);
     }
     if (data?.fallback) {
       const reason =
-        typeof data?.reason === "string" ? data.reason : "unknown_fallback";
+        outcome.reason ??
+        (typeof data?.reason === "string" ? data.reason : "unknown_fallback");
       throw new Error(`stt_fallback:${reason}`);
+    }
+    if (outcome.reviewRequired) {
+      throw new Error(`stt_review_required:${outcome.reason ?? outcome.status}`);
     }
 
     const confidence =
@@ -193,7 +268,14 @@ export class WhisperTranscriber {
         (sum: number, seg: any) => sum + (seg.no_speech_prob || 0),
         0,
       ) / (data.segments?.length || 1);
-    return { text: data.text || "", confidence: 1 - confidence };
+    return {
+      text: data.text || "",
+      confidence: 1 - confidence,
+      sttStatus: toReviewRequiredStatus(outcome.status),
+      sttDetailStatus: outcome.status,
+      reviewRequired: outcome.reviewRequired,
+      reviewReason: outcome.reason,
+    };
   }
 }
 
@@ -373,6 +455,10 @@ export class SpeechAnalyzer {
         pronunciationScore: 0,
         duration: Math.max(0, duration),
         audioLevel: 0,
+        sttStatus: "review_required",
+        sttDetailStatus: "stt_failed",
+        reviewRequired: true,
+        reviewReason: "recorder_stop_failed",
         errorReason:
           error instanceof Error
             ? `recorder_stop_failed:${error.message}`
@@ -393,12 +479,26 @@ export class SpeechAnalyzer {
         duration,
         audioLevel: 50,
         audioBlob,
+        sttStatus: "ok",
+        sttDetailStatus: "ok",
+        reviewRequired: false,
+        reviewReason: null,
         details: { consonantAccuracy: 96, vowelAccuracy: 94 },
       };
     }
 
     try {
-      const { text, confidence } = await this.transcriber.transcribe(audioBlob);
+      const {
+        text,
+        confidence,
+        sttStatus,
+        sttDetailStatus,
+        reviewRequired,
+        reviewReason,
+      } = await this.transcriber.transcribe(audioBlob, {
+        targetText: expectedText,
+        useCase: "daily_training",
+      });
       const metrics = this.pronunciationAnalyzer.analyzeDetailed(
         expectedText,
         text,
@@ -411,6 +511,10 @@ export class SpeechAnalyzer {
         duration,
         audioLevel: 0,
         audioBlob,
+        sttStatus,
+        sttDetailStatus,
+        reviewRequired,
+        reviewReason,
         details: {
           consonantAccuracy: metrics.consonantAccuracy,
           vowelAccuracy: metrics.vowelAccuracy,
@@ -425,6 +529,13 @@ export class SpeechAnalyzer {
         duration,
         audioLevel: 0,
         audioBlob,
+        sttStatus: "review_required",
+        sttDetailStatus: error instanceof Error && error.message.includes("server_stt_blocked")
+          ? "server_stt_blocked"
+          : "stt_failed",
+        reviewRequired: true,
+        reviewReason:
+          error instanceof Error ? error.message : "stt_unknown_error",
         errorReason:
           error instanceof Error ? error.message : "stt_unknown_error",
         details: {

@@ -43,6 +43,13 @@ interface SidebarMetrics {
   faceDetected: boolean;
   cameraActive: boolean;
   landmarks?: any[];
+  // 시선(보조 채널). 제품제안서 p.7 5채널 중 4번.
+  // 0~1 정규화 후 sidebar 패턴에 맞춰 저장. -1~+1 raw 값은 gazeXNorm/gazeYNorm.
+  gazeXNorm: number; // -1..+1, 양수=영상 우측
+  gazeYNorm: number; // -1..+1, 양수=영상 하단
+  gazeCentered: number; // 0..1, 1=정중앙 응시
+  gazeAttention: number; // 0..1, 현재는 centered 와 동일하나 트래킹 품질 가중 자리
+  irisDetected: boolean;
 }
 
 interface TrainingContextType {
@@ -93,6 +100,11 @@ export function TrainingProvider({ children }: { children: React.ReactNode }) {
     faceDetected: false,
     cameraActive: false,
     landmarks: [],
+    gazeXNorm: 0,
+    gazeYNorm: 0,
+    gazeCentered: 0,
+    gazeAttention: 0,
+    irisDetected: false,
   });
 
   const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus>({

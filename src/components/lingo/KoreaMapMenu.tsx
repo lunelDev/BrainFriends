@@ -35,7 +35,9 @@ import {
 
 const MAP_IMG_SRC = "/images/game/map.png";
 
-// 게임 종류 → 기존 라우트. 신규 게임 4종은 미구현 → 토스트.
+// 게임 종류 → 라우트. 미구현 게임은 빠져 있고 → 토스트.
+// 신규 게임 4종 (place_name, dialect_repeat, kkutmal_ittgi, proverb_fill)
+// 중 place_name 부터 구현 시작.
 const GAME_ROUTE_MAP: Partial<Record<RegionMissionGameType, string>> = {
   association_clear: "/programs/lingo/association-clear",
   word_select: "/programs/lingo/word-select",
@@ -44,6 +46,8 @@ const GAME_ROUTE_MAP: Partial<Record<RegionMissionGameType, string>> = {
   memory: "/programs/lingo/memory",
   sentence_build: "/programs/lingo/sentence",
   balloon: "/programs/lingo/balloon",
+  place_name: "/programs/lingo/place-name",
+  dialect_repeat: "/programs/lingo/dialect-repeat",
 };
 
 const GAME_LABEL: Record<RegionMissionGameType, string> = {

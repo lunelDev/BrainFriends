@@ -13,6 +13,7 @@ import {
   type TherapistPatientNote,
 } from "@/lib/server/therapistNotes";
 import type { TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
+import { resolvePatientReportAccess } from "@/lib/security/patientReportAccess";
 
 type SessionContext = NonNullable<
   Awaited<ReturnType<typeof getAuthenticatedSessionContext>>
@@ -157,13 +158,13 @@ async function assertTherapistCanAccessPatient(
   context: SessionContext,
   patientId: string,
 ) {
-  if (context.userRole === "admin") {
-    return;
-  }
   const assignedPatientIds = await listAssignedPatientIds(context);
-  if (!assignedPatientIds?.includes(patientId)) {
-    throw new Error("forbidden");
-  }
+  const decision = resolvePatientReportAccess({
+    userRole: context.userRole,
+    targetPatientId: patientId,
+    assignedPatientIds,
+  });
+  if (!decision.allowed) throw new Error(`forbidden:${decision.reason}`);
 }
 
 export async function canTherapistAccessPatient(
@@ -171,9 +172,12 @@ export async function canTherapistAccessPatient(
   patientId: string,
 ) {
   const context = await resolveScopedContext(sessionToken);
-  if (context.userRole === "admin") return true;
   const assignedPatientIds = await listAssignedPatientIds(context);
-  return Boolean(assignedPatientIds?.includes(patientId));
+  return resolvePatientReportAccess({
+    userRole: context.userRole,
+    targetPatientId: patientId,
+    assignedPatientIds,
+  }).allowed;
 }
 
 export async function listTherapistPatientReportSummaries(sessionToken: string) {

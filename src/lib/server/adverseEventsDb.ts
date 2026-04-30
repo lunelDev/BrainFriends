@@ -51,6 +51,46 @@ export type AdverseEventRow = {
   updatedAt: Date;
 };
 
+async function ensureAdverseEventsTable() {
+  const pool = getDbPool();
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS adverse_events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      patient_user_id UUID NOT NULL,
+      patient_pseudonym_id VARCHAR(64) NOT NULL,
+      prescription_id UUID,
+      reporter_user_id UUID NOT NULL,
+      reporter_role VARCHAR(20) NOT NULL,
+      category VARCHAR(40) NOT NULL,
+      severity SMALLINT NOT NULL CHECK (severity BETWEEN 1 AND 3),
+      free_text TEXT,
+      occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      resolved_at TIMESTAMPTZ,
+      prescriber_acknowledged_at TIMESTAMPTZ,
+      prescriber_note TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS adverse_events_patient_idx
+      ON adverse_events (patient_user_id, occurred_at DESC)
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS adverse_events_prescription_idx
+      ON adverse_events (prescription_id)
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS adverse_events_severity_idx
+      ON adverse_events (severity, occurred_at DESC)
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS adverse_events_unack_severe_idx
+      ON adverse_events (severity, prescriber_acknowledged_at)
+      WHERE severity = 3 AND prescriber_acknowledged_at IS NULL
+  `);
+}
+
 function rowTo(row: Record<string, unknown>): AdverseEventRow {
   return {
     id: String(row.id),
@@ -84,6 +124,7 @@ export async function createAdverseEvent(input: {
   freeText?: string | null;
   occurredAt?: Date;
 }): Promise<AdverseEventRow> {
+  await ensureAdverseEventsTable();
   const pool = getDbPool();
   const r = await pool.query(
     `
@@ -116,6 +157,7 @@ export async function listAdverseEventsForPatient(
   patientUserId: string,
   opts?: { limit?: number },
 ): Promise<AdverseEventRow[]> {
+  await ensureAdverseEventsTable();
   const pool = getDbPool();
   const limit = Math.min(Math.max(opts?.limit ?? 50, 1), 500);
   const r = await pool.query(
@@ -134,6 +176,7 @@ export async function listAdverseEventsForPrescriber(
   prescriberUserId: string,
   opts?: { limit?: number; onlyUnacknowledgedSevere?: boolean },
 ): Promise<AdverseEventRow[]> {
+  await ensureAdverseEventsTable();
   const pool = getDbPool();
   const limit = Math.min(Math.max(opts?.limit ?? 100, 1), 500);
   const filter = opts?.onlyUnacknowledgedSevere
@@ -159,6 +202,7 @@ export async function acknowledgeAdverseEvent(input: {
   prescriberUserId: string;
   note?: string | null;
 }): Promise<AdverseEventRow | null> {
+  await ensureAdverseEventsTable();
   const pool = getDbPool();
   const r = await pool.query(
     `
@@ -178,6 +222,7 @@ export async function acknowledgeAdverseEvent(input: {
 }
 
 export async function resolveAdverseEvent(id: string): Promise<AdverseEventRow | null> {
+  await ensureAdverseEventsTable();
   const pool = getDbPool();
   const r = await pool.query(
     `

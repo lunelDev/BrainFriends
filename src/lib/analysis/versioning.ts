@@ -23,6 +23,16 @@ export type VersionSnapshot = {
   measurement_metadata?: Record<string, string | number | boolean | null>;
 };
 
+export type SpeechMetadataInput = {
+  sttEngine: string;
+  sttUseCase: string;
+  sttPolicyReason: string;
+  rawAudioLeavesDevice: boolean;
+  promptVersion?: string;
+  promptHash?: string | null;
+  reviewRequired?: boolean;
+};
+
 type VersionSnapshotTemplate = Omit<VersionSnapshot, "generated_at" | "pipeline_stage">;
 
 const RELEASE_VERSION = "golden-2026.03.13";
@@ -125,5 +135,25 @@ export function buildVersionSnapshot(
     ...overrides,
     pipeline_stage: pipelineStage,
     generated_at: new Date().toISOString(),
+  };
+}
+
+export function attachSpeechVersionMetadata(
+  snapshot: VersionSnapshot,
+  input: SpeechMetadataInput,
+): VersionSnapshot {
+  return {
+    ...snapshot,
+    model_version: `${snapshot.model_version}+stt:${input.sttEngine}`,
+    measurement_metadata: {
+      ...(snapshot.measurement_metadata ?? {}),
+      stt_engine: input.sttEngine,
+      stt_use_case: input.sttUseCase,
+      stt_policy_reason: input.sttPolicyReason,
+      raw_audio_leaves_device: input.rawAudioLeavesDevice,
+      stt_prompt_version: input.promptVersion ?? "ko-rehab-vocab-prompt-v1",
+      stt_prompt_hash: input.promptHash ?? null,
+      stt_review_required: Boolean(input.reviewRequired),
+    },
   };
 }

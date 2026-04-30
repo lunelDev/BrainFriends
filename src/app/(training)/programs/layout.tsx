@@ -56,9 +56,24 @@ export default async function ProgramsGateLayout({
     // 운영에서는 DB 장애 = 처방 확인 불가 = 차단이 원칙이지만,
     // 테이블 미적용(로컬) 상황에서 전체가 막히면 개발이 불가능하므로
     // 테이블 부재 에러만 조용히 통과시킨다.
+    //
+    // 매칭 우선순위:
+    //   1) PostgreSQL 표준 에러 코드 42P01 (undefined_table) — 언어 무관
+    //   2) 영문 메시지 regex — pg 드라이버가 코드 없이 메시지만 줄 때 폴백
+    //   3) 한국어 메시지 regex — PG locale=ko_KR 환경 폴백
     const message = err instanceof Error ? err.message : "";
-    if (/relation .+ does not exist/i.test(message)) {
-      console.warn("[programs-gate] prescriptions table not yet applied — bypassing");
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? String((err as { code?: unknown }).code ?? "")
+        : "";
+    const isUndefinedTable =
+      code === "42P01" ||
+      /relation .+ does not exist/i.test(message) ||
+      /릴레이션\s*\(relation\)\s*이?\s*없습니다/.test(message);
+    if (isUndefinedTable) {
+      console.warn(
+        "[programs-gate] prescriptions table not yet applied — bypassing",
+      );
       return <>{children}</>;
     }
     throw err;

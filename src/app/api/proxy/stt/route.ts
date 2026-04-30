@@ -4,20 +4,37 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
+import {
+  parseBooleanFlag,
+  parseSttUseCase,
+} from "@/lib/speech/sttPolicy";
+import { resolveSttRuntime } from "@/lib/speech/sttRuntime";
+import { resolveSttReviewOutcome, toReviewRequiredStatus } from "@/lib/speech/sttReview";
 
 type SttFallback = {
   text: string;
   segments: Array<{ no_speech_prob: number }>;
   fallback: true;
   reason: string;
+  sttStatus: string;
+  reviewRequired: true;
 };
 
-const makeFallback = (reason: string): SttFallback => ({
-  text: "",
-  segments: [{ no_speech_prob: 0.8 }],
-  fallback: true,
-  reason,
-});
+const makeFallback = (reason: string): SttFallback => {
+  const outcome = resolveSttReviewOutcome({
+    fallback: true,
+    reason,
+    responseOk: false,
+  });
+  return {
+    text: "",
+    segments: [{ no_speech_prob: 0.8 }],
+    fallback: true,
+    reason,
+    sttStatus: toReviewRequiredStatus(outcome.status),
+    reviewRequired: true,
+  };
+};
 
 export async function POST(req: Request) {
   try {
@@ -27,10 +44,30 @@ export async function POST(req: Request) {
       return NextResponse.json({
         text: "테스트 모드 응답입니다.",
         segments: [{ no_speech_prob: 0.01 }],
+        sttStatus: "ok",
+        reviewRequired: false,
       });
     }
 
     const incoming = await req.formData();
+    const sttUseCase = parseSttUseCase(incoming.get("sttUseCase"));
+    const runtime = resolveSttRuntime({
+      useCase: sttUseCase,
+      devMode: isDevMode,
+      allowTrainingServerFallback: parseBooleanFlag(
+        process.env.STT_TRAINING_SERVER_FALLBACK ??
+          process.env.NEXT_PUBLIC_STT_TRAINING_SERVER_FALLBACK,
+        false,
+      ),
+    });
+
+    if (runtime.engine !== "server_whisper") {
+      return NextResponse.json(
+        makeFallback(`server_stt_blocked:${runtime.reason}`),
+        { status: 403 },
+      );
+    }
+
     const apiKey = process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
@@ -96,7 +133,20 @@ export async function POST(req: Request) {
       );
     }
 
-    return NextResponse.json(data ?? { text: "", segments: [] });
+    const outcome = resolveSttReviewOutcome({
+      text: data?.text,
+      fallback: Boolean(data?.fallback),
+      reason: typeof data?.reason === "string" ? data.reason : null,
+      responseOk: true,
+    });
+
+    return NextResponse.json({
+      ...(data ?? { text: "", segments: [] }),
+      sttStatus: toReviewRequiredStatus(outcome.status),
+      sttDetailStatus: outcome.status,
+      reviewRequired: outcome.reviewRequired,
+      reviewReason: outcome.reason,
+    });
   } catch (error: any) {
     console.error("[STT Proxy] unexpected error", error);
     return NextResponse.json(makeFallback("internal_error"), { status: 500 });

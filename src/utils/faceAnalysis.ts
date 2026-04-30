@@ -9,6 +9,23 @@ const LIPS = {
   NOSE_TIP: 6,
 };
 
+// MediaPipe FaceLandmarker iris/eye landmark indices (refine landmarks 478-point model).
+// Iris centers: 468 (right eye, subject's right = image left), 473 (left eye).
+// Eye corners/lids are used to build a per-eye bounding box so that iris position can be
+// normalised to a [-1, 1] gaze vector.
+const GAZE = {
+  RIGHT_IRIS_CENTER: 468,
+  LEFT_IRIS_CENTER: 473,
+  RIGHT_OUTER: 33,
+  RIGHT_INNER: 133,
+  RIGHT_UPPER: 159,
+  RIGHT_LOWER: 145,
+  LEFT_OUTER: 263,
+  LEFT_INNER: 362,
+  LEFT_UPPER: 386,
+  LEFT_LOWER: 374,
+};
+
 export interface LipMetrics {
   symmetryScore: number; // 0~100
   openingRatio: number; // 0~100+
@@ -165,5 +182,99 @@ export const calculateLipMetrics = (landmarks: any[]): LipMetrics => {
     eyeClosureStrengthPct: Number(eyeClosureStrengthPct.toFixed(1)),
     trackingQualityPct,
     rollAngleDeg: Number(rollAngleDeg.toFixed(1)),
+  };
+};
+
+// ============================================================================
+// Gaze metrics
+// ----------------------------------------------------------------------------
+// 제품제안서 p.7 "5채널" 중 4번 보조 채널(시선 추적) 구현체.
+// MediaPipe FaceLandmarker (478-point, refine landmarks) 의 iris 랜드마크를
+// 기존 안면 추적 흐름에서 그대로 받아 추가 모델 없이 계산한다.
+// 출력은 결정성(deterministic) 스칼라이며 SW V&V 결정성 테스트 대상이다.
+// ============================================================================
+
+export interface GazeMetrics {
+  /** Subject 눈에서 홍채의 정규화 수평 위치. -1~+1, 양수=영상 우측. 양안 평균. */
+  gazeX: number;
+  /** 홍채 정규화 수직 위치. -1~+1, 양수=영상 하단. 양안 평균. */
+  gazeY: number;
+  /** 화면 중앙 응시 점수. 100=완전 정중앙. 0.3 이내는 dead-zone 으로 100 처리. */
+  centeredScore: number;
+  /** 단순 응시 기반 attention 점수. 추후 트래킹 품질 가중을 더할 수 있는 자리. */
+  attentionScore: number;
+  /** Iris 랜드마크(468/473 등) 가용 여부. refine landmarks 미적용 모델이면 false. */
+  irisDetected: boolean;
+}
+
+const ZERO_GAZE: GazeMetrics = {
+  gazeX: 0,
+  gazeY: 0,
+  centeredScore: 0,
+  attentionScore: 0,
+  irisDetected: false,
+};
+
+export const calculateGazeMetrics = (landmarks: any[]): GazeMetrics => {
+  const rIris = landmarks?.[GAZE.RIGHT_IRIS_CENTER];
+  const lIris = landmarks?.[GAZE.LEFT_IRIS_CENTER];
+  const rOuter = landmarks?.[GAZE.RIGHT_OUTER];
+  const rInner = landmarks?.[GAZE.RIGHT_INNER];
+  const rUpper = landmarks?.[GAZE.RIGHT_UPPER];
+  const rLower = landmarks?.[GAZE.RIGHT_LOWER];
+  const lOuter = landmarks?.[GAZE.LEFT_OUTER];
+  const lInner = landmarks?.[GAZE.LEFT_INNER];
+  const lUpper = landmarks?.[GAZE.LEFT_UPPER];
+  const lLower = landmarks?.[GAZE.LEFT_LOWER];
+
+  if (
+    !rIris ||
+    !lIris ||
+    !rOuter ||
+    !rInner ||
+    !rUpper ||
+    !rLower ||
+    !lOuter ||
+    !lInner ||
+    !lUpper ||
+    !lLower
+  ) {
+    return { ...ZERO_GAZE };
+  }
+
+  const computeEyeGaze = (
+    iris: { x: number; y: number },
+    outer: { x: number; y: number },
+    inner: { x: number; y: number },
+    upper: { x: number; y: number },
+    lower: { x: number; y: number },
+  ) => {
+    const cx = (outer.x + inner.x) / 2;
+    const cy = (upper.y + lower.y) / 2;
+    const halfW = Math.max(0.001, Math.abs(inner.x - outer.x) / 2);
+    const halfH = Math.max(0.001, Math.abs(lower.y - upper.y) / 2);
+    return {
+      gx: (iris.x - cx) / halfW,
+      gy: (iris.y - cy) / halfH,
+    };
+  };
+
+  const right = computeEyeGaze(rIris, rOuter, rInner, rUpper, rLower);
+  const left = computeEyeGaze(lIris, lOuter, lInner, lUpper, lLower);
+
+  const gazeX = clamp((right.gx + left.gx) / 2, -1.5, 1.5);
+  const gazeY = clamp((right.gy + left.gy) / 2, -1.5, 1.5);
+
+  // Dead zone 0.3 이내는 정중앙으로 간주, 그 이후 0.7 까지 선형 감점.
+  const distance = Math.hypot(gazeX, gazeY);
+  const adjusted = Math.max(0, distance - 0.3);
+  const centeredScore = clamp(100 * (1 - adjusted / 0.7), 0, 100);
+
+  return {
+    gazeX: Number(gazeX.toFixed(3)),
+    gazeY: Number(gazeY.toFixed(3)),
+    centeredScore: Number(centeredScore.toFixed(1)),
+    attentionScore: Number(centeredScore.toFixed(1)),
+    irisDetected: true,
   };
 };

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { trainingButtonStyles } from "@/lib/ui/trainingButtonStyles";
 import LingoGameShell from "@/components/lingo/LingoGameShell";
 import LingoResultModalShell from "@/components/lingo/LingoResultModalShell";
+import AACBoard from "@/components/aac/AACBoard";
 import {
   registerMediaStream,
   unregisterMediaStream,
@@ -25,6 +26,12 @@ import { useAudioAnalyzer } from "@/lib/audio/useAudioAnalyzer";
 import { markGameModeStageCleared } from "@/lib/gameModeProgress";
 import { useRegionMissionMark } from "@/hooks/useRegionMissionMark";
 import { deterministicShuffle } from "@/lib/lingo/deterministicShuffle";
+import {
+  persistAacIntentBestEffort,
+  type AacTrainingCommit,
+} from "@/lib/aac/trainingIntegration";
+import type { PlaceType } from "@/constants/trainingData";
+import { resolveClientSttPreflight } from "@/lib/speech/sttClientPreflight";
 
 type SentenceQuestion = (typeof SENTENCE_EXAMPLE_QUESTIONS)[number];
 type SentenceMode = (typeof SENTENCE_MAGIC_MODES)[number];
@@ -542,6 +549,7 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
   const [recognitionText, setRecognitionText] = useState("");
   const [supported, setSupported] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
+  const [isAacMode, setIsAacMode] = useState(false);
   const [accuracyScore, setAccuracyScore] = useState(0);
   const [playerHp, setPlayerHp] = useState(3);
   const [enemyHp, setEnemyHp] = useState(3);
@@ -830,13 +838,34 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
     setMessage(`정확도 ${nextAccuracy}%입니다.`);
   }
 
+  function applyAacSentence(payload: AacTrainingCommit) {
+    if (battleEnded || battleModal) return;
+    void persistAacIntentBestEffort(payload);
+    setMessage("AAC 심볼 문장으로 판정합니다.");
+    evaluateTranscript(payload.sentence);
+  }
+
   async function analyzeRecording(audioBlob: Blob) {
     setIsAnalyzing(true);
     setServerError("");
     try {
+      const sttPreflight = resolveClientSttPreflight({
+        useCase: "game_training",
+      });
+      if (sttPreflight.isMock) {
+        evaluateTranscript(targetSentence);
+        setIsAnalyzing(false);
+        setMessage("개발용 mock STT 결과입니다.");
+        return;
+      }
+      if (!sttPreflight.canUploadToServer) {
+        throw new Error(`server_stt_blocked:${sttPreflight.reason}`);
+      }
+
       const formData = new FormData();
       formData.append("audio", audioBlob, "sentence-magic.webm");
       formData.append("targetText", targetSentence);
+      formData.append("sttUseCase", "game_training");
       formData.append("threshold", String(selectedThreshold));
 
       const response = await fetch("/api/proxy/stt", {
@@ -845,6 +874,9 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
       });
 
       const result = await response.json();
+      if (result?.reviewRequired) {
+        throw new Error(result?.reviewReason || result?.reason || "stt_review_required");
+      }
       if (!response.ok) {
         throw new Error(result?.error || "STT server request failed.");
       }
@@ -856,11 +888,17 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
       const message =
         error instanceof Error ? error.message : "음성 분석 중 오류가 발생했어요.";
       setServerError(
-        message.includes("마이크")
+        message.includes("server_stt_blocked")
+          ? "훈련 음성은 현재 서버로 전송하지 않습니다. 심볼 입력을 사용하거나 온디바이스 STT가 연결된 환경에서 다시 시도해 주세요."
+          : message.includes("마이크")
           ? "마이크를 확인한 뒤 다시 시도해 주세요."
           : "음성 인식 연결이 불안정합니다. 다시 시도해 주세요.",
       );
-      setMessage("음성 분석에 실패했어요. 다시 시도해 보세요.");
+      setMessage(
+        message.includes("server_stt_blocked")
+          ? "훈련 음성 서버 전송이 차단되었습니다."
+          : "음성 분석에 실패했어요. 다시 시도해 보세요.",
+      );
     }
   }
 
@@ -1109,52 +1147,87 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
             </div>
 
             <div className="flex flex-col items-center gap-3 sm:gap-4">
-              <button
-                type="button"
-                onClick={toggleRecording}
-                disabled={isAnalyzing || battleEnded}
-                aria-label={isRecording ? "녹음 정지" : "녹음 시작"}
-                title={isRecording ? "녹음 정지" : "녹음 시작"}
-                className={`group relative flex h-20 w-20 items-center justify-center rounded-full shadow-[0_12px_32px_rgba(0,0,0,0.4)] transition-all active:scale-95 sm:h-24 sm:w-24 ${
-                  isRecording
-                    ? "bg-rose-500 shadow-[0_0_30px_rgba(244,63,94,0.4)]"
-                    : "bg-[#1a0f3a] hover:bg-violet-700 shadow-[0_0_20px_rgba(139,92,246,0.25)] ring-1 ring-violet-500/30"
-                }`}
-                style={{ transform: `scale(${recordButtonScale})` }}
-              >
-                {isRecording ? (
-                  <div className="h-7 w-7 rounded-sm bg-white sm:h-8 sm:w-8" />
-                ) : (
-                  <span className="text-[1.7rem] text-white sm:text-3xl">🎙️</span>
-                )}
-              </button>
-              <div className="flex flex-col gap-1 text-center">
-                <span
-                  className={`text-[10px] font-black uppercase tracking-[0.16em] sm:text-[11px] sm:tracking-widest ${
-                    isRecording ? "text-rose-400" : "text-violet-300/60"
+              <div className="flex flex-wrap justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAacMode(false)}
+                  className={`rounded-full border px-4 py-2 text-[11px] font-black ${
+                    !isAacMode
+                      ? "border-violet-400 bg-violet-500 text-white"
+                      : "border-violet-500/30 bg-violet-950/50 text-violet-200"
                   }`}
                 >
-                  {isRecording
-                    ? roadmapStageId >= 1
-                      ? "듣는 중"
-                      : "Listening..."
-                    : roadmapStageId >= 1
-                      ? "녹음 시작"
-                      : "Tap to Spell"}
-                </span>
-                <p className="mx-auto max-w-xl text-sm font-bold text-slate-400 sm:text-[0.95rem]">{message}</p>
-                <div className="mt-2 flex items-end justify-center gap-1" aria-hidden="true">
-                  {waveHeights.map((height, waveIndex) => (
-                    <span
-                      key={waveIndex}
-                      className={`w-1.5 rounded-full bg-violet-400 transition-all duration-150 ${
-                        isRecording ? "opacity-100" : "opacity-50"
-                      }`}
-                      style={{ height: `${isRecording ? height : 10}px` }}
-                    />
-                  ))}
-                </div>
+                  음성으로 답하기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAacMode(true)}
+                  className={`rounded-full border px-4 py-2 text-[11px] font-black ${
+                    isAacMode
+                      ? "border-violet-400 bg-violet-500 text-white"
+                      : "border-violet-500/30 bg-violet-950/50 text-violet-200"
+                  }`}
+                >
+                  말 대신 심볼
+                </button>
               </div>
+              {isAacMode ? (
+                <div className="w-full max-w-3xl text-left">
+                  <AACBoard
+                    initialPlace={(searchParams.get("place") as PlaceType) || "home"}
+                    onCommit={applyAacSentence}
+                  />
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={toggleRecording}
+                    disabled={isAnalyzing || battleEnded}
+                    aria-label={isRecording ? "녹음 정지" : "녹음 시작"}
+                    title={isRecording ? "녹음 정지" : "녹음 시작"}
+                    className={`group relative flex h-20 w-20 items-center justify-center rounded-full shadow-[0_12px_32px_rgba(0,0,0,0.4)] transition-all active:scale-95 sm:h-24 sm:w-24 ${
+                      isRecording
+                        ? "bg-rose-500 shadow-[0_0_30px_rgba(244,63,94,0.4)]"
+                        : "bg-[#1a0f3a] hover:bg-violet-700 shadow-[0_0_20px_rgba(139,92,246,0.25)] ring-1 ring-violet-500/30"
+                    }`}
+                    style={{ transform: `scale(${recordButtonScale})` }}
+                  >
+                    {isRecording ? (
+                      <div className="h-7 w-7 rounded-sm bg-white sm:h-8 sm:w-8" />
+                    ) : (
+                      <span className="text-[1.7rem] text-white sm:text-3xl">🎙️</span>
+                    )}
+                  </button>
+                  <div className="flex flex-col gap-1 text-center">
+                    <span
+                      className={`text-[10px] font-black uppercase tracking-[0.16em] sm:text-[11px] sm:tracking-widest ${
+                        isRecording ? "text-rose-400" : "text-violet-300/60"
+                      }`}
+                    >
+                      {isRecording
+                        ? roadmapStageId >= 1
+                          ? "듣는 중"
+                          : "Listening..."
+                        : roadmapStageId >= 1
+                          ? "녹음 시작"
+                          : "Tap to Spell"}
+                    </span>
+                    <p className="mx-auto max-w-xl text-sm font-bold text-slate-400 sm:text-[0.95rem]">{message}</p>
+                    <div className="mt-2 flex items-end justify-center gap-1" aria-hidden="true">
+                      {waveHeights.map((height, waveIndex) => (
+                        <span
+                          key={waveIndex}
+                          className={`w-1.5 rounded-full bg-violet-400 transition-all duration-150 ${
+                            isRecording ? "opacity-100" : "opacity-50"
+                          }`}
+                          style={{ height: `${isRecording ? height : 10}px` }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="mx-auto mt-6 w-full max-w-3xl rounded-[22px] border border-violet-500/20 bg-[#0a0818]/80 px-4 py-4 text-left sm:mt-7 sm:rounded-[28px] sm:px-5">

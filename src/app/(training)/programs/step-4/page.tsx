@@ -14,6 +14,7 @@ import { FLUENCY_SCENARIOS } from "@/constants/fluencyData";
 import { SpeechAnalyzer } from "@/lib/speech/SpeechAnalyzer";
 import { AnalysisSidebar } from "@/components/training/AnalysisSidebar";
 import { RuntimeStatusBanner } from "@/components/training/RuntimeStatusBanner";
+import AACBoard from "@/components/aac/AACBoard";
 import { useTraining } from "../../TrainingContext";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { SessionManager, type AcousticSnapshot } from "@/lib/kwab/SessionManager";
@@ -57,6 +58,11 @@ import {
   clearFirstDiagnosisFlow,
   isFirstDiagnosisFlow,
 } from "@/lib/firstDiagnosisFlow";
+import {
+  buildAacTrainingMetadata,
+  persistAacIntentBestEffort,
+  type AacTrainingCommit,
+} from "@/lib/aac/trainingIntegration";
 
 export const dynamic = "force-dynamic";
 
@@ -102,6 +108,10 @@ type Step4EvalResult = {
   };
   // Parselmouth 음향 측정값 (REQ-ACOUSTIC-001~004). 결과 페이지/DB 까지 같이 흘러간다.
   acoustic?: AcousticSnapshot | null;
+  inputModality?: "speech" | "aac";
+  aacSymbolIds?: string[];
+  aacSentence?: string;
+  aacPlace?: string;
 };
 
 const shouldDisplayStep4Transcript = (
@@ -267,6 +277,7 @@ function Step4Content() {
   const [isImageResolving, setIsImageResolving] = useState(false);
   const [showHint, setShowHint] = useState(false);
   const [showTracking, setShowTracking] = useState(true);
+  const [isAacMode, setIsAacMode] = useState(false);
   const [isHomeExitModalOpen, setIsHomeExitModalOpen] = useState(false);
   const [isDesktopViewport, setIsDesktopViewport] = useState(false);
   const [showSidePanel, setShowSidePanel] = useState(false);
@@ -1093,6 +1104,7 @@ function Step4Content() {
 
     if (currentIndex < scenarios.length - 1) {
       setCurrentIndex((prev) => prev + 1);
+      setIsAacMode(false);
     } else {
       const finalizedResults = buildPersistedStep4Results();
       try {
@@ -1128,6 +1140,10 @@ function Step4Content() {
             consonantDetail: r.consonantDetail,
             vowelDetail: r.vowelDetail,
             acoustic: r.acoustic ?? null,
+            inputModality: r.inputModality === "aac" ? "aac" : "speech",
+            aacSymbolIds: Array.isArray(r.aacSymbolIds) ? r.aacSymbolIds : undefined,
+            aacSentence: typeof r.aacSentence === "string" ? r.aacSentence : undefined,
+            aacPlace: typeof r.aacPlace === "string" ? r.aacPlace : undefined,
           })),
           averageKwabScore: Number(averageKwabScore.toFixed(1)),
           totalScenarios: finalizedResults.length,
@@ -1270,6 +1286,103 @@ function Step4Content() {
     sessionId,
     stepSignature,
   ]);
+
+  const handleAacCommit = useCallback(
+    (payload: AacTrainingCommit) => {
+      if (!currentScenario) return;
+      const matched = currentScenario.answerKeywords.filter((keyword) =>
+        payload.sentence.includes(keyword),
+      );
+      const scored = scoreStep4Response({
+        matchedKeywordCount: matched.length,
+        totalKeywords: currentScenario.answerKeywords.length,
+        transcript: payload.sentence,
+        speechDurationSec: Math.max(2, payload.sentence.length / 4),
+        consonantAccuracy: 0,
+        vowelAccuracy: 0,
+        responseStartMs: 0,
+      });
+      const metadata = buildAacTrainingMetadata(payload);
+      const evalResult: Step4EvalResult = {
+        index: currentIndex,
+        situation: currentScenario.situation,
+        prompt: currentScenario.prompt,
+        transcript: payload.sentence,
+        isCorrect: scored.kwabScore >= 5,
+        matchedKeywords: Array.from(new Set(matched)),
+        relevantSentenceCount: payload.sentence ? 1 : 0,
+        totalSentenceCount: 1,
+        relevanceScore: scored.contentScore,
+        contentComponentScore: scored.contentScore,
+        fluencyComponentScore: scored.fluencyScore,
+        clarityComponentScore: scored.clarityScore,
+        responseStartComponentScore: scored.responseStartScore,
+        responseStartMs: 0,
+        finalScore: scored.finalScore,
+        speechDuration: Math.max(2, payload.sentence.length / 4),
+        silenceRatio: 0,
+        averageAmplitude: 0,
+        peakCount: 0,
+        kwabScore: scored.kwabScore,
+        rawScore: scored.finalScore,
+        audioUrl: "",
+        consonantAccuracy: 0,
+        vowelAccuracy: 0,
+        articulationWritingConsistency: 0,
+        acoustic: null,
+        ...metadata,
+      };
+
+      const existing = loadTransientStepStorage<any>(STEP4_STORAGE_KEY);
+      const byIndex = new Map<number, any>();
+      existing.slice(-scenarios.length).forEach((row: any, fallbackIndex: number) => {
+        const resolvedIndex = Number.isFinite(Number(row?.index))
+          ? Number(row.index)
+          : fallbackIndex;
+        if (resolvedIndex < 0 || resolvedIndex >= scenarios.length) return;
+        byIndex.set(resolvedIndex, row);
+      });
+      byIndex.set(currentIndex, {
+        ...evalResult,
+        text: currentScenario.situation,
+        responseTime: 0,
+        timestamp: new Date().toLocaleTimeString(),
+      });
+      const next = Array.from(byIndex.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map((entry) => entry[1])
+        .slice(0, scenarios.length);
+      saveTransientStepStorage(STEP4_STORAGE_KEY, next);
+      saveResumeMeta(STEP4_STORAGE_KEY, stepSignature, next.length);
+      void persistAacIntentBestEffort(payload);
+
+      setCurrentResult(evalResult);
+      setAllResults((prev) => {
+        const merged = new Map<number, Step4EvalResult>();
+        prev.forEach((row, idx) => {
+          const resolvedIndex = Number.isFinite(Number(row?.index))
+            ? Number(row.index)
+            : idx;
+          if (resolvedIndex < 0 || resolvedIndex >= scenarios.length) return;
+          merged.set(resolvedIndex, row);
+        });
+        merged.set(currentIndex, evalResult);
+        return Array.from(merged.entries())
+          .sort((a, b) => a[0] - b[0])
+          .map((entry) => entry[1]);
+      });
+      setSaveStatusText("AAC 심볼 입력 저장 완료");
+      setPhase("review");
+      updateRuntimeStatus({
+        recording: false,
+        saving: false,
+        pageError: false,
+        needsRetry: false,
+        message: "AAC 입력 저장 완료",
+      });
+    },
+    [currentIndex, currentScenario, scenarios.length, stepSignature, updateRuntimeStatus],
+  );
 
   if (!isMounted || !currentScenario) return null;
 
@@ -1426,12 +1539,21 @@ function Step4Content() {
                           </p>
                           <button
                             onClick={playRecordedAudio}
+                            disabled={!currentResult?.audioUrl}
                             className={`mt-2 w-full h-9 inline-flex items-center justify-center rounded-lg border text-[12px] font-black ${
-                              isPlayingAudio ? accentSolid : accentSoft
+                              !currentResult?.audioUrl
+                                ? trainingButtonStyles.slateMuted
+                                : isPlayingAudio
+                                  ? accentSolid
+                                  : accentSoft
                             }`}
                             aria-label="내 목소리 재생"
                           >
-                            {isPlayingAudio ? "⏸" : "▶"}
+                            {currentResult?.inputModality === "aac"
+                              ? "AAC"
+                              : isPlayingAudio
+                                ? "⏸"
+                                : "▶"}
                           </button>
                         </div>
                       </div>
@@ -1513,7 +1635,39 @@ function Step4Content() {
                 className={`w-full py-2 ${phase === "review" ? "min-h-0" : "lg:min-h-[280px]"}`}
               >
                 {phase !== "review" && (
-                  <div className="flex flex-col items-center">
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsAacMode(false)}
+                        className={`rounded-full border px-4 py-2 text-xs font-black ${
+                          !isAacMode ? accentSolid : accentSoft
+                        }`}
+                      >
+                        음성으로 답하기
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAacMode(true);
+                          setPhase("ready");
+                        }}
+                        className={`rounded-full border px-4 py-2 text-xs font-black ${
+                          isAacMode ? accentSolid : accentSoft
+                        }`}
+                      >
+                        말 대신 심볼
+                      </button>
+                    </div>
+                    {isAacMode ? (
+                      <div className="w-full">
+                        <AACBoard
+                          initialPlace={place}
+                          onCommit={handleAacCommit}
+                        />
+                      </div>
+                    ) : (
+                      <>
                     <div className="relative">
                       {phase === "recording" && (
                         <div className="absolute inset-0 bg-orange-400 rounded-full animate-ping opacity-40" />
@@ -1545,6 +1699,8 @@ function Step4Content() {
                           ? "Analyzing..."
                           : "Tap to Speak"}
                     </p>
+                      </>
+                    )}
                   </div>
                 )}
               </div>

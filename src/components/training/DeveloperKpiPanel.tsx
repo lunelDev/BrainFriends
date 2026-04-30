@@ -4,10 +4,15 @@ import React, { useState } from "react";
 import { useTraining } from "@/app/(training)/TrainingContext";
 
 export function DeveloperKpiPanel() {
-  const { clinicalMetrics, runtimeStatus } = useTraining();
+  const { clinicalMetrics, runtimeStatus, sidebarMetrics } = useTraining();
   const [open, setOpen] = useState(false);
 
   if (process.env.NODE_ENV !== "development") return null;
+
+  const gazeCenteredPct = Math.round((sidebarMetrics.gazeCentered ?? 0) * 100);
+  const gazeStatusLabel = sidebarMetrics.irisDetected
+    ? `${gazeCenteredPct}% (x=${(sidebarMetrics.gazeXNorm ?? 0).toFixed(2)}, y=${(sidebarMetrics.gazeYNorm ?? 0).toFixed(2)})`
+    : "iris 미검출";
 
   return (
     <div className="fixed bottom-4 right-4 z-[140] no-print">
@@ -40,6 +45,10 @@ export function DeveloperKpiPanel() {
                 <span className="font-mono">
                   {clinicalMetrics.stability.toFixed(1)}%
                 </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="font-semibold">시선 응시</span>
+                <span className="font-mono text-right">{gazeStatusLabel}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="font-semibold">실행 상태</span>

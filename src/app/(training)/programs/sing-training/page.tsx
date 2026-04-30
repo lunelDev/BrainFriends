@@ -274,7 +274,10 @@ async function analyzeSongPronunciation(params: {
   try {
     const transcriber = new WhisperTranscriber();
     const analyzer = new PronunciationAnalyzer();
-    const { text } = await transcriber.transcribe(params.audioBlob);
+    const { text } = await transcriber.transcribe(params.audioBlob, {
+      targetText: params.expectedLyrics,
+      useCase: "daily_training",
+    });
     const transcript = normalizeLyricsForAnalysis(text);
     if ((transcript.match(/[가-힣a-zA-Z0-9]/g) || []).length < MIN_SING_TRANSCRIPT_CHARS) {
       return {

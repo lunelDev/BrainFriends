@@ -9,7 +9,10 @@ import {
   ArrowLeft,
   BarChart3,
   ClipboardList,
+  Copy,
+  ExternalLink,
   ImageIcon,
+  LinkIcon,
   MessageSquare,
   Music,
   ScanFace,
@@ -20,6 +23,7 @@ import type {
   AcousticSnapshot,
   TrainingHistoryEntry,
 } from "@/lib/kwab/SessionManager";
+import type { GazeAccumulatorReport } from "@/lib/training/gazeAccumulator";
 import { persistTrainingHistoryToDatabase } from "@/lib/client/clinicalResultsApi";
 import { useTherapistConsoleGuard } from "@/hooks/useTherapistConsoleGuard";
 import {
@@ -117,6 +121,17 @@ function summarizeEntryAcoustics(entry: TrainingHistoryEntry | null) {
   collect(entry.stepDetails?.step5);
   if (buckets.total === 0) return null;
   return buckets;
+}
+
+function getEntryGazeSummary(
+  entry: TrainingHistoryEntry | null,
+): GazeAccumulatorReport | null {
+  return entry?.gazeSummary ?? null;
+}
+
+function formatRatioPercent(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
 }
 
 function calcAgeFromBirthDate(birthDate: string | null): number {
@@ -343,6 +358,12 @@ export default function TherapistPatientDetailPage() {
   const [retryNotice, setRetryNotice] = useState("");
   const [retryError, setRetryError] = useState("");
   const [retryingHistoryId, setRetryingHistoryId] = useState<string | null>(null);
+  const [guardianLinkUrl, setGuardianLinkUrl] = useState("");
+  const [guardianLinkId, setGuardianLinkId] = useState("");
+  const [isGeneratingGuardianLink, setIsGeneratingGuardianLink] = useState(false);
+  const [isRevokingGuardianLink, setIsRevokingGuardianLink] = useState(false);
+  const [guardianLinkNotice, setGuardianLinkNotice] = useState("");
+  const [guardianLinkError, setGuardianLinkError] = useState("");
 
   useEffect(() => {
     // admin/therapist 가 아니면 가드 훅이 redirect 하므로 fetch 자체를 보류.
@@ -439,6 +460,11 @@ export default function TherapistPatientDetailPage() {
 
   const latestAcousticSummary = useMemo(
     () => summarizeEntryAcoustics(summary.latest),
+    [summary.latest],
+  );
+
+  const latestGazeSummary = useMemo(
+    () => getEntryGazeSummary(summary.latest),
     [summary.latest],
   );
 
@@ -558,6 +584,85 @@ export default function TherapistPatientDetailPage() {
     }
   };
 
+  const createGuardianReportLink = async () => {
+    if (!patientId) return;
+    setGuardianLinkNotice("");
+    setGuardianLinkError("");
+    setIsGeneratingGuardianLink(true);
+    try {
+      const response = await fetch("/api/guardian/report-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patientId,
+          recipientLabel: "보호자",
+          ttlDays: 14,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok || !payload?.link?.url) {
+        throw new Error(payload?.error || "guardian_link_failed");
+      }
+      const nextUrl = String(payload.link.url);
+      setGuardianLinkId(String(payload.link.id ?? ""));
+      setGuardianLinkUrl(nextUrl);
+      try {
+        await navigator.clipboard?.writeText(nextUrl);
+        setGuardianLinkNotice("보호자 리포트 링크를 생성하고 클립보드에 복사했습니다.");
+      } catch {
+        setGuardianLinkNotice("보호자 리포트 링크를 생성했습니다.");
+      }
+    } catch (linkError) {
+      setGuardianLinkError(
+        linkError instanceof Error
+          ? linkError.message
+          : "보호자 리포트 링크를 생성하지 못했습니다.",
+      );
+    } finally {
+      setIsGeneratingGuardianLink(false);
+    }
+  };
+
+  const copyGuardianReportLink = async () => {
+    if (!guardianLinkUrl) return;
+    setGuardianLinkError("");
+    try {
+      await navigator.clipboard?.writeText(guardianLinkUrl);
+      setGuardianLinkNotice("보호자 리포트 링크를 복사했습니다.");
+    } catch {
+      setGuardianLinkError("브라우저에서 클립보드 복사를 허용하지 않았습니다.");
+    }
+  };
+
+  const revokeGuardianReportLink = async () => {
+    if (!guardianLinkId) return;
+    setGuardianLinkNotice("");
+    setGuardianLinkError("");
+    setIsRevokingGuardianLink(true);
+    try {
+      const response = await fetch("/api/guardian/report-link", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ linkId: guardianLinkId }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || "guardian_link_revoke_failed");
+      }
+      setGuardianLinkUrl("");
+      setGuardianLinkId("");
+      setGuardianLinkNotice("보호자 리포트 링크를 폐기했습니다.");
+    } catch (revokeError) {
+      setGuardianLinkError(
+        revokeError instanceof Error
+          ? revokeError.message
+          : "보호자 리포트 링크를 폐기하지 못했습니다.",
+      );
+    } finally {
+      setIsRevokingGuardianLink(false);
+    }
+  };
+
   if (isForbidden || isLoading || error || !patient) {
     const text = isForbidden
       ? "치료사 콘솔 권한이 필요한 화면입니다."
@@ -605,6 +710,15 @@ export default function TherapistPatientDetailPage() {
             {/* "사용자 목록" 버튼은 상단의 "← 사용자 목록으로 돌아가기" 와 중복이라 제거. */}
             <button
               type="button"
+              onClick={createGuardianReportLink}
+              disabled={isGeneratingGuardianLink}
+              className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-black text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <LinkIcon className="h-4 w-4" />
+              {isGeneratingGuardianLink ? "링크 생성 중" : "보호자 링크 생성"}
+            </button>
+            <button
+              type="button"
               onClick={exportPatientDetail}
               className="rounded-full bg-white px-4 py-2 text-sm font-black text-sky-700 transition hover:bg-sky-50"
             >
@@ -613,6 +727,60 @@ export default function TherapistPatientDetailPage() {
           </div>
         </div>
       </article>
+
+      {(guardianLinkUrl || guardianLinkNotice || guardianLinkError) ? (
+        <section className="rounded-[28px] border border-sky-100 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-black text-slate-950">보호자 주간 리포트 링크</p>
+              {guardianLinkUrl ? (
+                <p className="mt-2 truncate rounded-2xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                  {guardianLinkUrl}
+                </p>
+              ) : null}
+              {guardianLinkNotice ? (
+                <p className="mt-2 text-xs font-bold text-emerald-600">
+                  {guardianLinkNotice}
+                </p>
+              ) : null}
+              {guardianLinkError ? (
+                <p className="mt-2 text-xs font-bold text-rose-600">
+                  {guardianLinkError}
+                </p>
+              ) : null}
+            </div>
+            {guardianLinkUrl ? (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={copyGuardianReportLink}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-50"
+                >
+                  <Copy className="h-4 w-4" />
+                  복사
+                </button>
+                <button
+                  type="button"
+                  onClick={revokeGuardianReportLink}
+                  disabled={isRevokingGuardianLink}
+                  className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-black text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isRevokingGuardianLink ? "폐기 중" : "폐기"}
+                </button>
+                <a
+                  href={guardianLinkUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-black text-white transition hover:bg-slate-800"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  열기
+                </a>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <article className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
@@ -626,7 +794,7 @@ export default function TherapistPatientDetailPage() {
             <SummaryCard label="로그인 ID" value={patient.loginId ?? "-"} />
             <SummaryCard label="생년월일" value={patient.birthDate ?? "-"} />
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatusCard
               title="최근 AQ"
               value={`${Number(summary.latest?.aq ?? 0).toFixed(1)}점`}
@@ -641,6 +809,15 @@ export default function TherapistPatientDetailPage() {
               title="follow-up"
               value={getFollowUpLabel(followUpState)}
               note={note?.updatedAt ? formatDate(new Date(note.updatedAt).getTime()) : "저장된 메모 없음"}
+            />
+            <StatusCard
+              title="시선 응시"
+              value={latestGazeSummary ? formatRatioPercent(latestGazeSummary.attentionRatio) : "기록 없음"}
+              note={
+                latestGazeSummary
+                  ? `이탈 ${formatRatioPercent(latestGazeSummary.offTaskRatio)} · 홍채 ${formatRatioPercent(latestGazeSummary.irisDetectionRatio)}`
+                  : "세션 gazeSummary 없음"
+              }
             />
           </div>
         </article>
@@ -858,6 +1035,41 @@ export default function TherapistPatientDetailPage() {
                   </p>
                 </div>
               ) : null}
+
+              {latestGazeSummary ? (
+                <div className="mt-5 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                      시선 보조 채널 (참고)
+                    </p>
+                    <p className="text-[11px] font-bold text-slate-500">
+                      {getQualityLabel(latestGazeSummary.measurementQuality)}
+                    </p>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+                    <MiniMetric
+                      label="응시율"
+                      value={formatRatioPercent(latestGazeSummary.attentionRatio)}
+                    />
+                    <MiniMetric
+                      label="이탈"
+                      value={formatRatioPercent(latestGazeSummary.offTaskRatio)}
+                    />
+                    <MiniMetric
+                      label="홍채"
+                      value={formatRatioPercent(latestGazeSummary.irisDetectionRatio)}
+                    />
+                    <MiniMetric
+                      label="샘플"
+                      value={`${latestGazeSummary.totalSamples}건`}
+                    />
+                  </div>
+                  <p className="mt-2 text-[11px] font-medium leading-relaxed text-slate-500">
+                    MediaPipe iris 기반 화면 응시 보조 지표입니다. 진단/치료 결정값이 아니라
+                    치료사 검토용 참고 신호입니다.
+                  </p>
+                </div>
+              ) : null}
             </>
           ) : null}
 
@@ -874,6 +1086,11 @@ export default function TherapistPatientDetailPage() {
                       <Badge tone={getEntrySaveState(entry) === "failed" ? "amber" : "slate"}>
                         {getEntrySaveStateLabel(entry)}
                       </Badge>
+                      {getEntryGazeSummary(entry) ? (
+                        <Badge tone="emerald">
+                          Gaze {formatRatioPercent(getEntryGazeSummary(entry)?.attentionRatio)}
+                        </Badge>
+                      ) : null}
                     </div>
                     <p className="mt-2 text-sm font-semibold text-slate-600">{formatDate(entry.completedAt)}</p>
                   </div>

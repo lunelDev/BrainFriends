@@ -34,6 +34,11 @@ import {
   compactHistoryEntryForStorage,
   mergeHistoryEntriesForStorage,
 } from "@/lib/vnv/deterministicChecks";
+import {
+  buildGazeHistorySummary,
+  gazeAccumulator,
+  type GazeAccumulatorReport,
+} from "@/lib/training/gazeAccumulator";
 // ============================================================================
 // 1. Step별 결과 타입
 // ============================================================================
@@ -128,6 +133,10 @@ export interface Step2Result {
       patternMatchPct: number; // 목표 패턴 일치도 (%)
     };
     dataSource?: "measured" | "demo";
+    inputModality?: "speech" | "aac";
+    aacSymbolIds?: string[];
+    aacSentence?: string;
+    aacPlace?: string;
     audioLevel: number; // dB
     // Parselmouth 음향 분석 (REQ-ACOUSTIC-001~004). 실패 시 measurement_quality="failed".
     acoustic?: AcousticSnapshot | null;
@@ -192,6 +201,10 @@ export interface Step4Result {
     };
     // Parselmouth 음향 분석 (REQ-ACOUSTIC-001~004). 실패 시 measurement_quality="failed".
     acoustic?: AcousticSnapshot | null;
+    inputModality?: "speech" | "aac";
+    aacSymbolIds?: string[];
+    aacSentence?: string;
+    aacPlace?: string;
   }>;
   averageKwabScore: number;
   totalScenarios: number;
@@ -440,6 +453,7 @@ export interface TrainingHistoryEntry {
     step6?: VersionSnapshot;
   };
   measurementQuality?: MeasurementQualitySnapshot;
+  gazeSummary?: GazeAccumulatorReport | null;
   vnv?: VnvSnapshot;
 }
 
@@ -1276,6 +1290,16 @@ export class SessionManager {
       "SR-HISTORY-005",
       "SR-MEASURE-006",
     ];
+    const gazeSummary = buildGazeHistorySummary(gazeAccumulator.report());
+    if (gazeSummary) {
+      historyRequirementIds.push("SR-GAZE-007");
+      this.recordVnvCheckpoint(
+        ["SR-GAZE-007"],
+        "gaze_summary_attached",
+        gazeSummary.measurementQuality !== "demo",
+        `attention=${gazeSummary.attentionRatio}, offTask=${gazeSummary.offTaskRatio}, iris=${gazeSummary.irisDetectionRatio}, samples=${gazeSummary.totalSamples}`,
+      );
+    }
     this.recordVnvCheckpoint(
       ["SR-MEASURE-006"],
       "measurement_quality_evaluated",
@@ -1422,6 +1446,7 @@ export class SessionManager {
         longitudinalDelta,
       },
       measurementQuality,
+      gazeSummary,
       vnv: this.buildVnvSnapshot(historyRequirementIds),
     };
   }

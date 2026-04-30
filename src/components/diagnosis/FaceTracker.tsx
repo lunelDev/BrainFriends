@@ -6,7 +6,12 @@ import {
   FilesetResolver,
   DrawingUtils,
 } from "@mediapipe/tasks-vision";
-import { calculateLipMetrics, LipMetrics } from "@/utils/faceAnalysis";
+import {
+  calculateGazeMetrics,
+  calculateLipMetrics,
+  GazeMetrics,
+  LipMetrics,
+} from "@/utils/faceAnalysis";
 import {
   registerMediaStream,
   unregisterMediaStream,
@@ -30,7 +35,16 @@ interface ExtendedMetrics extends LipMetrics {
   processingMs: number;
   frameGapMs: number;
   fps: number;
+  gaze: GazeMetrics;
 }
+
+const EMPTY_GAZE: GazeMetrics = {
+  gazeX: 0,
+  gazeY: 0,
+  centeredScore: 0,
+  attentionScore: 0,
+  irisDetected: false,
+};
 
 type Props = {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -86,6 +100,7 @@ export default function FaceTracker({
 
           if (face) {
             const metrics = calculateLipMetrics(face);
+            const gaze = calculateGazeMetrics(face);
             const nextMetrics: ExtendedMetrics = {
               ...metrics,
               landmarks: face,
@@ -93,6 +108,7 @@ export default function FaceTracker({
               processingMs: Number(processingMs.toFixed(2)),
               frameGapMs: Number(frameGapMs.toFixed(2)),
               fps: Number(fps.toFixed(1)),
+              gaze,
             };
             const previous = smoothedMetricsRef.current;
             const alpha = metrics.trackingQualityPct >= 70 ? 0.28 : 0.14;
@@ -139,6 +155,27 @@ export default function FaceTracker({
                 nextMetrics.rollAngleDeg,
                 previous?.rollAngleDeg,
               ),
+              gaze: nextMetrics.gaze.irisDetected
+                ? {
+                    gazeX: smoothValue(
+                      nextMetrics.gaze.gazeX,
+                      previous?.gaze?.gazeX,
+                    ),
+                    gazeY: smoothValue(
+                      nextMetrics.gaze.gazeY,
+                      previous?.gaze?.gazeY,
+                    ),
+                    centeredScore: smoothValue(
+                      nextMetrics.gaze.centeredScore,
+                      previous?.gaze?.centeredScore,
+                    ),
+                    attentionScore: smoothValue(
+                      nextMetrics.gaze.attentionScore,
+                      previous?.gaze?.attentionScore,
+                    ),
+                    irisDetected: true,
+                  }
+                : { ...EMPTY_GAZE },
             };
             smoothedMetricsRef.current = smoothed;
             onMetricsUpdate(smoothed);
@@ -151,6 +188,7 @@ export default function FaceTracker({
               processingMs: Number(processingMs.toFixed(2)),
               frameGapMs: Number(frameGapMs.toFixed(2)),
               fps: Number(fps.toFixed(1)),
+              gaze: { ...EMPTY_GAZE },
             });
           }
           lastDeliveredAtRef.current = detectEnd;
@@ -215,6 +253,7 @@ export default function FaceTracker({
           processingMs: 0,
           frameGapMs: 0,
           fps: 0,
+          gaze: { ...EMPTY_GAZE },
         });
         console.warn("FaceTracker initialization skipped:", error);
       }

@@ -16,6 +16,7 @@ import { PlaceType } from "@/constants/trainingData";
 import { AnalysisSidebar } from "@/components/training/AnalysisSidebar";
 import { HomeExitModal } from "@/components/training/HomeExitModal";
 import { RuntimeStatusBanner } from "@/components/training/RuntimeStatusBanner";
+import AACBoard from "@/components/aac/AACBoard";
 import {
   SessionManager,
   type AcousticSnapshot,
@@ -60,6 +61,12 @@ import {
   removeTransientStepStorage,
   saveTransientStepStorage,
 } from "@/lib/security/transientStepStorage";
+import {
+  buildAacTrainingMetadata,
+  persistAacIntentBestEffort,
+  scoreAacTranscriptMatch,
+  type AacTrainingCommit,
+} from "@/lib/aac/trainingIntegration";
 
 export const dynamic = "force-dynamic";
 
@@ -211,6 +218,7 @@ function Step2Content() {
   const [reviewAudioUrl, setReviewAudioUrl] = useState<string | null>(null);
   const [analysisResults, setAnalysisResults] = useState<any[]>([]);
   const [showTracking, setShowTracking] = useState(true);
+  const [isAacMode, setIsAacMode] = useState(false);
   const [isHomeExitModalOpen, setIsHomeExitModalOpen] = useState(false);
   const [isDesktopViewport, setIsDesktopViewport] = useState(false);
   const [showSidePanel, setShowSidePanel] = useState(false);
@@ -766,6 +774,7 @@ function Step2Content() {
       setResultConsonantAccuracy(null);
       setResultVowelAccuracy(null);
       setTranscript("");
+      setIsAacMode(false);
       setReviewAudioUrl(null);
       setCanRecord(false);
       setIsRecorderReady(false);
@@ -832,6 +841,10 @@ function Step2Content() {
             audioLevel: Number(row.audioLevel ?? 0),
             responseTime: Number(row.responseTime ?? 0),
             acoustic: (row.acoustic as AcousticSnapshot | null | undefined) ?? null,
+            inputModality: row.inputModality === "aac" ? "aac" : "speech",
+            aacSymbolIds: Array.isArray(row.aacSymbolIds) ? row.aacSymbolIds : undefined,
+            aacSentence: typeof row.aacSentence === "string" ? row.aacSentence : undefined,
+            aacPlace: typeof row.aacPlace === "string" ? row.aacPlace : undefined,
           })),
           averageSymmetry: avgSymmetry,
           averagePronunciation: avgFinalScore,
@@ -1318,6 +1331,82 @@ function Step2Content() {
     }
   };
 
+  const handleAacCommit = useCallback(
+    (payload: AacTrainingCommit) => {
+      if (!currentItem) return;
+      const finalScore = scoreAacTranscriptMatch({
+        targetText: currentItem.text,
+        sentence: payload.sentence,
+      });
+      const metadata = buildAacTrainingMetadata(payload);
+      const currentResultEntry = {
+        index: currentIndex,
+        text: currentItem.text,
+        transcript: payload.sentence,
+        isCorrect: finalScore >= 60,
+        finalScore,
+        speechScore: 0,
+        faceScore: 0,
+        symmetryScore: 0,
+        pronunciationScore: 0,
+        consonantAccuracy: 0,
+        vowelAccuracy: 0,
+        dataSource: "measured" as const,
+        audioLevel: 0,
+        responseTime: 0,
+        acoustic: null,
+        ...metadata,
+      };
+
+      const existing = loadTransientStepStorage<any>(STEP2_AUDIO_STORAGE_KEY);
+      const byIndex = new Map<number, any>();
+      existing.slice(-protocol.length).forEach((row: any, fallbackIndex: number) => {
+        const resolvedIndex = Number.isFinite(Number(row?.index))
+          ? Number(row.index)
+          : fallbackIndex;
+        if (resolvedIndex < 0 || resolvedIndex >= protocol.length) return;
+        byIndex.set(resolvedIndex, row);
+      });
+      byIndex.set(currentIndex, currentResultEntry);
+      const next = Array.from(byIndex.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map((entry) => entry[1])
+        .slice(-Math.min(STEP2_MAX_STORED_AUDIO_ITEMS, protocol.length));
+      saveTransientStepStorage(STEP2_AUDIO_STORAGE_KEY, next);
+      saveResumeMeta(STEP2_AUDIO_STORAGE_KEY, stepSignature, next.length);
+      void persistAacIntentBestEffort(payload);
+
+      setTranscript(payload.sentence);
+      setResultScore(finalScore);
+      setResultConsonantAccuracy(0);
+      setResultVowelAccuracy(0);
+      setReviewAudioUrl(null);
+      setStatusText("AAC 심볼 입력이 저장되었습니다.");
+      setAnalysisResults((prev) => {
+        const byIndex = new Map<number, any>();
+        prev.forEach((row: any, fallbackIndex: number) => {
+          const resolvedIndex = Number.isFinite(Number(row?.index))
+            ? Number(row.index)
+            : fallbackIndex;
+          if (resolvedIndex < 0 || resolvedIndex >= protocol.length) return;
+          byIndex.set(resolvedIndex, row);
+        });
+        byIndex.set(currentIndex, currentResultEntry);
+        return Array.from(byIndex.entries())
+          .sort((a, b) => a[0] - b[0])
+          .map((entry) => entry[1]);
+      });
+      updateRuntimeStatus({
+        recording: false,
+        saving: false,
+        pageError: false,
+        needsRetry: false,
+        message: "AAC 입력 저장 완료",
+      });
+    },
+    [currentIndex, currentItem, protocol.length, stepSignature, updateRuntimeStatus],
+  );
+
   if (!isMounted || !currentItem) return null;
 
   return (
@@ -1602,6 +1691,40 @@ function Step2Content() {
             <div className="flex flex-col items-center gap-6">
               {resultScore === null && (
                 <>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsAacMode(false)}
+                      className={`rounded-full border px-4 py-2 text-xs font-black ${
+                        !isAacMode ? accentSolid : accentSoft
+                      }`}
+                    >
+                      음성으로 답하기
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAacMode(true);
+                        setCanRecord(false);
+                        setStatusText("심볼을 선택해 문장을 만들어 주세요.");
+                      }}
+                      className={`rounded-full border px-4 py-2 text-xs font-black ${
+                        isAacMode ? accentSolid : accentSoft
+                      }`}
+                    >
+                      말 대신 심볼
+                    </button>
+                  </div>
+
+                  {isAacMode ? (
+                    <div className="w-full">
+                      <AACBoard
+                        initialPlace={place}
+                        onCommit={handleAacCommit}
+                      />
+                    </div>
+                  ) : (
+                    <>
                   <button
                     type="button"
                     onClick={async () => {
@@ -1696,6 +1819,8 @@ function Step2Content() {
                       ? "Listening to your voice..."
                       : "Press to speak"}
                   </p>
+                    </>
+                  )}
                 </>
               )}
             </div>
