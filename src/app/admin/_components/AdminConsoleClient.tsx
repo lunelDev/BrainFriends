@@ -266,7 +266,7 @@ export function AdminConsoleClient({
   organizationRequests: initialOrganizationRequests,
   patients,
   therapists: initialTherapists,
-  validationSampleEntries,
+  validationSampleEntries: initialValidationSampleEntries,
   initialSection = "members",
 }: Props) {
   const [search, setSearch] = useState("");
@@ -285,6 +285,13 @@ export function AdminConsoleClient({
     useState<AdminPatientDetailPayload | null>(null);
   const [isLoadingPatientDetail, setIsLoadingPatientDetail] = useState(false);
   const [patientDetailError, setPatientDetailError] = useState("");
+  const [validationSampleEntries, setValidationSampleEntries] = useState(
+    initialValidationSampleEntries,
+  );
+  const [hasLoadedValidationSample, setHasLoadedValidationSample] = useState(
+    initialValidationSampleEntries.length > 0,
+  );
+  const [isLoadingValidationSample, setIsLoadingValidationSample] = useState(false);
 
   const visibleOrganizationRequests = useMemo(
     () => organizationRequests.filter((item) => item.status !== "approved"),
@@ -423,6 +430,44 @@ export function AdminConsoleClient({
       setReviewingTherapistId(null);
     }
   };
+
+  useEffect(() => {
+    if (hasLoadedValidationSample) return;
+    if (activeSection !== "dashboard" && activeSection !== "samd") return;
+
+    let cancelled = false;
+    setIsLoadingValidationSample(true);
+    void fetch("/api/admin/reports?summaryOnly=1&includeValidation=1")
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.ok) {
+          throw new Error("검증 샘플을 불러오지 못했습니다.");
+        }
+        if (!cancelled) {
+          setValidationSampleEntries(
+            Array.isArray(payload.validationSampleEntries)
+              ? payload.validationSampleEntries
+              : [],
+          );
+          setHasLoadedValidationSample(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setValidationSampleEntries([]);
+          setHasLoadedValidationSample(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingValidationSample(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, hasLoadedValidationSample]);
 
   useEffect(() => {
     if (!selectedPatientId) {
@@ -848,52 +893,44 @@ export function AdminConsoleClient({
                   <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <MetricCard
                       label="SW V&V"
-                      value="정리 완료"
-                      note="12개 deterministic check, 실행 로그, 결과서 보유"
+                      value="53/53 PASS"
+                      note="SR-* 35개 + TC 53건 + 추적성 51행 + IEC 62304 별지 제2호 export"
                     />
                     <MetricCard
                       label="사이버보안"
-                      value="정책 고정"
-                      note="브라우저 저장 최소화, 저장 항목표/분류표 정리"
+                      value="~77% 일치"
+                      note="결정성 TC-SEC-* 10건 + SBOM/SOUP/Manifest + CVE 면제 등록부 (high 7건)"
                     />
                     <MetricCard
                       label="AI 성능평가"
-                      value="운영 가능"
-                      note="measured-only 수집, DB 저장, 버전 비교 가능"
+                      value="체계 ✅"
+                      note="WER/CER + RTF/P95 runner + 60~80대 30건 수집 가이드 + 모델 평가 계획"
                     />
                     <MetricCard
                       label="다음 단계"
                       value="외부 대응"
-                      note="시험기관 문의, 품목·등급, GMP/사용적합성 확인"
+                      note="식약처 사전상담 / 임상 30건 / 사용성평가 15명 / 침투시험"
                     />
                   </div>
 
                   {/*
-                    공인성적서 시험 의뢰·실행 시 관리자가 한 화면에서 V&V 증적·AI 평가셋·
-                    사이버보안 이벤트를 한 번에 점검할 수 있는 진입점.
-                    원래 /therapist/system 에 있었으나 admin 만 접근 가능해 의미가 어색했고,
-                    이제 관리자 콘솔의 본 섹션에서 직접 진입한다.
+                    공인성적서 시험 의뢰·실행 시 관리자가 이 화면에서 V&V 증적과
+                    AI 평가셋 export를 바로 확인한다. 별도 시스템 점검 화면으로
+                    이동시키면 동선이 중복되므로 여기서는 안내만 제공한다.
                   */}
                   <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-5">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-700">
-                          시험 증적 운영 콘솔
-                        </p>
-                        <p className="mt-1 text-sm font-semibold text-amber-900">
-                          SW V&amp;V 추적성 / AI 평가셋 분포 / 사이버보안 감사 이벤트를
-                          한 화면에서 점검하고 증적 JSON 을 내려받습니다.
-                        </p>
-                        <p className="mt-1 text-xs font-medium text-amber-800/80">
-                          KTL 시험 의뢰·진행 시 첨부할 V&amp;V·AI 증적 export 가 여기 있습니다.
-                        </p>
-                      </div>
-                      <Link
-                        href="/therapist/system"
-                        className="rounded-full bg-amber-600 px-4 py-2 text-sm font-black text-white transition hover:bg-amber-700"
-                      >
-                        시스템 점검 열기
-                      </Link>
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-700">
+                        시험 증적 운영 안내
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-amber-900">
+                        SW V&amp;V 추적성과 AI 평가셋 증적은 아래 카드에서 바로 점검하고
+                        JSON으로 내려받습니다.
+                      </p>
+                      <p className="mt-1 text-xs font-medium text-amber-800/80">
+                        KTL 시험 의뢰·진행 시 첨부할 V&amp;V·AI 증적 export는 이 섹션의
+                        `V&amp;V 내보내기`와 `AI 평가 내보내기`를 사용합니다.
+                      </p>
                     </div>
                   </div>
                 </section>
@@ -904,10 +941,10 @@ export function AdminConsoleClient({
                       SW V&V
                     </p>
                     <ul className="mt-4 space-y-2 text-sm font-medium leading-6 text-slate-700">
-                      <li>요구사항-시험-결과 추적성 구조 반영</li>
-                      <li>`npm run test:vnv`, `test:vnv:record` 실행 가능</li>
-                      <li>날짜별 JSON 실행 로그 누적</li>
-                      <li>결과서, 재시험 기록서, 제출 개요 문서 정리</li>
+                      <li>SR-* 요구사항 35개 (도메인 + 사이버보안 + 규제)</li>
+                      <li>TC-* 결정성 테스트 53건 — `npm run test:vnv` 으로 실행, 모두 PASS</li>
+                      <li>추적성 매트릭스 51행 — IEC 62304 별지 제2호 export (JSON/MD/CSV)</li>
+                      <li>SRS v0.1 + SDS v0.1 (IEC 62304 §5.2/§5.4 양식) + 변경허가 SOP</li>
                     </ul>
                     <div className="mt-5 flex flex-wrap gap-2">
                       <a
@@ -924,15 +961,15 @@ export function AdminConsoleClient({
                       사이버보안
                     </p>
                     <ul className="mt-4 space-y-2 text-sm font-medium leading-6 text-slate-700">
-                      <li>고위험 step 원시 데이터의 장기 local 저장 제거</li>
-                      <li>transient/session 기준 저장 구조 정리</li>
-                      <li>저장 항목표, 정책 결정서, 민감정보 분류표 정리</li>
-                      <li>최종 readiness 보고서 기준으로 정책 고정</li>
+                      <li>식약처 가이드라인 35 항목 ~77% 결정성 V&amp;V (TC-SEC-* 10건)</li>
+                      <li>IA-05 비밀번호 강도 / IA-07 5회 잠금 / UC-03 30분 idle / RA-01 rate limit</li>
+                      <li>SBOM + SOUP 23 entries + Release Manifest sha256 동결 + HMAC 감사로그 체인</li>
+                      <li>CVE 면제 등록부 v0.1 (high 7건 reachability 평가, R0/R2 분류)</li>
                     </ul>
                     <div className="mt-5 rounded-[20px] border border-slate-200 bg-slate-50 p-4">
                       <p className="text-sm font-black text-slate-900">남은 확인</p>
                       <p className="mt-2 text-sm font-medium text-slate-600">
-                        품질관리기준(GMP) 제출 묶음과 외부 보안 절차 문서 정리 필요
+                        외부 침투 시험 (위탁) + GMP/QMS 옵션 결정 (자체/외주/하이브리드) + next 16.2.4 운영 적용
                       </p>
                     </div>
                   </article>
@@ -942,10 +979,10 @@ export function AdminConsoleClient({
                       AI 성능평가
                     </p>
                     <ul className="mt-4 space-y-2 text-sm font-medium leading-6 text-slate-700">
-                      <li>measured-only 평가셋 분리 및 DB 저장</li>
-                      <li>dataset / model / analysis 버전 비교</li>
-                      <li>현재 운영본 보고서 및 오류 사례 문서 정리</li>
-                      <li>치료사 시스템 기준 AI export 가능</li>
+                      <li>WER/CER runner — `npm run ai-eval:wer` (stratified by ageGroup/severity/noise/device)</li>
+                      <li>RTF/P95 latency runner — `npm run ai-eval:rtf` (P95 target 41.5ms)</li>
+                      <li>WASM-STT 모델 평가 계획 v0.1 (후보 5종 + 3 단계 결정 게이트)</li>
+                      <li>60~80대 30건 데이터 수집 가이드 (30 자극어 + CSV 양식 + 합격기준 5 지표)</li>
                     </ul>
                     <div className="mt-5 flex flex-wrap gap-2">
                       <a
@@ -962,15 +999,16 @@ export function AdminConsoleClient({
                   <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
                     <div className="flex items-center gap-2">
                       <ClipboardList className="h-5 w-5 text-slate-700" />
-                      <h3 className="text-xl font-black text-slate-950">아직 부족한 항목</h3>
+                      <h3 className="text-xl font-black text-slate-950">아직 부족한 항목 (외부 의존)</h3>
                     </div>
                     <ul className="mt-5 space-y-3 text-sm font-medium leading-6 text-slate-700">
-                      <li>품목 / 등급 확정</li>
-                      <li>시험기관 요구 형식에 맞춘 문서 재편</li>
-                      <li>품질관리기준(GMP) 제출 문서 묶음</li>
-                      <li>사용적합성 자료</li>
-                      <li>AI 라벨/프로토콜의 외부 심사 수준 정리</li>
-                      <li>실제 시험기관 시험 수행 및 성적서 확보</li>
+                      <li>임상 협력기관 60~80대 30건 음성·전사 수집 (수집 가이드 ✅, 실측 ✗)</li>
+                      <li>사용성평가 IRB 승인 → formative 5/5/5~8 → summative 15명 (프로토콜 ✅, 실시 ✗)</li>
+                      <li>식약처 사전상담 신청 + 회신 (자료 패키지 ✅, 신청 ✗)</li>
+                      <li>외부 보안 침투 시험 위탁 (CVE 면제 등록부 ✅, 침투 시험 ✗)</li>
+                      <li>GMP/QMS 옵션 결정 (A 자체 / B 외주 / C 하이브리드) — PM 사업 의사결정</li>
+                      <li>품목 / 등급 식약처 회신 (자체 분석 Class B 권고 ✅)</li>
+                      <li>DTx 분류 동시 신청 vs 후속 결정 (NIDS 답변 SaMD ⊃ DTx ✅)</li>
                     </ul>
                   </article>
 
@@ -980,11 +1018,12 @@ export function AdminConsoleClient({
                       <h3 className="text-xl font-black text-slate-950">다음 해야 할 일</h3>
                     </div>
                     <ol className="mt-5 space-y-3 text-sm font-medium leading-6 text-slate-700">
-                      <li>1. 시험기관 사전 문의</li>
-                      <li>2. 품목 / 등급 확인</li>
-                      <li>3. 필요한 성적서 종류 확정</li>
-                      <li>4. 시험기관 양식에 맞춘 문서 정리</li>
-                      <li>5. 실제 시험 진행 및 성적서 수령</li>
+                      <li>1. 사전상담 자료 패키지 (mfds-pre-consultation-pack.md) 식약처 송부</li>
+                      <li>2. 임상 협력기관 (부산대 등) 콜드메일 + 30건 수집 협조</li>
+                      <li>3. 사용성평가 위탁시험기관 선정 + IRB 신청 (IRB 패키지 ✅)</li>
+                      <li>4. 보안 침투 시험 외주사 RFP (KISA 또는 사설)</li>
+                      <li>5. GMP/QMS 옵션 확정 (gmp-qms-decision-matrix.md PM 권고 C 하이브리드)</li>
+                      <li>6. 운영환경 next 16.2.4 적용 + manifest 재산출 (CVE 면제 §3.3 immediate-patch)</li>
                     </ol>
                   </article>
                 </section>
@@ -1115,9 +1154,9 @@ export function AdminConsoleClient({
                       </thead>
                       <tbody className="divide-y divide-slate-200 bg-white">
                         <tr>
-                          <td className="px-4 py-4 font-black text-slate-950">자가진단</td>
+                          <td className="px-4 py-4 font-black text-slate-950">자가점검</td>
                           <td className="px-4 py-4 font-semibold">{usageSummary.selfCount}</td>
-                          <td className="px-4 py-4 font-semibold text-slate-600">누적 자가진단 기록</td>
+                          <td className="px-4 py-4 font-semibold text-slate-600">누적 자가점검 기록</td>
                         </tr>
                         <tr>
                           <td className="px-4 py-4 font-black text-slate-950">재활</td>
@@ -1143,7 +1182,7 @@ export function AdminConsoleClient({
                       <thead>
                         <tr className="bg-[#1c2133] text-left text-white">
                           <th className="px-4 py-3 font-black">사용자명</th>
-                          <th className="px-4 py-3 font-black">자가진단</th>
+                          <th className="px-4 py-3 font-black">자가점검</th>
                           <th className="px-4 py-3 font-black">재활</th>
                           <th className="px-4 py-3 font-black">노래</th>
                           <th className="px-4 py-3 font-black">최근 활동</th>
@@ -1203,12 +1242,12 @@ export function AdminConsoleClient({
                           <td className="px-4 py-4 font-semibold">{usageSummary.vnvLinkedCount}건</td>
                           <td className="px-4 py-4 font-semibold text-slate-600">V&V 메타데이터와 연결된 결과</td>
                           <td className="px-4 py-4">
-                            <Link
+                            <a
                               href="/api/therapist/system/vnv-export"
                               className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
                             >
                               V&amp;V 내보내기
-                            </Link>
+                            </a>
                           </td>
                         </tr>
                         <tr>
@@ -1216,12 +1255,12 @@ export function AdminConsoleClient({
                           <td className="px-4 py-4 font-semibold">{validationSampleEntries.length}건</td>
                           <td className="px-4 py-4 font-semibold text-slate-600">최근 검토 가능한 평가 결과 수</td>
                           <td className="px-4 py-4">
-                            <Link
+                            <a
                               href="/api/therapist/system/ai-evaluation-export"
                               className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
                             >
                               AI 평가 내보내기
-                            </Link>
+                            </a>
                           </td>
                         </tr>
                       </tbody>
@@ -1286,7 +1325,7 @@ export function AdminConsoleClient({
                                 <InlineInfo label="연락처" value={selectedPatientDetail.patient.phone ?? "-"} />
                                 <InlineInfo label="결과 수" value={`${selectedPatientDetail.entries.length}건`} />
                                 <InlineInfo
-                                  label="최근 AQ"
+                                  label="최근 보조점수"
                                   value={
                                     selectedPatientDetail.entries.length
                                       ? Number(selectedPatientDetail.entries[0]?.aq ?? 0).toFixed(1)
@@ -1317,7 +1356,7 @@ export function AdminConsoleClient({
                                     ? "노래"
                                     : entry.trainingMode === "rehab"
                                       ? `재활${entry.rehabStep ? ` Step ${entry.rehabStep}` : ""}`
-                                      : "자가진단";
+                                      : "자가점검";
                                 const measurementLabel =
                                   entry.measurementQuality?.overall === "measured"
                                     ? "측정 완료"

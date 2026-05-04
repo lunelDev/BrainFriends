@@ -54,6 +54,7 @@ import {
   loadTransientStepStorage,
   saveTransientStepStorage,
 } from "@/lib/security/transientStepStorage";
+import { getSessionShuffledItems } from "@/lib/training/questionOrder";
 import {
   clearFirstDiagnosisFlow,
   isFirstDiagnosisFlow,
@@ -63,6 +64,10 @@ import {
   persistAacIntentBestEffort,
   type AacTrainingCommit,
 } from "@/lib/aac/trainingIntegration";
+import { useWasmSttLoading } from "@/lib/speech/useWasmSttLoading";
+import WasmSttLoadingIndicator from "@/components/training/WasmSttLoadingIndicator";
+import { buildAdaptiveTrainingOrder } from "@/lib/adaptive/adaptiveTraining";
+import { STEP4_SENTENCE_BANK } from "@/lib/adaptive/itemBank";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +75,13 @@ type Phase = "ready" | "recording" | "analyzing" | "review";
 
 type Step4EvalResult = {
   index?: number;
+  adaptiveItemKey?: string;
+  adaptiveItemId?: string;
+  adaptiveTheta?: number;
+  adaptiveSd?: number;
+  itemDifficulty?: number;
+  itemDiscrimination?: number;
+  selectionMethod?: "irt_mfi" | "sequential_fallback";
   situation: string;
   prompt: string;
   transcript: string;
@@ -85,6 +97,8 @@ type Step4EvalResult = {
   responseStartMs: number | null;
   finalScore: number;
   speechDuration: number;
+  audioDurationMs?: number;
+  processingMs?: number;
   silenceRatio: number;
   averageAmplitude: number;
   peakCount: number;
@@ -266,6 +280,7 @@ function Step4Content() {
   const [isMounted, setIsMounted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [phase, setPhase] = useState<Phase>("ready");
+  const wasmSttLoading = useWasmSttLoading();
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
   const [isPromptPlaying, setIsPromptPlaying] = useState(false);
@@ -321,10 +336,32 @@ function Step4Content() {
   );
   const [allResults, setAllResults] = useState<Step4EvalResult[]>([]);
 
-  const scenarios = useMemo(
-    () => FLUENCY_SCENARIOS[place] || FLUENCY_SCENARIOS.home,
-    [place],
+  const baseScenarios = useMemo(
+    () =>
+      getSessionShuffledItems(
+        `btt-question-order:step4:${sessionId}:${place}`,
+        FLUENCY_SCENARIOS[place] || FLUENCY_SCENARIOS.home,
+        (item) =>
+          `${item.id ?? ""}|${item.situation ?? ""}|${item.prompt ?? ""}`,
+      ),
+    [place, sessionId],
   );
+  const adaptiveOrder = useMemo(
+    () =>
+      buildAdaptiveTrainingOrder({
+        step: 4,
+        items: baseScenarios,
+        responses: allResults.map((row) => ({
+          itemKey: String(row?.adaptiveItemKey || row?.prompt || ""),
+          correct: Boolean(row?.isCorrect ?? Number(row?.kwabScore ?? 0) >= 5),
+        })),
+        getItemKey: (item) => String(item.prompt ?? ""),
+        getItemText: (item) => String(item.prompt ?? ""),
+        calibratedBank: STEP4_SENTENCE_BANK,
+      }),
+    [allResults, baseScenarios],
+  );
+  const scenarios = adaptiveOrder.orderedItems;
   const stepSignature = useMemo(
     () =>
       buildStepSignature(
@@ -575,6 +612,12 @@ function Step4Content() {
                 : Number(row.responseStartMs),
             finalScore: Number(row?.finalScore ?? 0),
             speechDuration: Number(row?.speechDuration ?? 0),
+            audioDurationMs:
+              row?.audioDurationMs === undefined
+                ? undefined
+                : Number(row.audioDurationMs),
+            processingMs:
+              row?.processingMs === undefined ? undefined : Number(row.processingMs),
             silenceRatio: Number(row?.silenceRatio ?? 0),
             averageAmplitude: Number(row?.averageAmplitude ?? 0),
             peakCount: Number(row?.peakCount ?? 0),
@@ -751,6 +794,13 @@ function Step4Content() {
     try {
       const analysis = await analyzerRef.current!.stopAnalysis(
         currentScenario.answerKeywords.join(" "),
+        {
+          lifecycle: {
+            onWasmLoadStart: wasmSttLoading.beginLoad,
+            onWasmLoadSuccess: wasmSttLoading.finishLoad,
+            onWasmLoadError: wasmSttLoading.fail,
+          },
+        },
       );
       if (analysis.errorReason) {
         updateRuntimeStatus({
@@ -848,6 +898,8 @@ function Step4Content() {
 
       const evalResult: Step4EvalResult = {
         index: currentIndex,
+        adaptiveItemKey: currentScenario.prompt,
+        ...(adaptiveOrder.itemMetaByKey[currentScenario.prompt] ?? {}),
         situation: currentScenario.situation,
         prompt: currentScenario.prompt,
         transcript,
@@ -863,6 +915,8 @@ function Step4Content() {
         responseStartMs,
         finalScore: scored.finalScore,
         speechDuration: speechDurationSec,
+        audioDurationMs: analysis.duration,
+        processingMs: analysis.processingMs,
         silenceRatio: 0,
         averageAmplitude: audioLevel,
         peakCount: 0,
@@ -944,6 +998,8 @@ function Step4Content() {
             kwabScore: scored.kwabScore,
             rawScore: analysis.pronunciationScore,
             speechDuration: speechDurationSec,
+            audioDurationMs: analysis.duration,
+            processingMs: analysis.processingMs,
             silenceRatio: 0,
             acoustic: acousticSnapshot,
             timestamp: new Date().toLocaleTimeString(),
@@ -1118,9 +1174,18 @@ function Step4Content() {
           items: finalizedResults.map((r) => ({
             situation: r.situation,
             prompt: r.prompt,
+            adaptiveItemKey: r.adaptiveItemKey,
+            adaptiveItemId: r.adaptiveItemId,
+            adaptiveTheta: r.adaptiveTheta,
+            adaptiveSd: r.adaptiveSd,
+            itemDifficulty: r.itemDifficulty,
+            itemDiscrimination: r.itemDiscrimination,
+            selectionMethod: r.selectionMethod,
             transcript: r.transcript,
             isCorrect: Boolean(r.isCorrect ?? r.kwabScore >= 5),
             speechDuration: r.speechDuration,
+            audioDurationMs: r.audioDurationMs,
+            processingMs: r.processingMs,
             responseStartMs: r.responseStartMs,
             responseTime: r.responseStartMs,
             silenceRatio: r.silenceRatio,
@@ -1305,6 +1370,8 @@ function Step4Content() {
       const metadata = buildAacTrainingMetadata(payload);
       const evalResult: Step4EvalResult = {
         index: currentIndex,
+        adaptiveItemKey: currentScenario.prompt,
+        ...(adaptiveOrder.itemMetaByKey[currentScenario.prompt] ?? {}),
         situation: currentScenario.situation,
         prompt: currentScenario.prompt,
         transcript: payload.sentence,
@@ -1629,6 +1696,13 @@ function Step4Content() {
                   )}
                 </div>
               </div>
+
+              <WasmSttLoadingIndicator
+                state={wasmSttLoading.state}
+                onRetry={wasmSttLoading.reset}
+                className="border-orange-200 bg-orange-50 text-orange-900"
+                barColorClassName="bg-orange-500"
+              />
 
               {/* 녹음 컨트롤 */}
               <div

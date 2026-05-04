@@ -8,6 +8,10 @@ import { getAvailableOrganizationById } from "@/lib/server/organizationCatalogDb
 import { listApprovedTherapistsByOrganization } from "@/lib/server/organizationTherapistsDb";
 import { createOrReplacePatientLinkRequest } from "@/lib/server/patientLinkRequests";
 import { getDbPool } from "@/lib/server/postgres";
+import {
+  PatientLinkCareInputSchema,
+  validateInput,
+} from "@/lib/server/inputSchemas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,12 +29,16 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => null);
-  const organizationId = String(body?.organizationId ?? "").trim();
-  const therapistUserId = String(body?.therapistUserId ?? "").trim();
-
-  if (!organizationId || !therapistUserId) {
+  if (!body) {
     return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
   }
+
+  // SI-05: zod 통합 스키마로 검증.
+  const parsed = validateInput(PatientLinkCareInputSchema, body);
+  if (!parsed.ok || !parsed.data) {
+    return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
+  }
+  const { organizationId, therapistUserId } = parsed.data;
 
   const organization = await getAvailableOrganizationById(organizationId);
   if (!organization) {

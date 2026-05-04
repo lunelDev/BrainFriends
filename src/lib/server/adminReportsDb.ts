@@ -413,14 +413,15 @@ export async function listAdminReportValidationSample(sessionToken: string) {
           cs.completed_at,
           ltr.created_at,
           ltr.step_scores,
-          ltr.step_details,
-          ltr.articulation_scores,
-          ltr.facial_analysis_snapshot,
+          jsonb_build_object('__meta', ltr.step_details->'__meta') AS step_details,
+          NULL::jsonb AS articulation_scores,
+          NULL::jsonb AS facial_analysis_snapshot,
           ltr.measurement_quality,
-          ltr.step_version_snapshots
+          NULL::jsonb AS step_version_snapshots
         FROM language_training_results ltr
         JOIN clinical_sessions cs ON cs.session_id = ltr.session_id
         ORDER BY cs.completed_at DESC
+        LIMIT 100
       `,
     ),
     pool.query(
@@ -438,13 +439,14 @@ export async function listAdminReportValidationSample(sessionToken: string) {
           sr.consonant_accuracy,
           sr.vowel_accuracy,
           sr.lyric_accuracy,
-          sr.recognized_lyrics,
+          NULL::text AS recognized_lyrics,
           sr.comment,
           sr.version_snapshot,
           cs.completed_at
         FROM sing_results sr
         JOIN clinical_sessions cs ON cs.session_id = sr.session_id
         ORDER BY cs.completed_at DESC
+        LIMIT 100
       `,
     ),
   ]);

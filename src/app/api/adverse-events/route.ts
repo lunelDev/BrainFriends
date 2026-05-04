@@ -18,6 +18,10 @@ import {
 } from "@/lib/server/adverseEventsDb";
 import { getActivePrescriptionForPatient } from "@/lib/server/prescriptionsDb";
 import { safeAppendAccess } from "@/lib/server/auditLog";
+import {
+  AdverseEventInputSchema,
+  validateInput,
+} from "@/lib/server/inputSchemas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,34 +76,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
-  let body: Record<string, unknown>;
+  let body: unknown;
   try {
-    body = (await req.json()) as Record<string, unknown>;
+    body = await req.json();
   } catch {
     return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400 });
   }
 
-  const category = body.category;
-  const severityRaw = Number(body.severity);
-  const severity =
-    Number.isFinite(severityRaw) && severityRaw >= 1 && severityRaw <= 3
-      ? (Math.floor(severityRaw) as 1 | 2 | 3)
-      : null;
-  const freeText =
-    typeof body.freeText === "string" ? body.freeText.trim() : null;
-
-  if (!isValidCategory(category)) {
+  // SI-05: zod 통합 스키마로 검증 (category enum + severity 1|2|3 + freeText/patient identifiers optional).
+  const parsed = validateInput(AdverseEventInputSchema, body);
+  if (!parsed.ok || !parsed.data) {
     return NextResponse.json(
-      { ok: false, error: "invalid_category" },
+      { ok: false, error: "invalid_payload" },
       { status: 400 },
     );
   }
-  if (!severity || !isValidSeverity(severity)) {
-    return NextResponse.json(
-      { ok: false, error: "invalid_severity" },
-      { status: 400 },
-    );
-  }
+  const category = parsed.data.category;
+  const severity = parsed.data.severity as 1 | 2 | 3;
+  const freeText = parsed.data.freeText ?? null;
 
   // 신고자/대상 환자 결정
   // 환자 본인 신고 vs 처방자가 환자 대신 신고
@@ -108,12 +102,8 @@ export async function POST(req: Request) {
   let reporterRole: AdverseEventReporterRole = "patient";
 
   if (ctx.userRole === "prescriber" || ctx.userRole === "admin") {
-    const targetPatientUserId =
-      typeof body.patientUserId === "string" ? body.patientUserId.trim() : "";
-    const targetPatientPseudonymId =
-      typeof body.patientPseudonymId === "string"
-        ? body.patientPseudonymId.trim()
-        : "";
+    const targetPatientUserId = parsed.data.patientUserId?.trim() ?? "";
+    const targetPatientPseudonymId = parsed.data.patientPseudonymId?.trim() ?? "";
     if (!targetPatientUserId || !targetPatientPseudonymId) {
       return NextResponse.json(
         { ok: false, error: "missing_patient_identifiers" },
@@ -136,8 +126,8 @@ export async function POST(req: Request) {
     if (reporterRole === "patient") {
       const rx = await getActivePrescriptionForPatient(patientUserId);
       prescriptionId = rx?.id ?? null;
-    } else if (typeof body.prescriptionId === "string" && body.prescriptionId.trim()) {
-      prescriptionId = body.prescriptionId.trim();
+    } else if (parsed.data.prescriptionId && parsed.data.prescriptionId.trim()) {
+      prescriptionId = parsed.data.prescriptionId.trim();
     }
   } catch {
     /* 처방 조회 실패해도 AE 등록은 진행 */

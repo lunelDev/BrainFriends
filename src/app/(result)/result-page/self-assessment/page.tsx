@@ -27,6 +27,18 @@ import {
   syncTrainingMediaForHistory,
 } from "@/lib/client/clinicalResultsApi";
 import { collectHistoryMeasurementsForEvaluation } from "@/lib/ai/measurementCollector";
+import {
+  evaluateWerRows,
+  parseWerCsv,
+  serializeWerReportJson,
+  serializeWerReportMarkdown,
+} from "@/lib/ai/werRunner";
+import {
+  evaluateRtfRows,
+  parseRtfCsv,
+  serializeRtfReportJson,
+  serializeRtfReportMarkdown,
+} from "@/lib/ai/sttBenchmark";
 import { fetchMyHistoryEntries } from "@/lib/client/historyApi";
 import {
   cancelSpeechPlayback,
@@ -245,7 +257,7 @@ function ResultContent() {
 
     return {
       summary: `일상 대화의 바탕이 잘 유지되고 있으며, 전반적으로 의사소통을 이어갈 수 있는 힘이 확인됩니다. 특히 ${strongest.name}은 안정적으로 나타났고, ${weakest.name}은 생활 속 반복 연습을 통해 더 편안해질 수 있습니다.`,
-      strength: `${strongest.name}(${strongest.metric})이 특히 안정적으로 확인되었습니다. 이 부분은 아주 건강하시네요!`,
+      strength: `${strongest.name}(${strongest.metric})이 특히 안정적으로 확인되었습니다. 치료사 검토 시 강점 영역으로 참고할 수 있습니다.`,
       need: `${weakest.name}(${weakest.metric})은 조금 더 연습이 필요한 부분입니다. 이 부분이 좋아지면 가족과 대화할 때 떠오른 생각을 더 또렷하게 전하고, 외출이나 전화 상황에서도 원하는 말을 더 편안하게 표현하는 데 도움이 됩니다.`,
       recommendation:
         "오늘은 집에서 15분만 가볍게 연습해 보세요. 사진이나 생활 물건을 보며 이름 말하기 5분, 짧은 문장 따라 말하기 5분, 소리 내어 읽기 5분을 주 5회 꾸준히 이어가면 일상 대화가 한층 자연스러워집니다. 지금처럼 차분하게 이어가시면 분명 더 좋아질 수 있습니다.",
@@ -399,7 +411,7 @@ function ResultContent() {
   // --- 데이터 불러오기 및 내보내기 로직 (보존) ---
   useEffect(() => {
     setIsMounted(true);
-    // 결과 화면까지 도달했으면 최초 자가진단 흐름 종료 → 플래그 정리
+    // 결과 화면까지 도달했으면 최초 자가점검 흐름 종료 → 플래그 정리
     clearFirstDiagnosisFlow();
     const managerSession =
       patientProfile && place
@@ -530,6 +542,226 @@ function ResultContent() {
     }
   };
 
+  const csvEscape = (value: string | number) => {
+    const text = String(value ?? "");
+    if (/[",\r\n]/.test(text)) {
+      return `"${text.replace(/"/g, '""')}"`;
+    }
+    return text;
+  };
+
+  const buildSttEvaluationCsvFiles = (
+    historyEntry: TrainingHistoryEntry | null,
+  ): ExportFile[] => {
+    if (!historyEntry) return [];
+
+    const patientAge = Number(historyEntry.age);
+    const age = Number.isFinite(patientAge) && patientAge > 0 ? patientAge : 0;
+    const severity = "unknown";
+    const deviceType =
+      typeof navigator !== "undefined"
+        ? `${navigator.platform || "unknown"}-${navigator.userAgent.includes("Chrome") ? "chrome" : "browser"}`
+        : "unknown";
+    const noise = "low";
+    const lighting = "normal";
+
+    const speechRows: Array<{
+      sampleId: string;
+      age: number;
+      severity: string;
+      deviceType: string;
+      noise: string;
+      lighting: string;
+      groundTruth: string;
+      transcript: string;
+      audioDurationMs: number | null;
+      processingMs: number | null;
+    }> = [];
+
+    const pushRows = (stepNo: 2 | 4 | 5, rows: any[]) => {
+      rows.forEach((row, index) => {
+        const groundTruth = String(
+          row?.text ?? row?.prompt ?? row?.situation ?? "",
+        ).trim();
+        const transcript = String(row?.transcript ?? "").trim();
+        if (!groundTruth || !transcript) return;
+
+        const processingMs = Number(row?.processingMs);
+        const durationCandidates = [
+          Number(row?.audioDurationMs),
+          Number(row?.responseTime),
+          Number(row?.totalTime),
+          Number(row?.speechDuration) * 1000,
+        ];
+        const audioDurationMs =
+          durationCandidates.find((value) => Number.isFinite(value) && value > 0) ??
+          null;
+
+        speechRows.push({
+          sampleId: `${historyEntry.historyId}-step${stepNo}-${index + 1}`,
+          age,
+          severity,
+          deviceType,
+          noise,
+          lighting,
+          groundTruth,
+          transcript,
+          audioDurationMs,
+          processingMs:
+            Number.isFinite(processingMs) && processingMs >= 0
+              ? processingMs
+              : null,
+        });
+      });
+    };
+
+    pushRows(2, historyEntry.stepDetails?.step2 ?? []);
+    pushRows(4, historyEntry.stepDetails?.step4 ?? []);
+    pushRows(5, historyEntry.stepDetails?.step5 ?? []);
+
+    if (speechRows.length === 0) return [];
+
+    const generatedAt = new Date().toISOString();
+    const datasetId = `self-assessment-${historyEntry.historyId}`;
+    const modelId =
+      historyEntry.stepVersionSnapshots?.step2?.measurement_metadata?.stt_engine ||
+      historyEntry.stepVersionSnapshots?.step4?.measurement_metadata?.stt_engine ||
+      historyEntry.stepVersionSnapshots?.step5?.measurement_metadata?.stt_engine ||
+      "brainfriends-stt";
+    const werCsv = [
+      [
+        "sample_id",
+        "age",
+        "severity",
+        "device_type",
+        "noise",
+        "lighting",
+        "ground_truth",
+        "transcript",
+      ],
+      ...speechRows.map((row) => [
+        row.sampleId,
+        row.age,
+        row.severity,
+        row.deviceType,
+        row.noise,
+        row.lighting,
+        row.groundTruth,
+        row.transcript,
+      ]),
+    ]
+      .map((row) => row.map(csvEscape).join(","))
+      .join("\n");
+
+    const rtfRows = speechRows.filter(
+      (row) => row.audioDurationMs !== null && row.processingMs !== null,
+    );
+    const files: ExportFile[] = [
+      {
+        name: "ai-eval/wer.csv",
+        data: new TextEncoder().encode(`\uFEFF${werCsv}`),
+      },
+    ];
+    const werParse = parseWerCsv(werCsv);
+    if (werParse.ok) {
+      const werReport = evaluateWerRows({
+        rows: werParse.rows,
+        generatedAt,
+        datasetId,
+        modelId: String(modelId),
+      });
+      files.push(
+        {
+          name: "ai-eval/wer-report.json",
+          data: new TextEncoder().encode(serializeWerReportJson(werReport)),
+        },
+        {
+          name: "ai-eval/wer-report.md",
+          data: new TextEncoder().encode(serializeWerReportMarkdown(werReport)),
+        },
+      );
+    } else {
+      files.push({
+        name: "ai-eval/wer-parse-errors.json",
+        data: new TextEncoder().encode(JSON.stringify(werParse.errors, null, 2)),
+      });
+    }
+
+    if (rtfRows.length > 0) {
+      const rtfCsv = [
+        [
+          "sample_id",
+          "age",
+          "severity",
+          "device_type",
+          "noise",
+          "audio_duration_ms",
+          "processing_ms",
+        ],
+        ...rtfRows.map((row) => [
+          row.sampleId,
+          row.age,
+          row.severity,
+          row.deviceType,
+          row.noise,
+          row.audioDurationMs ?? "",
+          row.processingMs ?? "",
+        ]),
+      ]
+        .map((row) => row.map(csvEscape).join(","))
+        .join("\n");
+      files.push({
+        name: "ai-eval/rtf.csv",
+        data: new TextEncoder().encode(`\uFEFF${rtfCsv}`),
+      });
+      const rtfParse = parseRtfCsv(rtfCsv);
+      if (rtfParse.ok) {
+        const rtfReport = evaluateRtfRows({
+          rows: rtfParse.rows,
+          generatedAt,
+          datasetId,
+          modelId: String(modelId),
+        });
+        files.push(
+          {
+            name: "ai-eval/rtf-report.json",
+            data: new TextEncoder().encode(serializeRtfReportJson(rtfReport)),
+          },
+          {
+            name: "ai-eval/rtf-report.md",
+            data: new TextEncoder().encode(serializeRtfReportMarkdown(rtfReport)),
+          },
+        );
+      } else {
+        files.push({
+          name: "ai-eval/rtf-parse-errors.json",
+          data: new TextEncoder().encode(JSON.stringify(rtfParse.errors, null, 2)),
+        });
+      }
+    }
+    files.push({
+      name: "ai-eval/manifest.json",
+      data: new TextEncoder().encode(
+        JSON.stringify(
+          {
+            generatedAt,
+            datasetId,
+            modelId,
+            sourceHistoryId: historyEntry.historyId,
+            totalSpeechSamples: speechRows.length,
+            werSamples: speechRows.length,
+            rtfSamples: rtfRows.length,
+            files: files.map((file) => file.name),
+          },
+          null,
+          2,
+        ),
+      ),
+    });
+
+    return files;
+  };
+
   const handleExportData = async () => {
     if (!sessionData) return;
     const patient = patientProfile;
@@ -600,6 +832,7 @@ function ResultContent() {
         ),
       },
     ];
+    files.push(...buildSttEvaluationCsvFiles(currentHistoryEntry ?? null));
       const mediaFiles = await Promise.all([
         ...(sessionData?.step2?.items ?? []).map((item: any, index: number) =>
           assetUrlToExportFile(
@@ -744,45 +977,24 @@ function ResultContent() {
                   Report
                 </p>
                 <h1 className="text-base sm:text-lg md:text-xl font-black flex items-center gap-1.5">
-                  자가 진단 평가 결과
+                  자가점검 결과 리포트
                 </h1>
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-wrap justify-end">
-              <div className="px-3 py-2 rounded-xl border border-orange-200 bg-orange-50 text-[11px] sm:text-xs font-bold text-orange-700">
-                {dbSaveState === "saving" && "DB Sync In Progress"}
-                {dbSaveState === "saved" && "DB Sync Complete"}
-                {dbSaveState === "local_only" && "DB Not Configured - Local backup kept"}
-                {dbSaveState === "failed" && "DB Sync Failed - Local backup kept"}
-                {dbSaveState === "idle" && "DB Sync Pending"}
-              </div>
-              {isServerExcluded ? (
-                <div className="flex flex-wrap gap-2">
-                  {isDemoResult ? <DemoResultBadge /> : null}
-                  <ServerExcludedBadge />
-                </div>
-              ) : null}
-              <div className={`px-3 py-2 rounded-xl border text-[11px] sm:text-xs font-bold ${qualityUi.className}`}>
-                측정 품질 · {qualityUi.label}
-              </div>
-              {vnvSummary ? (
-                <div className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-[11px] sm:text-xs font-bold text-slate-700">
-                  V&V · 요구사항 {vnvSummary.requirementIds.length}건 / 시험 {vnvSummary.testCaseIds.length}건
-                </div>
-              ) : null}
+            <div className="flex items-center gap-2 justify-end">
               <button
                 onClick={handleExportData}
                 className="px-3 sm:px-4 py-2 bg-white text-slate-900 border border-orange-200 rounded-xl text-[11px] sm:text-xs font-bold shadow-sm hover:bg-orange-50 active:scale-95 transition-all inline-flex items-center gap-1.5"
               >
                 <Database className="w-3.5 h-3.5 text-orange-500" />
-                데이터 백업
+                결과 ZIP 다운로드
               </button>
               <button
                 onClick={() => window.print()}
                 className="px-3 sm:px-4 py-2 bg-orange-500 text-white rounded-xl text-[11px] sm:text-xs font-bold shadow-sm hover:bg-orange-600 active:scale-95 transition-all inline-flex items-center gap-1.5"
               >
                 <Printer className="w-3.5 h-3.5" />
-                진단서 출력
+                리포트 출력
               </button>
               <button
                 type="button"
@@ -826,11 +1038,11 @@ function ResultContent() {
                 Self Assessment Report
               </p>
               <h2 className="mt-2 text-2xl font-black text-slate-900">
-                자가진단 종합 점수 {derivedKwab?.aq || "0.0"}점
+                자가점검 보조점수 {derivedKwab?.aq || "0.0"}점
               </h2>
               <p className="mt-2 text-sm font-semibold text-slate-700 leading-relaxed">
                 {clinicalImpression?.summary ||
-                  "자가진단 평가 결과를 기준으로 강점 영역과 집중 중재 영역을 확인합니다."}
+                  "자가점검 결과를 기준으로 강점 영역과 치료사 검토가 필요한 영역을 확인합니다."}
               </p>
             </section>
           )}
@@ -843,10 +1055,10 @@ function ResultContent() {
                   Self Assessment Report
                 </p>
                 <h3 className="mt-2 text-lg sm:text-xl md:text-2xl lg:text-3xl font-black tracking-tight leading-snug">
-                  자가진단 종합 점수 {derivedKwab?.aq || "0.0"}점
+                  자가점검 보조점수 {derivedKwab?.aq || "0.0"}점
                 </h3>
                 <p className="mt-2 text-sm sm:text-base md:text-lg font-bold text-orange-50 leading-relaxed">
-                  자가진단 평가 결과를 기준으로 강점 영역과 집중 중재 영역을
+                  자가점검 결과를 기준으로 강점 영역과 치료사 검토가 필요한 영역을
                   확인하세요.
                 </p>
               </section>
@@ -878,7 +1090,7 @@ function ResultContent() {
                   </div>
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
-                      현재 AQ
+                      현재 보조점수
                     </p>
                     <p className="mt-2 text-lg font-black text-slate-900">
                       {derivedKwab?.aq || "0.0"}점
@@ -924,13 +1136,13 @@ function ResultContent() {
                   </div>
                 </div>
                 <div className="rounded-2xl border border-orange-200 bg-white p-3 md:p-4 min-h-[48px] shadow-sm">
-                  <p className="text-sm font-black text-slate-500">현재 점수</p>
+                  <p className="text-sm font-black text-slate-500">현재 보조점수</p>
                   <p className="text-lg sm:text-xl font-black text-orange-600 mt-1 leading-snug">
                     {derivedKwab?.aq || "0.0"}점
                   </p>
                 </div>
                 <div className="rounded-2xl border border-orange-200 bg-white p-3 md:p-4 min-h-[48px] shadow-sm">
-                  <p className="text-sm font-black text-slate-500">평가 분류</p>
+                  <p className="text-sm font-black text-slate-500">참고 분류</p>
                   <p className="text-lg sm:text-xl font-black text-slate-900 mt-1 leading-snug">
                     {aqSeverityLabel(Number(derivedKwab?.aq || 0))}
                   </p>

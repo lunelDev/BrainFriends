@@ -24,7 +24,7 @@ function formatMode(entry: TrainingHistoryEntry) {
   if (entry.trainingMode === "sing") {
     return "노래";
   }
-  return "자가진단";
+  return "자가점검";
 }
 
 function getEntrySaveState(entry: TrainingHistoryEntry) {
@@ -165,7 +165,7 @@ export default function TherapistResultsPage() {
       items.push(
         `훈련 모드: ${
           modeFilter === "self"
-            ? "자가진단"
+            ? "자가점검"
             : modeFilter === "rehab"
               ? "재활"
               : "노래"
@@ -245,7 +245,7 @@ export default function TherapistResultsPage() {
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700"
             >
               <option value="all">전체</option>
-              <option value="self">자가진단</option>
+              <option value="self">자가점검</option>
               <option value="rehab">재활</option>
               <option value="sing">노래</option>
             </select>

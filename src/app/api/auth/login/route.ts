@@ -7,6 +7,7 @@ import {
 } from "@/lib/server/accountAuth";
 import { getUserTotp, recordTotpFailure, recordTotpVerified, isLockedNow } from "@/lib/server/userTotpDb";
 import { verifyTotp } from "@/lib/server/totp";
+import { LoginInputSchema, validateInput } from "@/lib/server/inputSchemas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,13 +26,22 @@ export async function POST(req: Request) {
     );
   }
 
+  // SI-05: zod 통합 스키마로 검증.
+  const parsed = validateInput(LoginInputSchema, body);
+  if (!parsed.ok || !parsed.data) {
+    return NextResponse.json(
+      { ok: false, error: "invalid_login_payload" },
+      { status: 400 },
+    );
+  }
+
   const totpCode =
     typeof body.totpCode === "string" ? body.totpCode.trim() : "";
 
   try {
     const authenticated = await authenticateAccount({
-      loginId: String(body.loginId ?? ""),
-      password: String(body.password ?? ""),
+      loginId: parsed.data.loginId,
+      password: parsed.data.password,
     });
 
     // TOTP 강제 여부 결정. 현재 정책:

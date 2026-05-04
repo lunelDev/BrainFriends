@@ -20,6 +20,8 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const patientId = searchParams.get("patientId");
+  const includeValidation = searchParams.get("includeValidation") === "1";
+  const summaryOnly = searchParams.get("summaryOnly") === "1";
 
   try {
     const context = await getAuthenticatedSessionContext(token);
@@ -55,8 +57,10 @@ export async function GET(req: Request) {
     }
 
     const [patients, validationSampleEntries] = await Promise.all([
-      listAdminPatientReportSummaries(token),
-      listAdminReportValidationSample(token),
+      summaryOnly ? Promise.resolve([]) : listAdminPatientReportSummaries(token),
+      includeValidation
+        ? listAdminReportValidationSample(token)
+        : Promise.resolve([]),
     ]);
     await safeAppendAccess({
       request: req,

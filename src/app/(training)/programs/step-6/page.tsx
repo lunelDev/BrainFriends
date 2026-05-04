@@ -41,6 +41,7 @@ import {
   loadTransientStepStorage,
   saveTransientStepStorage,
 } from "@/lib/security/transientStepStorage";
+import { shuffleTrainingItems } from "@/lib/training/questionOrder";
 
 export const dynamic = "force-dynamic";
 const STEP6_STORAGE_KEY = "step6_recorded_data";
@@ -165,12 +166,13 @@ function Step6Content() {
   const questions = useMemo(
     () => {
       const buildQuestions = () =>
-        [...(WRITING_WORDS[place] || WRITING_WORDS.home)]
-          .sort(() => Math.random() - 0.5)
-          .slice(0, 5);
+        shuffleTrainingItems(WRITING_WORDS[place] || WRITING_WORDS.home).slice(
+          0,
+          5,
+        );
       if (typeof window === "undefined") return buildQuestions();
 
-      const questionsStorageKey = `${STEP6_QUESTIONS_KEY_PREFIX}:${place}`;
+      const questionsStorageKey = `${STEP6_QUESTIONS_KEY_PREFIX}:${sessionId}:${place}`;
       try {
         const raw = sessionStorage.getItem(questionsStorageKey);
         const parsed = raw ? JSON.parse(raw) : null;
@@ -196,7 +198,7 @@ function Step6Content() {
       }
       return nextQuestions;
     },
-    [place],
+    [place, sessionId],
   );
   const stepSignature = useMemo(
     () =>
@@ -692,7 +694,7 @@ function Step6Content() {
       });
       const isRehabStep6 = isRehabMode && rehabTargetStep === 6;
       if (typeof window !== "undefined") {
-        sessionStorage.removeItem(`${STEP6_QUESTIONS_KEY_PREFIX}:${place}`);
+        sessionStorage.removeItem(`${STEP6_QUESTIONS_KEY_PREFIX}:${sessionId}:${place}`);
       }
       if (isRehabStep6) {
         params.set("trainMode", "rehab");
@@ -791,7 +793,7 @@ function Step6Content() {
       });
       const isRehabStep6 = isRehabMode && rehabTargetStep === 6;
       if (typeof window !== "undefined") {
-        sessionStorage.removeItem(`${STEP6_QUESTIONS_KEY_PREFIX}:${place}`);
+        sessionStorage.removeItem(`${STEP6_QUESTIONS_KEY_PREFIX}:${sessionId}:${place}`);
       }
       if (isRehabStep6) {
         params.set("trainMode", "rehab");

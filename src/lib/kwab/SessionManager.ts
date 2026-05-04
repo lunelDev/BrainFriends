@@ -751,6 +751,7 @@ export class SessionManager {
             ...step,
             items: (step.items ?? []).map((item) => ({
               text: item.text,
+              transcript: item.transcript,
               isCorrect: item.isCorrect,
               symmetryScore: item.symmetryScore,
               pronunciationScore: item.pronunciationScore,
@@ -758,6 +759,9 @@ export class SessionManager {
               vowelAccuracy: item.vowelAccuracy,
               dataSource: item.dataSource,
               audioLevel: item.audioLevel,
+              responseTime: (item as any).responseTime,
+              audioDurationMs: (item as any).audioDurationMs,
+              processingMs: (item as any).processingMs,
               // Parselmouth 음향 측정값(REQ-ACOUSTIC-001~004): 결과 페이지 → DB 저장
               // 까지 살아남으려면 localStorage 라운드트립에서 보존돼야 한다.
               acoustic: item.acoustic ?? null,
@@ -790,7 +794,10 @@ export class SessionManager {
               clarityComponentScore: item.clarityComponentScore,
               responseStartComponentScore: item.responseStartComponentScore,
               responseStartMs: item.responseStartMs,
+              responseTime: item.responseTime,
               speechDuration: item.speechDuration,
+              audioDurationMs: (item as any).audioDurationMs,
+              processingMs: (item as any).processingMs,
               silenceRatio: item.silenceRatio,
               averageAmplitude: item.averageAmplitude,
               peakCount: item.peakCount,
@@ -811,12 +818,18 @@ export class SessionManager {
             ...step,
             items: (step.items ?? []).map((item) => ({
               text: item.text,
+              transcript: item.transcript,
               isCorrect: item.isCorrect,
+              audioUrl: item.audioUrl,
               readingScore: item.readingScore,
               consonantAccuracy: item.consonantAccuracy,
               vowelAccuracy: item.vowelAccuracy,
               dataSource: item.dataSource,
               totalTime: item.totalTime,
+              audioDurationMs: (item as any).audioDurationMs,
+              processingMs: (item as any).processingMs,
+              responseTime: (item as any).responseTime,
+              recognitionResponseMs: (item as any).recognitionResponseMs,
               wordsPerMinute: item.wordsPerMinute,
               // Parselmouth 음향 측정값(REQ-ACOUSTIC-001~004): 결과 페이지 → DB 저장
               // 까지 살아남으려면 localStorage 라운드트립에서 보존돼야 한다.

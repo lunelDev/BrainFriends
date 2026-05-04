@@ -273,7 +273,7 @@ function Step3Content() {
       return buildProtocol();
     }
 
-    const protocolStorageKey = `${STEP3_PROTOCOL_KEY_PREFIX}:${place}`;
+    const protocolStorageKey = `${STEP3_PROTOCOL_KEY_PREFIX}:${sessionId}:${place}`;
     try {
       const raw = sessionStorage.getItem(protocolStorageKey);
       const parsed = raw ? JSON.parse(raw) : null;
@@ -299,7 +299,7 @@ function Step3Content() {
       // ignore
     }
     return nextProtocol;
-  }, [place]);
+  }, [place, sessionId]);
   const stepSignature = useMemo(
     () =>
       buildStepSignature(
@@ -700,7 +700,7 @@ function Step3Content() {
         } catch (e) {
         }
         if (typeof window !== "undefined") {
-          sessionStorage.removeItem(`${STEP3_PROTOCOL_KEY_PREFIX}:${place}`);
+          sessionStorage.removeItem(`${STEP3_PROTOCOL_KEY_PREFIX}:${sessionId}:${place}`);
         }
 
         pushStep4OrRehabResult(avgScore);
@@ -781,7 +781,7 @@ function Step3Content() {
         versionSnapshot: buildVersionSnapshot("step3"),
       });
       if (typeof window !== "undefined") {
-        sessionStorage.removeItem(`${STEP3_PROTOCOL_KEY_PREFIX}:${place}`);
+        sessionStorage.removeItem(`${STEP3_PROTOCOL_KEY_PREFIX}:${sessionId}:${place}`);
       }
 
       pushStep4OrRehabResult(score);

@@ -11,7 +11,6 @@ type NavItem = { href: string; label: string; adminOnly?: boolean };
 const NAV_ITEMS: NavItem[] = [
   { href: "/therapist", label: "종합 대시보드" },
   { href: "/therapist/results", label: "측정·안면 분석", adminOnly: true },
-  { href: "/therapist/system", label: "보안·검증 현황", adminOnly: true },
 ];
 
 function isActive(pathname: string, href: string) {

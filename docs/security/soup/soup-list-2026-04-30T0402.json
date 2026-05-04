@@ -1,0 +1,323 @@
+{
+  "exportType": "brainfriends-soup-list",
+  "generatedAt": "2026-04-30T04:02:33.894Z",
+  "productName": "golden",
+  "productVersion": "0.1.0",
+  "summary": {
+    "total": 23,
+    "byRisk": {
+      "A": 8,
+      "B": 14,
+      "C": 1
+    },
+    "bySource": {
+      "npm": 14,
+      "pypi": 7,
+      "system": 0,
+      "model": 2
+    }
+  },
+  "entries": [
+    {
+      "id": "SOUP-MODEL-mediapipe-face-landmarker",
+      "name": "mediapipe-face-landmarker",
+      "version": "local-asset (face_landmarker.task)",
+      "license": "Apache-2.0",
+      "sourceType": "model",
+      "purpose": "안면 478 랜드마크 (lip + iris). 온디바이스 WASM",
+      "riskCategory": "B",
+      "changeControl": [
+        "model_eval",
+        "version_pin",
+        "security_scan"
+      ]
+    },
+    {
+      "id": "SOUP-MODEL-openai-whisper-1",
+      "name": "openai-whisper-1",
+      "version": "whisper-1 (api fixed)",
+      "license": "OpenAI Terms of Service",
+      "sourceType": "model",
+      "purpose": "음성 전사 보조 (서버 경로). DEV/WASM fallback 정책으로 격리",
+      "riskCategory": "C",
+      "changeControl": [
+        "model_eval",
+        "version_pin",
+        "security_scan"
+      ]
+    },
+    {
+      "id": "SOUP-NPM-aws-sdk_client-s3",
+      "name": "@aws-sdk/client-s3",
+      "version": "3.1008.0",
+      "license": "Apache-2.0",
+      "sourceType": "npm",
+      "purpose": "S3 미디어 저장 (선택)",
+      "riskCategory": "B",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-NPM-aws-sdk_s3-request-presigner",
+      "name": "@aws-sdk/s3-request-presigner",
+      "version": "3.1008.0",
+      "license": "Apache-2.0",
+      "sourceType": "npm",
+      "purpose": "S3 미디어 저장 (선택)",
+      "riskCategory": "B",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-NPM-mediapipe_camera_utils",
+      "name": "@mediapipe/camera_utils",
+      "version": "0.3.1675466862",
+      "license": "Apache-2.0",
+      "sourceType": "npm",
+      "purpose": "안면/홍채 추적 (5채널 보조 분석)",
+      "riskCategory": "B",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-NPM-mediapipe_face_mesh",
+      "name": "@mediapipe/face_mesh",
+      "version": "0.4.1633559619",
+      "license": "Apache-2.0",
+      "sourceType": "npm",
+      "purpose": "안면/홍채 추적 (5채널 보조 분석)",
+      "riskCategory": "B",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-NPM-mediapipe_tasks-vision",
+      "name": "@mediapipe/tasks-vision",
+      "version": "0.10.32",
+      "license": "Apache-2.0",
+      "sourceType": "npm",
+      "purpose": "안면/홍채 추적 (5채널 보조 분석)",
+      "riskCategory": "B",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-NPM-tensorflow_tfjs",
+      "name": "@tensorflow/tfjs",
+      "version": "4.22.0",
+      "license": "Apache-2.0",
+      "sourceType": "npm",
+      "purpose": "WebAssembly 추론 런타임",
+      "riskCategory": "B",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-NPM-types_pg",
+      "name": "@types/pg",
+      "version": "8.18.0",
+      "license": "MIT",
+      "sourceType": "npm",
+      "purpose": "PostgreSQL 클라이언트",
+      "riskCategory": "A",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-NPM-lucide-react",
+      "name": "lucide-react",
+      "version": "0.563.0",
+      "license": "ISC",
+      "sourceType": "npm",
+      "purpose": "UI 아이콘",
+      "riskCategory": "A",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-NPM-next",
+      "name": "next",
+      "version": "16.1.6",
+      "license": "MIT",
+      "sourceType": "npm",
+      "purpose": "Web 프레임워크 / UI 런타임",
+      "riskCategory": "A",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-NPM-pg",
+      "name": "pg",
+      "version": "8.20.0",
+      "license": "MIT",
+      "sourceType": "npm",
+      "purpose": "PostgreSQL 클라이언트",
+      "riskCategory": "A",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-NPM-react",
+      "name": "react",
+      "version": "19.2.3",
+      "license": "MIT",
+      "sourceType": "npm",
+      "purpose": "Web 프레임워크 / UI 런타임",
+      "riskCategory": "A",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-NPM-react-dom",
+      "name": "react-dom",
+      "version": "19.2.3",
+      "license": "MIT",
+      "sourceType": "npm",
+      "purpose": "Web 프레임워크 / UI 런타임",
+      "riskCategory": "A",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-NPM-tesseract.js",
+      "name": "tesseract.js",
+      "version": "7.0.0",
+      "license": "Apache-2.0",
+      "sourceType": "npm",
+      "purpose": "이미지 OCR (Step 6)",
+      "riskCategory": "A",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-NPM-zod",
+      "name": "zod",
+      "version": "4.4.1",
+      "license": "MIT",
+      "sourceType": "npm",
+      "purpose": "API 입력값 검증 (SI-05)",
+      "riskCategory": "A",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-PYPI-fastapi_0.115",
+      "name": "fastapi>=0.115",
+      "version": "unspecified",
+      "license": null,
+      "sourceType": "pypi",
+      "purpose": "Python 음향 분석 의존",
+      "riskCategory": "B",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-PYPI-numpy_1.26",
+      "name": "numpy>=1.26",
+      "version": "unspecified",
+      "license": null,
+      "sourceType": "pypi",
+      "purpose": "Python 음향 분석 의존",
+      "riskCategory": "B",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-PYPI-praat-parselmouth_0.4.5",
+      "name": "praat-parselmouth>=0.4.5",
+      "version": "unspecified",
+      "license": null,
+      "sourceType": "pypi",
+      "purpose": "Python 음향 분석 의존",
+      "riskCategory": "B",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-PYPI-pydub_0.25.1",
+      "name": "pydub>=0.25.1",
+      "version": "unspecified",
+      "license": null,
+      "sourceType": "pypi",
+      "purpose": "Python 음향 분석 의존",
+      "riskCategory": "B",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-PYPI-python-multipart_0.0.20",
+      "name": "python-multipart>=0.0.20",
+      "version": "unspecified",
+      "license": null,
+      "sourceType": "pypi",
+      "purpose": "Python 음향 분석 의존",
+      "riskCategory": "B",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-PYPI-soundfile_0.12",
+      "name": "soundfile>=0.12",
+      "version": "unspecified",
+      "license": null,
+      "sourceType": "pypi",
+      "purpose": "Python 음향 분석 의존",
+      "riskCategory": "B",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    },
+    {
+      "id": "SOUP-PYPI-uvicorn_standard_0.32",
+      "name": "uvicorn[standard]>=0.32",
+      "version": "unspecified",
+      "license": null,
+      "sourceType": "pypi",
+      "purpose": "Python 음향 분석 의존",
+      "riskCategory": "B",
+      "changeControl": [
+        "security_scan",
+        "version_pin"
+      ]
+    }
+  ]
+}

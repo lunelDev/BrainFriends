@@ -62,8 +62,8 @@ function buildStreak(entries: TrainingHistoryEntry[]) {
 function getNextGoal(latestAq: number | null | undefined) {
   const aq = Number(latestAq);
   if (!Number.isFinite(aq)) return "첫 결과를 만들어 보세요";
-  if (aq < 70) return "AQ 70점 이상 달성";
-  if (aq < 85) return `AQ ${Math.max(85, Math.ceil(aq + 3))}점 목표`;
+  if (aq < 70) return "보조점수 70점 이상 목표";
+  if (aq < 85) return `보조점수 ${Math.max(85, Math.ceil(aq + 3))}점 목표`;
   return "측정 품질을 유지하며 꾸준히 훈련";
 }
 
@@ -72,18 +72,38 @@ function getTrainingModeLabel(entry: TrainingHistoryEntry) {
     return `언어 재활${entry.rehabStep ? ` · Step ${entry.rehabStep}` : ""}`;
   }
   if (entry.trainingMode === "sing") return "브레인 노래방";
-  return "자가 진단";
+  return "자가점검";
+}
+
+type MyRehabStats = {
+  totalSelf: number;
+  totalRehab: number;
+  totalSing: number;
+  latestAq: number | null;
+  latestCompletedAt: string | null;
+};
+
+function buildLocalStats(entries: TrainingHistoryEntry[]): MyRehabStats {
+  const sorted = [...entries].sort((a, b) => b.completedAt - a.completedAt);
+  const latestSelf = sorted.find((entry) => entry.trainingMode !== "sing");
+  return {
+    totalSelf: entries.filter((entry) => entry.trainingMode === "self").length,
+    totalRehab: entries.filter((entry) => entry.trainingMode === "rehab").length,
+    totalSing: entries.filter((entry) => entry.trainingMode === "sing").length,
+    latestAq: latestSelf?.aq ?? null,
+    latestCompletedAt: sorted[0]
+      ? new Date(sorted[0].completedAt).toISOString()
+      : null,
+  };
 }
 
 export default function MyPage() {
   const { patient, isLoading } = useTrainingSession();
-  const [historyEntries, setHistoryEntries] = useState<TrainingHistoryEntry[]>([]);
-  // 좌측 리스트에서 클릭한 진단을 우측 상세 카드로 보여주는 master-detail 상태.
-  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+  const [stats, setStats] = useState<MyRehabStats | null>(null);
 
   useEffect(() => {
     if (!patient) {
-      setHistoryEntries([]);
+      setStats(null);
       return;
     }
 
@@ -92,26 +112,21 @@ export default function MyPage() {
       (a, b) => b.completedAt - a.completedAt,
     );
 
-    setHistoryEntries(localRows);
+    setStats(buildLocalStats(localRows));
 
-    void fetch("/api/history/me", { cache: "no-store" })
+    void fetch("/api/history/me/stats", { cache: "no-store" })
       .then(async (response) => {
-        if (!response.ok) throw new Error("failed_to_load_server_history");
+        if (!response.ok) throw new Error("failed_to_load_history_stats");
         return response.json();
       })
       .then((payload) => {
         if (cancelled) return;
-        const serverRows = Array.isArray(payload?.entries)
-          ? (payload.entries as TrainingHistoryEntry[])
-          : [];
-        if (serverRows.length > 0) {
-          setHistoryEntries(
-            [...serverRows].sort((a, b) => b.completedAt - a.completedAt),
-          );
+        if (payload?.stats) {
+          setStats(payload.stats as MyRehabStats);
         }
       })
       .catch(() => {
-        // 로컬 기록을 이미 먼저 반영했으므로 조용히 유지
+        // 로컬 요약을 이미 먼저 반영했으므로 조용히 유지
       });
 
     return () => {
@@ -119,43 +134,21 @@ export default function MyPage() {
     };
   }, [patient]);
 
-  const latest = historyEntries[0] ?? null;
   const aqTrend = useMemo(
     () => (patient ? SessionManager.getAQTrendFor(patient) : null),
     [patient],
   );
-  const streakDays = useMemo(() => buildStreak(historyEntries), [historyEntries]);
+  const totalRecords =
+    Number(stats?.totalSelf ?? 0) +
+    Number(stats?.totalRehab ?? 0) +
+    Number(stats?.totalSing ?? 0);
+  const latestCompletedAtMs = stats?.latestCompletedAt
+    ? new Date(stats.latestCompletedAt).getTime()
+    : null;
   const nextGoal = useMemo(
-    () => getNextGoal(aqTrend?.latest?.aq ?? latest?.aq ?? null),
-    [aqTrend?.latest?.aq, latest?.aq],
+    () => getNextGoal(aqTrend?.latest?.aq ?? stats?.latestAq ?? null),
+    [aqTrend?.latest?.aq, stats?.latestAq],
   );
-
-  // 최근 5건 기준, 선택된 항목을 유효하게 유지 (없으면 첫 번째로 폴백)
-  const recentEntries = useMemo(
-    () => historyEntries.slice(0, 5),
-    [historyEntries],
-  );
-  useEffect(() => {
-    if (recentEntries.length === 0) {
-      if (selectedHistoryId !== null) setSelectedHistoryId(null);
-      return;
-    }
-    const exists = recentEntries.some((e) => e.historyId === selectedHistoryId);
-    if (!exists) setSelectedHistoryId(recentEntries[0].historyId);
-  }, [recentEntries, selectedHistoryId]);
-  const selectedEntry =
-    recentEntries.find((e) => e.historyId === selectedHistoryId) ??
-    recentEntries[0] ??
-    null;
-  const selectedIdx = selectedEntry
-    ? recentEntries.findIndex((e) => e.historyId === selectedEntry.historyId)
-    : -1;
-  const selectedPrev =
-    selectedIdx >= 0 ? recentEntries[selectedIdx + 1] ?? null : null;
-  const selectedAqDelta =
-    selectedEntry && selectedPrev
-      ? Number((selectedEntry.aq - selectedPrev.aq).toFixed(1))
-      : null;
 
   if (isLoading) {
     return (
@@ -205,8 +198,8 @@ export default function MyPage() {
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <StatCard
             icon={<Trophy className="h-5 w-5 text-amber-500" />}
-            label="최근 AQ"
-            value={formatAq(aqTrend?.latest?.aq ?? latest?.aq ?? null)}
+            label="최근 보조점수"
+            value={formatAq(aqTrend?.latest?.aq ?? stats?.latestAq ?? null)}
             hint={
               aqTrend?.delta == null
                 ? "비교 기록 없음"
@@ -216,14 +209,14 @@ export default function MyPage() {
           <StatCard
             icon={<Sparkles className="h-5 w-5 text-indigo-500" />}
             label="총 훈련 기록"
-            value={`${historyEntries.length}건`}
-            hint="누적 저장 기준"
+            value={`${totalRecords}건`}
+            hint="서버 요약 기준"
           />
           <StatCard
             icon={<LineChart className="h-5 w-5 text-rose-500" />}
-            label="연속 훈련"
-            value={`${streakDays}일`}
-            hint="꾸준히 이어가고 있어요"
+            label="최근 활동"
+            value={formatDate(latestCompletedAtMs)}
+            hint="상세 기록은 선택 시 로드"
           />
           <StatCard
             icon={<Target className="h-5 w-5 text-sky-500" />}
@@ -246,7 +239,7 @@ export default function MyPage() {
               </div>
             }
           >
-            <ReportContent embedded />
+            <ReportContent embedded deferInitialDetail />
           </Suspense>
         </section>
       </div>
@@ -349,7 +342,7 @@ function ReportSummaryCard({
   const modeLabel = getTrainingModeLabel(entry);
 
   // 언어 재활은 진행한 rehabStep 1개만 점수가 찍히므로 그 하나만 노출.
-  // 자가진단은 step 1~6 전체가 측정되므로 전부 노출.
+  // 자가점검은 step 1~6 전체가 측정되므로 전부 노출.
   // 노래방(sing)은 stepScores 를 쓰지 않으므로 카드에서 숨김.
   const allStepKeys: Array<keyof TrainingHistoryEntry["stepScores"]> = [
     "step1",
@@ -386,7 +379,7 @@ function ReportSummaryCard({
         </div>
         <div className="flex flex-col items-end gap-1">
           <div className="text-3xl font-black tracking-tight text-slate-950">
-            AQ {formatAq(entry.aq)}
+            보조점수 {formatAq(entry.aq)}
           </div>
           <span
             className={`rounded-full px-2.5 py-0.5 text-[11px] font-black ${deltaTone}`}

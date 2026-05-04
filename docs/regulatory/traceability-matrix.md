@@ -36,7 +36,7 @@
 | SR-MEASURE-006 | measured / partial / demo 구분 | RM-003, RM-004 | `src/lib/vnv/deterministicChecks.ts`, `src/lib/kwab/SessionManager.ts` | TC-MQ-001 | 측정 품질 설명 | 구현 완료 |
 | SR-GAZE-007 | 시선 보조 채널 결정성 산출 | RM-004 | `src/utils/faceAnalysis.ts`, `src/lib/training/gazeAccumulator.ts`, `src/components/diagnosis/FaceTracker.tsx`, `src/app/(training)/layout.tsx`, `src/lib/kwab/SessionManager.ts`, `src/app/therapist/patients/[patientId]/page.tsx`, `src/components/training/DeveloperKpiPanel.tsx` | TC-GAZE-001, TC-GAZE-002, TC-GAZE-003 | 위험관리 파일, 5채널 클레임 근거 | Phase 1 완료 |
 | SR-AAC-008 | AAC 의도 템플릿 결정성 | RM-006 | `src/constants/aacData.ts`, `src/lib/aac/intentTemplate.ts`, `src/lib/aac/trainingIntegration.ts`, `src/components/aac/AACBoard.tsx`, `src/app/(training)/programs/aac/page.tsx`, `src/app/(training)/programs/step-2/page.tsx`, `src/app/(training)/programs/step-4/page.tsx`, `src/components/lingo/SentenceMagicGame.tsx`, `src/app/api/aac/intent/route.ts` | TC-AAC-001, TC-AAC-002 | 위험관리 파일, 5채널 클레임 근거 | Phase 1 완료 |
-| SR-STT-009 | STT useCase 정책, review-required, 버전 메타데이터 | RM-001, RM-002, RM-019 | `src/lib/speech/sttPolicy.ts`, `src/lib/speech/sttRuntime.ts`, `src/lib/speech/sttClientPreflight.ts`, `src/lib/speech/wasmSttAdapter.ts`, `src/lib/speech/sttPrompt.ts`, `src/lib/speech/sttReview.ts`, `src/lib/speech/SpeechAnalyzer.ts`, `src/components/lingo/SentenceMagicGame.tsx`, `src/app/api/proxy/stt/route.ts`, `src/lib/analysis/versioning.ts` | TC-STT-001, TC-STT-002, TC-STT-003, TC-RISK-001, TC-RISK-006 | 클레임 잠금표, 데이터 전송 명세 필요 | mock/wasm/server/blocked 분리 완료, WASM 엔진 미연결 |
+| SR-STT-009 | STT useCase 정책, review-required, 버전 메타데이터 | RM-001, RM-002, RM-019 | `src/lib/speech/sttPolicy.ts`, `src/lib/speech/sttRuntime.ts`, `src/lib/speech/sttClientPreflight.ts`, `src/lib/speech/sttLanguage.ts`, `src/lib/speech/wasmSttAdapter.ts`, `src/lib/speech/sttPrompt.ts`, `src/lib/speech/sttReview.ts`, `src/lib/speech/SpeechAnalyzer.ts`, `src/components/lingo/SentenceMagicGame.tsx`, `src/app/api/proxy/stt/route.ts`, `src/lib/analysis/versioning.ts` | TC-STT-001, TC-STT-002, TC-STT-003, TC-STT-004, TC-STT-WASM-001, TC-RISK-001, TC-RISK-006 | 클레임 잠금표, 데이터 전송 명세 필요 | mock/wasm/server/blocked 분리 + WASM adapter wiring 완료. 실측 RTF/WER 필요 |
 | SR-GUARDIAN-010 | 보호자 주간 리포트 요약 | RM-009, RM-018 | `src/lib/guardian/weeklyReportSummary.ts`, `src/lib/server/guardianReportsDb.ts`, `src/app/api/guardian/report-link/route.ts`, `src/app/guardian/[token]/page.tsx` | TC-GUARDIAN-001, TC-RISK-002 | 위험관리 파일, 보호자 리포트 설명 | 구현 완료 |
 | SR-AE-011 | 이상반응 조회 및 중증 미확인 분류 | RM-008 | `src/lib/adverse-events/adverseEventReview.ts`, `src/lib/server/adverseEventsDb.ts`, `src/app/api/adverse-events/route.ts`, `src/app/api/adverse-events/me/route.ts` | TC-RISK-003 | 이상반응 DB 스키마, 위험관리 파일 | 구현 완료 |
 
@@ -90,6 +90,8 @@
 | TC-STT-001 | STT 정책 결정성 | SR-STT-009 | RM-001, RM-002 |
 | TC-STT-002 | STT client preflight 서버 업로드 차단 | SR-STT-009 | RM-002 |
 | TC-STT-003 | STT runtime mock/wasm/server/blocked 분리 | SR-STT-009 | RM-001, RM-002 |
+| TC-STT-004 | STT 한국어 고정 언어 정책 | SR-STT-009 | RM-001, RM-002 |
+| TC-STT-WASM-001 | WASM STT adapter contract | SR-STT-009 | RM-001, RM-002 |
 | TC-RISK-001 | STT 실패 review-required | SR-STT-009 | RM-001 |
 | TC-GUARDIAN-001 | 보호자 리포트 요약 | SR-GUARDIAN-010 | RM-009, RM-018 |
 | TC-RISK-002 | 보호자 링크 만료/폐기 | SR-GUARDIAN-010 | RM-009 |

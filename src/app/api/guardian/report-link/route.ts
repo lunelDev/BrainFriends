@@ -81,7 +81,12 @@ export async function POST(req: Request) {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "guardian_report_link_failed";
-    const status = message === "patient_not_found" ? 404 : 500;
+    const status =
+      message === "patient_not_found"
+        ? 404
+        : message === "guardian_consent_required"
+          ? 409
+          : 500;
     await safeAppendAccess({
       request: req,
       action: "create",

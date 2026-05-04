@@ -32,10 +32,13 @@ import {
 } from "@/lib/client/mediaStreamRegistry";
 import {
   PronunciationAnalyzer,
+  type SttLifecycleCallbacks,
   WhisperTranscriber,
 } from "@/lib/speech/SpeechAnalyzer";
 import { type AcousticSnapshot } from "@/lib/kwab/SessionManager";
 import { callVoiceAnalysis } from "@/lib/audio/voiceAnalysisClient";
+import { useWasmSttLoading } from "@/lib/speech/useWasmSttLoading";
+import WasmSttLoadingIndicator from "@/components/training/WasmSttLoadingIndicator";
 
 type Phase = "select" | "ready" | "calibrating" | "countdown" | "singing" | "result";
 
@@ -250,6 +253,7 @@ function buildExpectedSongLyrics(songKey: SongKey) {
 async function analyzeSongPronunciation(params: {
   audioBlob: Blob | null;
   expectedLyrics: string;
+  lifecycle?: SttLifecycleCallbacks;
 }) {
   if (!params.audioBlob) {
     return {
@@ -277,6 +281,7 @@ async function analyzeSongPronunciation(params: {
     const { text } = await transcriber.transcribe(params.audioBlob, {
       targetText: params.expectedLyrics,
       useCase: "daily_training",
+      lifecycle: params.lifecycle,
     });
     const transcript = normalizeLyricsForAnalysis(text);
     if ((transcript.match(/[가-힣a-zA-Z0-9]/g) || []).length < MIN_SING_TRANSCRIPT_CHARS) {
@@ -603,6 +608,7 @@ function BrainSingPageContent() {
     "카메라를 켜고 얼굴을 화면 중앙 가이드에 맞춰 주세요.",
   );
   const [mediaAccessError, setMediaAccessError] = useState<string | null>(null);
+  const wasmSttLoading = useWasmSttLoading();
 
   const currentSong = SONGS[song];
   const lyricLeadOffsetSec =
@@ -1089,6 +1095,11 @@ function BrainSingPageContent() {
     const pronunciation = await analyzeSongPronunciation({
       audioBlob: reviewAudio.blob,
       expectedLyrics,
+      lifecycle: {
+        onWasmLoadStart: wasmSttLoading.beginLoad,
+        onWasmLoadSuccess: wasmSttLoading.finishLoad,
+        onWasmLoadError: wasmSttLoading.fail,
+      },
     });
     // Parselmouth 음향 측정값 (REQ-ACOUSTIC-001~004).
     // 점수에는 영향 없음(참고 측정값) — 항상 안전한 shape 으로 반환됨.
@@ -1617,6 +1628,13 @@ function BrainSingPageContent() {
                 </>
               )}
             </button>
+
+            <WasmSttLoadingIndicator
+              state={wasmSttLoading.state}
+              onRetry={wasmSttLoading.reset}
+              className="absolute left-6 top-20 z-20 max-w-md border-emerald-200 bg-emerald-50/95 text-emerald-900 shadow-lg"
+              barColorClassName="bg-emerald-500"
+            />
 
             {phase === "singing" && (
               <>

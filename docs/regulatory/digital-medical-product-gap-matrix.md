@@ -1,8 +1,11 @@
 # 브레인프렌즈 디지털의료제품 허가·심사 갭 매트릭스
 
-작성일: 2026-04-29  
-작성 기준: 부산대병원 전달 식약처 가이드라인 7종, `브레인프렌즈-제품기획서.pdf`, 현재 레포 구현 상태  
+작성일: 2026-04-29
+최종 정정: 2026-04-30 (NIDS 답변 반영 — `docs/decisions/2026-04-30-nids-samd-dtx-relationship.md` 참조)
+작성 기준: 부산대병원 전달 식약처 가이드라인 7종, `브레인프렌즈-제품기획서.pdf`, 현재 레포 구현 상태
 문서 성격: PM/개발 우선순위 결정을 위한 내부 작업 문서. 최종 법적 판단은 식약처 사전상담·시험기관·인허가 컨설턴트 검토로 확정한다.
+
+> **2026-04-30 정정**: NIDS 답변에 따라 SaMD 와 DTx 는 양자택일 관계가 아니다. **SaMD ⊃ DTx** (SaMD 가 상위 분류, DTx 는 그 안의 부분집합). 본 문서의 §4-2 분기 시나리오 표 및 §6 첫 번째 의사결정 항목은 이 관점에서 다시 읽어야 한다. 자세한 정정 사항은 결정문 참조.
 
 ## 결론
 
@@ -79,42 +82,50 @@
 
 | 영역 | 가이드라인 관점 | 현재 상태 | 갭 | 우선순위 |
 | --- | --- | --- | --- | --- |
-| 제품 분류·등급 | 독립형 디지털의료기기소프트웨어 여부, DTx 여부, 등급 판단 필요 | 제품기획서상 2등급/DTx 준비로 기재 | 공식 사전분류 문의 없음 | P0 |
-| 사용목적 | 대상 질환, 사용자, 환경, 출력 정보, 금기사항 명확화 | 실어증·구음장애·MCI, 치료사 보조 도구로 기재 | MCI 포함 여부가 범위를 넓힘. 금기/제외 기준 부족 | P0 |
-| 작용원리 | 과학적 근거 기반 작용원리와 정보통신체계도 필요 | 제품기획서에 멀티모달 흐름 있음 | 코드-클레임 불일치 일부 존재 | P0 |
-| DTx 판단 | 치료 작용기전의 과학적·임상적 근거 필요 | 문헌명 일부 기재 | CPG/논문/임상자료 연결표 부족 | P0 |
-| SW 안전성 등급 | A/B/C 등급 판단 및 근거 필요 | 없음 | 위해요인별 심각도·위험통제 문서 부재 | P0 |
-| 위험관리 | ISO 14971 위험관리 파일 필요 | 보안/저장 일부 문서 있음 | hazard, harm, risk control, residual risk 파일 없음 | P0 |
-| SRS/SDS | 요구사항, 구조설계, 상세설계, 추적성 필요 | `src/lib/vnv/requirements.ts` 일부 요건 존재 | IEC 62304 양식의 SRS/SDS 아님 | P0 |
-| V&V | 요구사항-설계-시험-결과 추적 필요 | deterministic V&V 17건 통과 | 범위가 핵심 기능 일부에 한정 | P0 |
-| AI 성능평가 | 학습/시험 데이터셋, 성능, 편향, 변경관리 필요 | `src/lib/ai/*`, 평가 문서 일부 | 실제 데이터셋·성능 수치 부족 | P0 |
-| STT/외부 서비스 | 클라우드 서비스, 모델 버전, 데이터 송신 명시 필요 | STT 정책 가드 추가 | WASM 엔진 미연결, OpenAI 사용 경계 문서화 필요 | P0 |
-| 사이버보안 | 접근통제, 전송/저장 보호, 감사로그, 취약점 관리 | 일부 구현 및 문서 있음 | 위협모델, SBOM, 침투/취약점 시험 증적 부족 | P0 |
-| GMP/QMS | 품질매뉴얼, 품질방침, SOP, 형상/변경/문제해결 필요 | 일부 개발 문서만 존재 | ISO 13485/IEC 62304 체계 문서 부족 | P0 |
-| 사용적합성 | IEC 62366 기반 사용 시나리오·평가 필요 | UX 구현은 있음 | formative/summative 사용성평가 프로토콜 없음 | P1 |
-| 임상평가 | DTx라면 전향적 임상 또는 임상적 성능 자료 필요 | 내부 단일군 파일럿 기재 | RCT/IRB/통계분석계획서 필요 | P1 |
-| 변경관리 | 알고리즘, 운영환경, UI, 통신 변경 영향평가 필요 | Git 관리 | 변경허가 판단 SOP 없음 | P0 |
-| 시판 후 감시 | 불만, 이상반응, CAPA, PMS 필요 | adverse-events API 존재 | PMS/CAPA 운영 절차 미작성 | P1 |
-| 보호자 리포트 | 3-tier 사용자 구조 근거 | 링크 기반 리포트 구현 | 동의/수신자/발송 로그 미완성 | P1 |
+| 제품 분류·등급 | 독립형 디지털의료기기소프트웨어 여부, DTx 여부, 등급 판단 필요 | 제품기획서상 2등급/DTx 준비로 기재 + NIDS 답변 (SaMD ⊃ DTx 양자택일 아님) ✅ | 식약처 사전상담 회신 대기 | **P0 ⚠ 부분** (자료 ✅ / 회신 대기) |
+| 사용목적 | 대상 질환, 사용자, 환경, 출력 정보, 금기사항 명확화 | `intended-use-and-contraindications.md` v0.1 ✅ + claim-lock §3 §5 잠금 ✅ + 환자 온보딩 exclusion check (RM-007 통제) ✅ | 식약처 사전상담 회신 후 미세조정 | **P0 ✅ 자체 완료** |
+| 작용원리 | 과학적 근거 기반 작용원리와 정보통신체계도 필요 | claim-lock §3 잠금 + ai-role-boundary.md ✅ + cloud-and-data-transfer.md ✅ + sds.md (architecture diagram) ✅ | 임상 작용기전 문헌 인용 강화 | **P0 ✅ 자체 완료** |
+| DTx 판단 | 치료 작용기전의 과학적·임상적 근거 필요 | NIDS 결정문 (1차 SaMD + DTx 후속) ✅ | 전향적 임상 RCT 자료 (외부 의존) | **P0 ⚠ 1차 SaMD 분리** |
+| SW 안전성 등급 | A/B/C 등급 판단 및 근거 필요 | risk-management-file v1.0 §3 Class B 권고 ✅ + 21개 RM-* 매트릭스 ✅ | 식약처 사전상담 회신 | **P0 ✅ 자체 완료** |
+| 위험관리 | ISO 14971 위험관리 파일 필요 | risk-management-file **v1.0 마감** ✅ + §11 결정성 V&V 매핑 + §11.7 IEC 62366 매핑 + §11.8 신규 산출물 7종 + §11.9 잔여위험 재평가 ✅ | 임상/사용성 실측 결과 반영 v1.x | **P0 ✅ 자체 완료** |
+| SRS/SDS | 요구사항, 구조설계, 상세설계, 추적성 필요 | `srs.md` v0.1 (IEC 62304 §5.2 양식) ✅ + `sds.md` v0.1 (§5.4 + 모듈 38종) ✅ + traceability-matrix.md ✅ + IEC 62304 별지 제2호 export ✅ | 시판 전 v1.0 마감 | **P0 ✅ 자체 완료** |
+| V&V | 요구사항-설계-시험-결과 추적 필요 | 결정성 V&V **53/53 PASS** ✅, SR-* 35개 + TC 53건 + 추적성 51행 + IEC 62304 별지 제2호 export | (보강 완료) | **P0 ✅ 자체 완료** |
+| AI 성능평가 | 학습/시험 데이터셋, 성능, 편향, 변경관리 필요 | werRunner.ts (`npm run ai-eval:wer`) + sttBenchmark.ts (`npm run ai-eval:rtf`) + 데이터 수집 가이드 v0.1 + WASM 모델 평가 계획 v0.1 ✅ 평가 체계 | **임상 협력기관 30건 음성** (외부 의존) | **P0 ✅ 체계 / ✗ 실측** |
+| STT/외부 서비스 | 클라우드 서비스, 모델 버전, 데이터 송신 명시 필요 | STT 정책 가드 + WASM 엔진 (transformers.js@4.2.0:Xenova/whisper-tiny:v0.1) 연결 완료, daily/game training 은 온디바이스, weekly_kwab/clinical_evaluation 만 서버 Whisper | RTF/P95/한국어 WER 측정 미실시, IndexedDB 캐싱 동작 검증 필요 | **P0 부분 완료** (엔진 wiring ✅ / 성능 측정 ✗) |
+| 사이버보안 | 접근통제, 전송/저장 보호, 감사로그, 취약점 관리 | 35 항목 ~77% 결정성 V&V (TC-SEC-* 10건) ✅ + SBOM ✅ + SOUP ✅ + Manifest ✅ + CVE 면제 등록부 (high 7건) ✅ + 감사로그 확대 helper ✅ | 외부 침투 시험 (위탁) | **P0 ✅ 자체 / ✗ 침투 시험** |
+| GMP/QMS | 품질매뉴얼, 품질방침, SOP, 형상/변경/문제해결 필요 | gmp-qms-decision-matrix v0.1 ✅ + change-approval-sop ✅ + pms-capa-procedure ✅ + post-market-surveillance-plan ✅ + release manifest ✅ | **GMP 옵션 결정 (A/B/C)** + 외주사 견적 (PM 사람) | **P0 ⚠ 자료 ✅ / 옵션 결정 대기** |
+| 사용적합성 | IEC 62366 기반 사용 시나리오·평가 필요 | 프로토콜 v0.1 작성 (POF 12 + critical 2 + 12 시나리오 + HRUS 매핑 + summative 15명 설계 + 결정성 합격기준), 실제 평가 미실시 | summative 평가 실행, formative round 1~3 진행 | **P0 부분 완료** (프로토콜 ✅ / 평가 진행 ✗) |
+| 임상평가 | DTx라면 전향적 임상 또는 임상적 성능 자료 필요 | 내부 단일군 파일럿 기재 + 1차 SaMD 신청과 분리 (NIDS 결정문) | RCT/IRB/통계분석계획서 (외부 협력기관 의존) | **P1 ⚠ 1차 SaMD 분리** |
+| 변경관리 | 알고리즘, 운영환경, UI, 통신 변경 영향평가 필요 | analyzeChangeImpact 결정성 함수 ✅ + change-approval-sop v0.1 ✅ + release manifest delta 자동 분류 ✅ | (적용 완료) | **P0 ✅ 자체 완료** |
+| 시판 후 감시 | 불만, 이상반응, CAPA, PMS 필요 | post-market-surveillance-plan v0.1 + pms-capa-procedure v0.1 + adverseEventReview ✅ | 실제 운영 인력 지정 (PM) | **P1 ✅ 자체 완료** |
+| 보호자 리포트 | 3-tier 사용자 구조 근거 | Phase 1 read-only 토큰 링크 ✅ + Phase 2 SMTP/SES 발송 stub (decideSend + executeSendBatch) ✅ + 동의 상태머신 ✅ | 실제 SMTP/SES wiring (다음 세션 또는 운영) | **P1 ✅ 코드 / ⚠ 운영 wiring** |
 | 가상융합기술 | VR/AR/HMD 적용 시 별도 가이드라인 | 현재 미적용 | 없음. 추가 개발 시 재검토 | 제외 |
 
 ## 현재 코드/문서 증적 매핑
 
 | 규제 산출물 | 현재 근거 | 상태 |
 | --- | --- | --- |
-| V&V 테스트 러너 | `src/lib/vnv/runDeterministicChecks.ts` | 부분 충족 |
-| V&V 요구사항 목록 | `src/lib/vnv/requirements.ts` | 부분 충족 |
-| V&V 제출 문서 | `docs/remediation/01-sw-vnv/*` | 부분 충족 |
-| AI 평가 문서 | `docs/remediation/03-ai-evaluation/*` | 부분 충족 |
-| 보안 문서 | `docs/remediation/02-cybersecurity/*`, `docs/security/README.md` | 부분 충족 |
-| 개인정보/PHI 분리 | `docs/10-operations/pii-phi-separation.md` | 부분 충족 |
-| 감사로그 | `src/lib/server/auditLog.ts`, `docs/10-operations/audit-log-schema.md` | 부분 충족 |
-| 이상반응 | `src/lib/server/adverseEventsDb.ts`, `src/app/api/adverse-events/*` | 부분 충족 |
-| 보호자 리포트 | `src/lib/server/guardianReportsDb.ts`, `src/app/guardian/[token]/page.tsx` | Phase 1 |
-| STT 정책 | `src/lib/speech/sttPolicy.ts`, `src/app/api/proxy/stt/route.ts` | Phase 1 |
-| 시선 추적 | `src/utils/faceAnalysis.ts`, `src/lib/training/gazeAccumulator.ts` | Phase 1 |
-| AAC | `src/lib/aac/intentTemplate.ts`, `src/components/aac/AACBoard.tsx` | Phase 1 |
-| GMP/QMS | `docs/submission/gmp-outsourcing-rfp.md` | 미흡 |
+| V&V 테스트 러너 | `src/lib/vnv/runDeterministicChecks.ts` (53 TC) | ✅ 충족 |
+| V&V 요구사항 목록 | `src/lib/vnv/requirements.ts` (SR-* 35) | ✅ 충족 |
+| V&V 제출 문서 | `docs/remediation/01-sw-vnv/*` + `srs.md` + `sds.md` v0.1 | ✅ 충족 |
+| AI 평가 문서 | `docs/remediation/03-ai-evaluation/*` + `werRunner.ts` + `sttBenchmark.ts` + 수집 가이드 + 모델 평가 계획 | ✅ 체계 / ✗ 실측 |
+| 보안 문서 | `docs/remediation/02-cybersecurity/*` + `cve-exemptions.md` v0.1 + SBOM/SOUP/Manifest | ✅ 자체 / ✗ 침투 시험 |
+| 개인정보/PHI 분리 | `docs/10-operations/pii-phi-separation.md` + 강화 계획 v0.1 + `phiMasking.ts` (`SR-PHI-013`) | ⚠ 정책 ✅ / DB migration 별도 |
+| 감사로그 | `auditChain.ts` (HMAC) + `auditExpansion.ts` (5 카테고리) + 보존기간 매핑 | ✅ 충족 |
+| 이상반응 | `adverseEventsDb.ts` + `adverseEventReview.ts` (`SR-AE-011`) + zod 검증 | ✅ 충족 |
+| 보호자 리포트 | Phase 1 read-only 토큰 ✅ + Phase 2 SMTP/SES stub (`weeklyReportSender.ts`) ✅ + 동의 상태머신 ✅ | ✅ 코드 / ⚠ 운영 wiring |
+| STT 정책 + WASM 엔진 | `sttPolicy.ts` + `wasmSttAdapter.ts` (transformers.js@4.2.0) + 로딩 머신 + UI 인디케이터 + 모델 평가 계획 + RTF runner | ✅ wiring / ✗ 실측 |
+| 시선 추적 | `faceAnalysis.ts` + `gazeAccumulator.ts` (`SR-GAZE-007`) + 치료사 표시 | ✅ 충족 |
+| AAC | `intentTemplate.ts` + `AACBoard.tsx` + 주요 훈련 통합 (`inputModality=aac`) | ✅ 충족 |
+| 적응형 난이도 (IRT) | `lib/adaptive/irt.ts` (`SR-IRT-018`, 2PL+EAP+MFI) + `lib/adaptive/itemBank.ts` v0.1 (step 1/2/4) | ✅ 코드 / ⚠ step page 통합 |
+| IEC 62366 사용적합성 | `usability-evaluation-protocol.md` v0.1 + IRB 패키지 v0.1 + `useScenarioValidator.ts` (POF 12 + critical 2) | ✅ 자체 / ✗ 평가 실시 |
+| ISO 14971 위험관리 | `risk-management-file.md` **v1.0** + 21 RM-* + 결정성 V&V 매핑 + 잔여위험 재평가 | ✅ 자체 |
+| 추적성 매트릭스 | IEC 62304 별지 제2호 export (`/api/therapist/system/iec62304-traceability?format=md`) + `traceability.ts` (51행) | ✅ 충족 |
+| 형상관리 / Release | `releaseManifest.ts` + `analyzeChangeImpact.ts` + git SHA + SBOM + SOUP sha256 동결 | ✅ 충족 |
+| 환자 온보딩 | `lib/onboarding/exclusionCheck.ts` (RM-007 통제) | ✅ 충족 |
+| Service Worker 캐싱 | `wasmSttCacheStrategy.ts` + `public/sw.js` stub | ✅ 스켈레톤 |
+| 사용자 매뉴얼 | `docs/manuals/manual-{therapist,patient,guardian}.md` v0.1 | ✅ 충족 |
+| GMP/QMS | `gmp-qms-decision-matrix.md` + `change-approval-sop.md` + `pms-capa-procedure.md` + `post-market-surveillance-plan.md` + 사용자 매뉴얼 3종 + `pre-launch-checklist.md` + `mfds-pre-consultation-pack.md` | ✅ 자체 / ⚠ 옵션 결정 (PM) |
 
 ## 개발 우선순위 재정렬
 
@@ -154,10 +165,10 @@
 
 ### P0-Code: 규제 리스크를 줄이는 코드 작업
 
-1. **WASM-STT 실제 엔진 연결 또는 클레임 하향**
-   - 둘 중 하나를 반드시 택해야 한다.
-   - 엔진 연결 전에는 “원본 미전송”을 전 제품 클레임으로 쓰면 안 된다.
-
+1. **WASM-STT 실제 엔진 연결** (2026-04-30 1단계 완료)
+   - transformers.js@4.2.0 + Xenova/whisper-tiny 어댑터 wiring 완료. daily_training/game_training useCase 는 온디바이스 처리.
+   - "훈련 useCase 는 원본 미전송" 클레임 가능. 단 weekly_kwab/clinical_evaluation 은 서버 Whisper 정책 명시 필요.
+   - 후속 (2단계): UI 로딩 인디케이터, step-1 실제 동작, RTF/P95 측정, KO WER 평가.
 2. **IRT/Bayesian 구현 또는 클레임 하향**
    - 제품기획서에 핵심 모듈로 들어가 있으므로 방치하면 질문 대상.
    - 단기 PM 권고: 허가 1차 자료에서는 `adaptive difficulty rule engine`으로 하향.
@@ -226,15 +237,29 @@
 
 ## 다음 의사결정
 
-PM 관점에서 바로 결정해야 할 것은 하나다.
+> **2026-04-30 정정**: NIDS 답변에 따라 "DTx 트랙 vs SaMD 트랙" 이 아니라 "1차 SaMD 신청 + DTx 분류 동시·후속 결정" 구조이다. 따라서 의사결정도 단순화된다.
 
-**1차 허가 범위를 좁힐 것인가, 제품기획서 전체 클레임을 유지할 것인가.**
+PM 관점에서 바로 결정해야 할 것은 다음 두 가지이다.
 
-권고안은 다음과 같다.
+### 1. 1차 허가 범위
+
+**결정 대상**: 1차 SaMD 신청에 어떤 사용목적·대상환자·금기사항을 명시할 것인가.
+
+권고안:
 
 - 1차 허가 범위: 뇌졸중/뇌손상 후 실어증·구음장애 대상 언어재활 보조 SaMD
 - 보조 사용자: 치료사/의사, 보호자 모니터링
 - 핵심 출력: 훈련 결과, K-WAB 보조 점수, 조음/음향/안면/반응시간/시선/AAC 보조 지표
 - 제외/보류: MCI, 완전 자동 진단, 완전 자동 치료 결정, AI가 임상 확정 판단을 대체한다는 표현
 
-이렇게 좁히면 P0는 문서·추적성·위험관리 중심이고, P1에서 RCT/IRT/WASM-STT를 순차적으로 붙일 수 있다.
+### 2. DTx 분류 동시 신청 여부
+
+**결정 대상**: 1차 SaMD 신청에 DTx 첨부자료 (PDF #7 §III.2 8종 + 전향적 임상자료) 를 함께 제출할지, 1차는 SaMD 정보제공·관리형으로 신청 후 변경허가로 DTx 분류를 추가 신청할지.
+
+판단 변수:
+
+- 부산대 / 서울 Big 5 RCT 진행 시점과 자료 강도
+- CPG·논문 인용 자료 (실어증 디지털 재활) 확보 수준
+- 1차 허가 timing (시판·매출 시작 시점) vs DTx 마케팅 가치 우선순위
+
+이렇게 분리하면 1차 허가는 P0 문서·추적성·위험관리 중심으로 진행 가능하고, RCT/IRT/WASM-STT 는 DTx 인정 자료 강화를 위해 P1 에서 순차 보강할 수 있다.

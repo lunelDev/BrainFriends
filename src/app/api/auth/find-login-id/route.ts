@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { findLoginIdByIdentity } from "@/lib/server/accountAuth";
+import {
+  FindLoginIdInputSchema,
+  validateInput,
+} from "@/lib/server/inputSchemas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,11 +17,20 @@ export async function POST(req: Request) {
     );
   }
 
+  // SI-05: zod 통합 스키마로 검증.
+  const parsed = validateInput(FindLoginIdInputSchema, body);
+  if (!parsed.ok || !parsed.data) {
+    return NextResponse.json(
+      { ok: false, error: "invalid_recovery_payload" },
+      { status: 400 },
+    );
+  }
+
   try {
     const result = await findLoginIdByIdentity({
-      name: String(body.name ?? ""),
-      birthDate: String(body.birthDate ?? ""),
-      phoneLast4: String(body.phoneLast4 ?? ""),
+      name: parsed.data.name,
+      birthDate: parsed.data.birthDate,
+      phoneLast4: parsed.data.phoneLast4,
     });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {

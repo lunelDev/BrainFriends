@@ -10,6 +10,7 @@ import {
 } from "@/lib/speech/sttPolicy";
 import { resolveSttRuntime } from "@/lib/speech/sttRuntime";
 import { resolveSttReviewOutcome, toReviewRequiredStatus } from "@/lib/speech/sttReview";
+import { resolveSttLanguageCode } from "@/lib/speech/sttLanguage";
 
 type SttFallback = {
   text: string;
@@ -88,10 +89,7 @@ export async function POST(req: Request) {
     outgoing.append("file", file, file.name || "recording.webm");
     outgoing.append("model", "whisper-1");
 
-    const language = String(incoming.get("language") || "ko").trim();
-    if (language) {
-      outgoing.append("language", language);
-    }
+    outgoing.append("language", resolveSttLanguageCode());
 
     const prompt = String(incoming.get("targetText") || "").trim();
     if (prompt) {

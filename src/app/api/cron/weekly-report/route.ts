@@ -8,6 +8,11 @@ import {
   createGuardianReportLink,
   listGuardianWeeklyReportCandidates,
 } from "@/lib/server/guardianReportsDb";
+import {
+  createWeeklyReportDelivery,
+  listRecentWeeklyReportDeliveries,
+  type DeliveryMode,
+} from "@/lib/server/weeklyReportSender";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,11 +55,25 @@ export async function GET(req: Request) {
     createdByUserId: operator.userId ?? "00000000-0000-0000-0000-000000000000",
     userRole: operator.userRole,
   });
+  const deliveryEvidence = await listRecentWeeklyReportDeliveries(20).catch((error) => ({
+    records: [],
+    summary: {
+      total: 0,
+      dryRun: 0,
+      pending: 0,
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+      latestCreatedAt: null,
+    },
+    error: error instanceof Error ? error.message : String(error),
+  }));
   return NextResponse.json({
     ok: true,
     mode: "preview",
-    delivery: "not_sent",
+    delivery: "preview_only",
     candidates,
+    deliveryEvidence,
   });
 }
 
@@ -70,34 +89,65 @@ export async function POST(req: Request) {
     : undefined;
   const ttlDaysRaw = Number(body?.ttlDays ?? 14);
   const ttlDays = Number.isFinite(ttlDaysRaw) ? ttlDaysRaw : 14;
+  const deliveryMode: DeliveryMode = body?.deliveryMode === "send" ? "send" : "dry_run";
 
   const candidates = await listGuardianWeeklyReportCandidates({
     createdByUserId: operator.userId ?? "00000000-0000-0000-0000-000000000000",
     userRole: operator.userRole,
     patientIds,
   });
-  const links = await Promise.all(
+  const results = await Promise.all(
     candidates.map((candidate) =>
       createGuardianReportLink({
         patientId: candidate.patientId,
         createdByUserId: operator.userId,
         recipientLabel: "주간 보호자 리포트",
         ttlDays,
-      }).then((link) => ({
-        patientId: candidate.patientId,
-        maskedName: candidate.maskedName,
-        latestCompletedAt: candidate.latestCompletedAt,
-        url: buildAbsoluteUrl(req, link.urlPath),
-        expiresAt: link.expiresAt,
-      })),
+      }).then(async (link) => {
+        const url = buildAbsoluteUrl(req, link.urlPath);
+        const status = deliveryMode === "dry_run" ? "dry_run" : "skipped";
+        const reason =
+          deliveryMode === "dry_run"
+            ? "dry_run_not_sent"
+            : "no_delivery_channel_configured";
+        const delivery = await createWeeklyReportDelivery({
+          patientId: candidate.patientId,
+          patientPseudonymId: link.patientPseudonymId,
+          linkId: link.id,
+          reportUrl: url,
+          recipientLabel: "주간 보호자 리포트",
+          channel: null,
+          deliveryMode,
+          status,
+          reason,
+          requestedByUserId: operator.userId,
+          latestCompletedAt: candidate.latestCompletedAt,
+          metadata: {
+            maskedName: candidate.maskedName,
+            cronMode: deliveryMode,
+            generatedBy: operator.userRole,
+          },
+        });
+        return {
+          patientId: candidate.patientId,
+          maskedName: candidate.maskedName,
+          latestCompletedAt: candidate.latestCompletedAt,
+          url,
+          expiresAt: link.expiresAt,
+          delivery,
+        };
+      }),
     ),
   );
+  const deliveryEvidence = await listRecentWeeklyReportDeliveries(20);
 
   return NextResponse.json({
     ok: true,
-    mode: "link_generation",
-    delivery: "not_sent",
-    generatedCount: links.length,
-    links,
+    mode: deliveryMode === "send" ? "delivery_attempt" : "dry_run",
+    delivery: deliveryMode === "send" ? "skipped_no_channel" : "dry_run_recorded",
+    generatedCount: results.length,
+    links: results.map(({ delivery, ...link }) => link),
+    deliveries: results.map((result) => result.delivery),
+    deliveryEvidence,
   });
 }

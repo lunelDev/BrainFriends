@@ -43,10 +43,13 @@ import {
   loadTransientStepStorage,
   saveTransientStepStorage,
 } from "@/lib/security/transientStepStorage";
+import { getSessionShuffledItems } from "@/lib/training/questionOrder";
 import {
   clearFirstDiagnosisFlow,
   isFirstDiagnosisFlow,
 } from "@/lib/firstDiagnosisFlow";
+import { useWasmSttLoading } from "@/lib/speech/useWasmSttLoading";
+import WasmSttLoadingIndicator from "@/components/training/WasmSttLoadingIndicator";
 
 export const dynamic = "force-dynamic";
 const STEP5_STORAGE_KEY = "step5_recorded_data";
@@ -59,6 +62,8 @@ interface ReadingMetrics {
   isCorrect?: boolean;
   audioUrl: string;
   totalTime: number;
+  audioDurationMs?: number;
+  processingMs?: number;
   responseTime?: number;
   recognitionResponseMs?: number;
   wordsPerMinute: number;
@@ -234,6 +239,7 @@ function Step5Content() {
   const [isMounted, setIsMounted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [phase, setPhase] = useState<"ready" | "reading" | "review">("ready");
+  const wasmSttLoading = useWasmSttLoading();
   const [readingTime, setReadingTime] = useState(0);
   const [highlightIndex, setHighlightIndex] = useState(-1);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
@@ -306,8 +312,13 @@ function Step5Content() {
   };
 
   const texts = useMemo(
-    () => READING_TEXTS[place] || READING_TEXTS.home,
-    [place],
+    () =>
+      getSessionShuffledItems(
+        `btt-question-order:step5:${sessionId}:${place}`,
+        READING_TEXTS[place] || READING_TEXTS.home,
+        (item) => `${item.id}|${item.title}|${item.text}`,
+      ),
+    [place, sessionId],
   );
   const stepSignature = useMemo(
     () =>
@@ -672,7 +683,13 @@ function Step5Content() {
     });
     try {
       if (!analyzerRef.current) analyzerRef.current = new SpeechAnalyzer();
-      const analysis = await analyzerRef.current.stopAnalysis(currentItem.text);
+      const analysis = await analyzerRef.current.stopAnalysis(currentItem.text, {
+        lifecycle: {
+          onWasmLoadStart: wasmSttLoading.beginLoad,
+          onWasmLoadSuccess: wasmSttLoading.finishLoad,
+          onWasmLoadError: wasmSttLoading.fail,
+        },
+      });
       if (analysis.errorReason) {
         const runtimeMessage = analysis.errorReason.includes(
           "recorder_stop_failed",
@@ -812,6 +829,8 @@ function Step5Content() {
         isCorrect: readingScore >= 70,
         audioUrl: audioBlob ? URL.createObjectURL(audioBlob) : "",
         totalTime: finalReadingTime,
+        audioDurationMs: analysis.duration,
+        processingMs: analysis.processingMs,
         responseTime: recognitionResponseMs,
         recognitionResponseMs,
         wordsPerMinute: wpm,
@@ -1299,6 +1318,13 @@ function Step5Content() {
                 })()}
               </div>
             </div>
+
+            <WasmSttLoadingIndicator
+              state={wasmSttLoading.state}
+              onRetry={wasmSttLoading.reset}
+              className="border-orange-200 bg-orange-50 text-orange-900"
+              barColorClassName="bg-orange-500"
+            />
 
             <div className="flex flex-col items-center gap-6">
               {phase === "ready" && (

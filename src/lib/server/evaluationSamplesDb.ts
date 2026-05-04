@@ -1,4 +1,4 @@
-import { appendFile, mkdir } from "fs/promises";
+import { appendFile, mkdir, readFile } from "fs/promises";
 import path from "path";
 import type { PoolClient } from "pg";
 import type { SpeechFaceMeasurement } from "@/lib/ai/measurementTypes";
@@ -212,6 +212,184 @@ export async function saveEvaluationSamplesToDatabase(
 }
 
 export async function getEvaluationSamplesSummary() {
+  try {
+    return await getEvaluationSamplesDatabaseSummary();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message !== "missing_database_url") {
+      throw error;
+    }
+    return getEvaluationSamplesFileSummary();
+  }
+}
+
+async function getEvaluationSamplesFileSummary() {
+  const evaluationPath = path.join(
+    process.cwd(),
+    "data",
+    "evaluation",
+    "evaluation-samples.ndjson",
+  );
+  let content = "";
+  try {
+    content = await readFile(evaluationPath, "utf8");
+  } catch {
+    content = "";
+  }
+
+  const samples = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        const record = JSON.parse(line) as { sample?: SpeechFaceMeasurement };
+        return record.sample ?? null;
+      } catch {
+        return null;
+      }
+    })
+    .filter((sample): sample is SpeechFaceMeasurement => Boolean(sample));
+
+  const versionMap = new Map<
+    string,
+    {
+      evaluationDatasetVersion: string;
+      modelVersion: string;
+      analysisVersion: string;
+      sampleCount: number;
+      latestCapturedAt: string | null;
+      pronunciationSum: number;
+      consonantSum: number;
+      vowelSum: number;
+      trackingSum: number;
+    }
+  >();
+  const modeMap = new Map<string, number>();
+  const qualityMap = new Map<string, number>();
+  let latestCapturedAt: string | null = null;
+
+  for (const sample of samples) {
+    if (
+      !latestCapturedAt ||
+      new Date(sample.capturedAt).getTime() >
+        new Date(latestCapturedAt).getTime()
+    ) {
+      latestCapturedAt = sample.capturedAt;
+    }
+    modeMap.set(sample.trainingMode, (modeMap.get(sample.trainingMode) ?? 0) + 1);
+    qualityMap.set(sample.quality, (qualityMap.get(sample.quality) ?? 0) + 1);
+
+    const key = [
+      sample.evaluationDatasetVersion,
+      sample.modelVersion,
+      sample.analysisVersion,
+    ].join("|");
+    const current =
+      versionMap.get(key) ??
+      {
+        evaluationDatasetVersion: sample.evaluationDatasetVersion,
+        modelVersion: sample.modelVersion,
+        analysisVersion: sample.analysisVersion,
+        sampleCount: 0,
+        latestCapturedAt: null,
+        pronunciationSum: 0,
+        consonantSum: 0,
+        vowelSum: 0,
+        trackingSum: 0,
+      };
+    current.sampleCount += 1;
+    current.pronunciationSum += Number(sample.pronunciationScore || 0);
+    current.consonantSum += Number(sample.consonantAccuracy || 0);
+    current.vowelSum += Number(sample.vowelAccuracy || 0);
+    current.trackingSum += Number(sample.trackingQuality || 0);
+    if (
+      !current.latestCapturedAt ||
+      new Date(sample.capturedAt).getTime() >
+        new Date(current.latestCapturedAt).getTime()
+    ) {
+      current.latestCapturedAt = sample.capturedAt;
+    }
+    versionMap.set(key, current);
+  }
+
+  const versions = Array.from(versionMap.values())
+    .map((item) => ({
+      evaluationDatasetVersion: item.evaluationDatasetVersion,
+      modelVersion: item.modelVersion,
+      analysisVersion: item.analysisVersion,
+      sampleCount: item.sampleCount,
+      latestCapturedAt: item.latestCapturedAt,
+      avgPronunciationScore: item.pronunciationSum / Math.max(1, item.sampleCount),
+      avgConsonantAccuracy: item.consonantSum / Math.max(1, item.sampleCount),
+      avgVowelAccuracy: item.vowelSum / Math.max(1, item.sampleCount),
+      avgTrackingQuality: item.trackingSum / Math.max(1, item.sampleCount),
+    }))
+    .sort((a, b) =>
+      String(b.latestCapturedAt ?? "").localeCompare(String(a.latestCapturedAt ?? "")),
+    )
+    .slice(0, 10);
+  const latestVersion = versions[0] ?? null;
+  const previousVersion = versions[1] ?? null;
+
+  return {
+    totalCount: samples.length,
+    measuredCount: samples.filter((sample) => sample.quality === "measured").length,
+    latestCapturedAt,
+    versions,
+    latestVersionComparison:
+      latestVersion && previousVersion
+        ? {
+            current: latestVersion,
+            previous: previousVersion,
+            sampleDelta: latestVersion.sampleCount - previousVersion.sampleCount,
+            pronunciationDelta:
+              latestVersion.avgPronunciationScore -
+              previousVersion.avgPronunciationScore,
+            consonantDelta:
+              latestVersion.avgConsonantAccuracy -
+              previousVersion.avgConsonantAccuracy,
+            vowelDelta:
+              latestVersion.avgVowelAccuracy - previousVersion.avgVowelAccuracy,
+            trackingDelta:
+              latestVersion.avgTrackingQuality - previousVersion.avgTrackingQuality,
+          }
+        : null,
+    modeBreakdown: Array.from(modeMap.entries())
+      .map(([trainingMode, sampleCount]) => ({ trainingMode, sampleCount }))
+      .sort((a, b) => b.sampleCount - a.sampleCount || a.trainingMode.localeCompare(b.trainingMode)),
+    qualityBreakdown: Array.from(qualityMap.entries())
+      .map(([quality, sampleCount]) => ({ quality, sampleCount }))
+      .sort((a, b) => b.sampleCount - a.sampleCount || a.quality.localeCompare(b.quality)),
+    storageTarget: "file" as const,
+    fallbackPath: evaluationPath,
+    recentSamples: samples
+      .slice()
+      .sort((a, b) => b.capturedAt.localeCompare(a.capturedAt))
+      .slice(0, 30)
+      .map((sample) => ({
+        historyId: sample.historyId,
+        sessionId: sample.sessionId,
+        utteranceId: sample.utteranceId,
+        trainingMode: sample.trainingMode,
+        rehabStep: sample.rehabStep,
+        quality: sample.quality,
+        prompt: sample.prompt,
+        transcript: sample.transcript,
+        consonantAccuracy: sample.consonantAccuracy,
+        vowelAccuracy: sample.vowelAccuracy,
+        pronunciationScore: sample.pronunciationScore,
+        trackingQuality: sample.trackingQuality,
+        processingMs: sample.processingMs,
+        capturedAt: sample.capturedAt,
+        modelVersion: sample.modelVersion,
+        analysisVersion: sample.analysisVersion,
+        evaluationDatasetVersion: sample.evaluationDatasetVersion,
+      })),
+  };
+}
+
+async function getEvaluationSamplesDatabaseSummary() {
   const pool = getDbPool();
   const client = await pool.connect();
 
@@ -310,6 +488,8 @@ export async function getEvaluationSamplesSummary() {
         quality: String(row.quality),
         sampleCount: Number(row.sample_count ?? 0),
       })),
+      storageTarget: "database" as const,
+      recentSamples: [],
     };
   } finally {
     client.release();

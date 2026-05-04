@@ -14,6 +14,7 @@
 | `docs/regulatory/traceability-matrix.md` | RM/SR/구현 파일/V&V/제출 증적을 한 표로 연결하는 추적성 매트릭스 |
 | `docs/regulatory/cloud-and-data-transfer.md` | 브라우저·서버·외부 STT 서비스로 어떤 데이터가 이동하는지 정리한 데이터 전송 명세 |
 | `docs/regulatory/ai-role-boundary.md` | AI·알고리즘 결과가 진단/치료 결정이 아니라 의료진 보조 지표임을 모듈별로 고정한 문서 |
+| `docs/regulatory/accredited-test-preplan-wasm-stt.md` | WASM-STT 공인시험 의뢰 전 시험항목·절차·판정기준을 정리한 사전 시험설계서 |
 | `docs/remediation/00-summary/spec-gap-roadmap.md` | 제품제안서 클레임과 현재 코드 사이의 기능 갭과 개발 우선순위를 보는 문서 |
 | `docs/remediation/00-summary/submission-readiness-summary.md` | 제출 준비 상태를 한 장으로 요약해서 보는 문서 |
 | `docs/remediation/00-summary/submission-pack-index.md` | 제출 패키지에 어떤 문서가 들어가야 하는지 보는 목차 |
@@ -32,6 +33,7 @@
 | `traceability-matrix.md` | 위험관리 ID, 소프트웨어 요구사항, 구현 파일, V&V 테스트, 제출 증적을 연결하는 문서 |
 | `cloud-and-data-transfer.md` | 온디바이스 처리 범위, 서버 저장, 외부 STT 전송, version metadata를 정리한 문서 |
 | `ai-role-boundary.md` | STT, 안면, 시선, AAC, K-WAB별 허용 사용과 금지 사용을 정리한 AI 역할 경계 문서 |
+| `accredited-test-preplan-wasm-stt.md` | WASM-STT 공인성적서 의뢰 전 내부 실측과 시험기관 협의를 위한 시험항목·절차서 |
 
 ## remediation/00-summary
 

@@ -31,7 +31,9 @@ import {
   type AacTrainingCommit,
 } from "@/lib/aac/trainingIntegration";
 import type { PlaceType } from "@/constants/trainingData";
-import { resolveClientSttPreflight } from "@/lib/speech/sttClientPreflight";
+import { WhisperTranscriber } from "@/lib/speech/SpeechAnalyzer";
+import { useWasmSttLoading } from "@/lib/speech/useWasmSttLoading";
+import WasmSttLoadingIndicator from "@/components/training/WasmSttLoadingIndicator";
 
 type SentenceQuestion = (typeof SENTENCE_EXAMPLE_QUESTIONS)[number];
 type SentenceMode = (typeof SENTENCE_MAGIC_MODES)[number];
@@ -560,6 +562,7 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
   const [battleModal, setBattleModal] = useState<BattleModal | null>(null);
   const [battleDetailsOpen, setBattleDetailsOpen] = useState(false);
   const [serverError, setServerError] = useState("");
+  const wasmSttLoading = useWasmSttLoading();
 
   // 결정론 셔플 시드. 컴포넌트 마운트 시 1회 결정 후 라운드마다 +1.
   // 현재 단계는 시드를 외부 결과 메타에 저장하지 않지만, 같은 마운트(=같은 세션)
@@ -849,37 +852,16 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
     setIsAnalyzing(true);
     setServerError("");
     try {
-      const sttPreflight = resolveClientSttPreflight({
+      const transcriber = new WhisperTranscriber();
+      const result = await transcriber.transcribe(audioBlob, {
+        targetText: targetSentence,
         useCase: "game_training",
+        lifecycle: {
+          onWasmLoadStart: wasmSttLoading.beginLoad,
+          onWasmLoadSuccess: wasmSttLoading.finishLoad,
+          onWasmLoadError: wasmSttLoading.fail,
+        },
       });
-      if (sttPreflight.isMock) {
-        evaluateTranscript(targetSentence);
-        setIsAnalyzing(false);
-        setMessage("개발용 mock STT 결과입니다.");
-        return;
-      }
-      if (!sttPreflight.canUploadToServer) {
-        throw new Error(`server_stt_blocked:${sttPreflight.reason}`);
-      }
-
-      const formData = new FormData();
-      formData.append("audio", audioBlob, "sentence-magic.webm");
-      formData.append("targetText", targetSentence);
-      formData.append("sttUseCase", "game_training");
-      formData.append("threshold", String(selectedThreshold));
-
-      const response = await fetch("/api/proxy/stt", {
-        method: "POST",
-        body: formData,
-      });
-
-      const result = await response.json();
-      if (result?.reviewRequired) {
-        throw new Error(result?.reviewReason || result?.reason || "stt_review_required");
-      }
-      if (!response.ok) {
-        throw new Error(result?.error || "STT server request failed.");
-      }
 
       setIsAnalyzing(false);
       evaluateTranscript(String(result.text ?? "").trim());
@@ -890,6 +872,8 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
       setServerError(
         message.includes("server_stt_blocked")
           ? "훈련 음성은 현재 서버로 전송하지 않습니다. 심볼 입력을 사용하거나 온디바이스 STT가 연결된 환경에서 다시 시도해 주세요."
+          : message.includes("wasm_stt_unavailable")
+            ? "이 브라우저에서는 온디바이스 STT를 사용할 수 없습니다. 심볼 입력을 사용하거나 WASM 지원 브라우저에서 다시 시도해 주세요."
           : message.includes("마이크")
           ? "마이크를 확인한 뒤 다시 시도해 주세요."
           : "음성 인식 연결이 불안정합니다. 다시 시도해 주세요.",
@@ -897,6 +881,8 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
       setMessage(
         message.includes("server_stt_blocked")
           ? "훈련 음성 서버 전송이 차단되었습니다."
+          : message.includes("wasm_stt")
+            ? "온디바이스 음성 인식에 실패했어요."
           : "음성 분석에 실패했어요. 다시 시도해 보세요.",
       );
     }
@@ -1258,6 +1244,13 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
               </p>
             </div>
           ) : null}
+
+          <WasmSttLoadingIndicator
+            state={wasmSttLoading.state}
+            onRetry={wasmSttLoading.reset}
+            className="mx-auto mt-5 max-w-4xl border-violet-500/30 bg-violet-950/30 text-violet-100"
+            barColorClassName="bg-violet-400"
+          />
 
             {battleModal ? (
               <SentenceBattleResultModal

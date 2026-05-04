@@ -22,8 +22,8 @@ export async function buildAiEvaluationEvidenceSummary() {
       inclusionRule: "quality=measured and transcript/version fields present",
     },
     operatingView: {
-      systemPage: "/therapist/system",
-      evaluationPage: "/therapist/system/evaluation",
+      systemPage: "/admin?section=samd",
+      evaluationPage: "/admin?section=samd",
     },
   };
 

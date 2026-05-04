@@ -22,7 +22,6 @@ import {
   getAuthenticatedSessionContext,
 } from "@/lib/server/accountAuth";
 import {
-  getTherapistPatientReportDetail,
   listTherapistColleagueSummaries,
   listTherapistPatientNotesScoped,
   listTherapistPatientReportSummaries,
@@ -72,7 +71,7 @@ function getQualityLabel(quality?: string | null) {
 function getModeLabel(mode?: string | null) {
   if (mode === "sing") return "노래";
   if (mode === "rehab") return "재활";
-  return "자가진단";
+  return "자가점검";
 }
 
 function getModeAccent(mode?: string | null) {
@@ -139,7 +138,7 @@ function summarizeMemo(memo: string, max = 60) {
 }
 
 // 환자 목록은 더 이상 별도 페이지가 아니라 본문 패널로 흡수됐다.
-// Quick Links 카드는 admin 의 운영용 진입점만 남긴다 — 결과 분석/시스템 점검 두 개.
+// Quick Links 카드는 admin 의 운영용 진입점만 남긴다.
 const ADMIN_QUICK_LINKS = [
   {
     title: "결과 분석 보기",
@@ -150,19 +149,9 @@ const ADMIN_QUICK_LINKS = [
     accent: "from-violet-500/85 to-indigo-800/75",
     eyebrow: "결과 해석",
   },
-  {
-    title: "시스템 점검",
-    body: "운영 상태, 계정 생성, 후속 조치 화면으로 이동합니다.",
-    href: "/therapist/system",
-    cta: "시스템 화면 열기",
-    icon: ClipboardList,
-    accent: "from-slate-700/85 to-slate-900/75",
-    eyebrow: "운영자 액션",
-  },
 ];
 
-// V&V 증적/AI 평가 내보내기는 /therapist/system 안 단일 허브에서만 노출.
-// 대시보드에서 중복 노출하던 RESULT_FILTER_LINKS/OPERATION_EXPORT_LINKS 는 제거.
+// V&V 증적/AI 평가 내보내기는 /admin 의 공인성적서·SaMD 섹션에서 노출한다.
 
 export default async function TherapistOverviewPage() {
   // 정책: admin 이든 치료사든 /therapist 페이지는 완전히 동일하게 렌더한다.
@@ -173,7 +162,6 @@ export default async function TherapistOverviewPage() {
 
   let patients: Awaited<ReturnType<typeof listTherapistPatientReportSummaries>> = [];
   let validationSampleEntries: Awaited<ReturnType<typeof listTherapistReportValidationSample>> = [];
-  let featuredPatientDetail: Awaited<ReturnType<typeof getTherapistPatientReportDetail>> | null = null;
   let therapistColleagues: Awaited<ReturnType<typeof listTherapistColleagueSummaries>> = [];
   let patientNotes: Record<string, TherapistPatientNote> = {};
   const context = token
@@ -190,13 +178,9 @@ export default async function TherapistOverviewPage() {
           listTherapistColleagueSummaries(token),
           listTherapistPatientNotesScoped(token),
         ]);
-      if (patients[0]?.patientId) {
-        featuredPatientDetail = await getTherapistPatientReportDetail(token, patients[0].patientId);
-      }
     } catch {
       patients = [];
       validationSampleEntries = [];
-      featuredPatientDetail = null;
       therapistColleagues = [];
       patientNotes = {};
     }
@@ -244,31 +228,15 @@ export default async function TherapistOverviewPage() {
       return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta);
     })
     .slice(0, 5);
-  const featuredEntries = featuredPatientDetail?.entries.slice(0, 6) ?? [];
-  const featuredLatest = featuredEntries[0];
-  const featuredStepCards = featuredLatest
-    ? [
-        ["Step 1", featuredLatest.stepScores.step1],
-        ["Step 2", featuredLatest.stepScores.step2],
-        ["Step 3", featuredLatest.stepScores.step3],
-        ["Step 4", featuredLatest.stepScores.step4],
-        ["Step 5", featuredLatest.stepScores.step5],
-        ["Step 6", featuredLatest.stepScores.step6],
-      ]
-    : [];
-  const featuredAqTrend = featuredEntries
-    .slice(0, 5)
-    .reverse()
-    .map((entry, index, rows) => ({
-      x: rows.length === 1 ? 0 : (index / (rows.length - 1)) * 100,
-      y: 100 - Math.max(0, Math.min(100, Number(entry.aq ?? 0))),
-      label: new Date(entry.completedAt).toLocaleDateString("ko-KR", {
-        month: "2-digit",
-        day: "2-digit",
-      }),
-      aq: Number(entry.aq ?? 0),
-    }));
-
+  const featuredPatientDetail = null as any;
+  const featuredLatest = null as any;
+  const featuredStepCards = [] as Array<[string, number]>;
+  const featuredAqTrend = [] as Array<{
+    x: number;
+    y: number;
+    label: string;
+    aq: number;
+  }>;
   // 치료사 화면용 합계 (개인 결정에 도움이 되는 지표).
   const totalSelf = patients.reduce((acc, p) => acc + (p.selfAssessmentCount ?? 0), 0);
   const totalRehab = patients.reduce((acc, p) => acc + (p.rehabCount ?? 0), 0);
@@ -619,7 +587,7 @@ export default async function TherapistOverviewPage() {
                 <div className="mt-4 flex flex-wrap items-end gap-6">
                   <div>
                     <p className="text-[11px] font-black uppercase tracking-[0.2em] text-white/80">
-                      최근 AQ
+                      최근 보조점수
                     </p>
                     <p className="mt-1 text-4xl font-black">
                       {Number(featuredLatest.aq ?? 0).toFixed(1)}
@@ -732,7 +700,7 @@ export default async function TherapistOverviewPage() {
               <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
                 <p className="text-sm font-black text-slate-500">주요 필터</p>
                 <p className="mt-2 text-sm font-medium leading-6 text-slate-700">
-                  측정 품질, 저장 상태, 최근 AQ 범위, 재활 Step 기준으로 결과 분석 화면을 이어서 사용합니다.
+                  측정 품질, 저장 상태, 최근 보조점수 범위, 재활 Step 기준으로 결과 분석 화면을 이어서 사용합니다.
                 </p>
               </div>
               <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">

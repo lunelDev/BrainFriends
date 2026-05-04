@@ -10,6 +10,9 @@
 // - Referrer-Policy: strict-origin-when-cross-origin
 // - Permissions-Policy: 카메라·마이크는 self 만 (FaceTracker / 녹음 사용)
 
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 const isProd = process.env.NODE_ENV === "production";
 
 const cspDirectives = [
@@ -51,6 +54,16 @@ if (isProd) {
 const nextConfig = {
   typescript: {
     ignoreBuildErrors: true, // 타입 에러 무시
+  },
+  webpack(config: {
+    resolve?: { alias?: Record<string, string> };
+  }) {
+    config.resolve = config.resolve ?? {};
+    config.resolve.alias = {
+      ...(config.resolve.alias ?? {}),
+      "onnxruntime-web/webgpu": require.resolve("onnxruntime-web/webgpu"),
+    };
+    return config;
   },
   async headers() {
     return [

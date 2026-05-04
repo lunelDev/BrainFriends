@@ -871,7 +871,7 @@ export default function SingTrainingResultPage() {
                 Brain Karaoke Result
               </p>
               <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
-                {result.song} 진단 결과
+                {result.song} 훈련 결과
               </h1>
               <p className="mt-2 text-base font-medium text-slate-500">
                 {result.userName}님의 언어 발화 훈련 기반 노래 분석 결과입니다.

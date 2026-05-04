@@ -23,7 +23,10 @@ export const DETERMINISTIC_VNV_CASES = [
   { id: "TC-RESULT-REFETCH-001", title: "server-first result refetch reconciliation", area: "result" },
 ] as const;
 
-function toExecutionResult(check: ReturnType<typeof runDeterministicChecks>[number]) {
+type DeterministicCheck = Awaited<ReturnType<typeof runDeterministicChecks>>[number];
+type AdminReportValidationSample = Awaited<ReturnType<typeof listAdminReportValidationSample>>;
+
+function toExecutionResult(check: DeterministicCheck) {
   return {
     testCaseId: check.id,
     passed: true,
@@ -38,7 +41,38 @@ function toExecutionResult(check: ReturnType<typeof runDeterministicChecks>[numb
 }
 
 export async function buildVnvEvidenceSummary(sessionToken: string) {
-  const entries = await listAdminReportValidationSample(sessionToken);
+  let entries: AdminReportValidationSample = [];
+  let runtimeEvidenceLoadStatus:
+    | {
+        ok: true;
+        source: "database";
+        error: null;
+        note: string;
+      }
+    | {
+        ok: false;
+        source: "unavailable";
+        error: string;
+        note: string;
+      };
+
+  try {
+    entries = await listAdminReportValidationSample(sessionToken);
+    runtimeEvidenceLoadStatus = {
+      ok: true,
+      source: "database",
+      error: null,
+      note: "Runtime-linked V&V evidence was loaded from stored result data.",
+    };
+  } catch (error) {
+    runtimeEvidenceLoadStatus = {
+      ok: false,
+      source: "unavailable",
+      error: error instanceof Error ? error.message : String(error),
+      note: "Stored runtime result evidence was omitted. Deterministic V&V, traceability, and saved execution-log evidence are still included.",
+    };
+  }
+
   const entriesWithVnv = entries.filter((entry) => entry.vnv?.summary);
   const requirementCoverage = new Map<string, number>();
   const testCaseCoverage = new Map<string, number>();
@@ -58,7 +92,7 @@ export async function buildVnvEvidenceSummary(sessionToken: string) {
     runtimeCheckCount += entry.vnv?.runtimeChecks?.length ?? 0;
   }
 
-  const deterministicExecutions = runDeterministicChecks().map((check) =>
+  const deterministicExecutions = (await runDeterministicChecks()).map((check) =>
     toExecutionResult(check),
   );
   const coreValidationExecutions = (await runCoreValidationSuite()).map((result) => ({
@@ -125,7 +159,7 @@ export async function buildVnvEvidenceSummary(sessionToken: string) {
     testCaseCoverage: Object.fromEntries(testCaseCoverage),
   };
 
-  const deterministicRun = buildDeterministicExecutionLogRecord();
+  const deterministicRun = await buildDeterministicExecutionLogRecord();
   const savedRuns = await listSavedVnvExecutionLogs(5);
   const latestSavedRun = await getLatestSavedVnvExecutionLog();
 
@@ -144,7 +178,9 @@ export async function buildVnvEvidenceSummary(sessionToken: string) {
       suiteCases: coreValidationExecutions.length,
       runtimeEvidenceRows: entriesWithVnv.length,
       runtimeCheckCount,
+      runtimeEvidenceLoaded: runtimeEvidenceLoadStatus.ok,
     },
+    runtimeEvidenceLoadStatus,
     executionLogPolicy: {
       rootDirectory: "docs/remediation/test-runs/<YYYY-MM-DD>/*.json",
       command: "npm run test:vnv:record",
@@ -212,5 +248,6 @@ export async function buildVnvEvidenceSummary(sessionToken: string) {
     requirementCoverageRows,
     recentRuntimeEvidence,
     coverage,
+    runtimeEvidenceLoadStatus,
   };
 }

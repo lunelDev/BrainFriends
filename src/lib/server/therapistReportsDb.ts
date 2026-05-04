@@ -404,15 +404,130 @@ export async function listTherapistReportValidationSample(sessionToken: string) 
     return [] satisfies TrainingHistoryEntry[];
   }
 
-  const details = await Promise.all(
-    summaries.map((summary) =>
-      getAdminPatientReportDetail(sessionToken, summary.patientId),
-    ),
+  const summaryByPseudonym = new Map(
+    summaries.map((summary) => [summary.patientPseudonymId, summary] as const),
   );
+  const patientPseudonymIds = Array.from(summaryByPseudonym.keys());
+  const pool = getDbPool();
+  const [languageRowsResult, singRowsResult] = await Promise.all([
+    pool.query(
+      `
+        SELECT
+          ltr.patient_pseudonym_id,
+          ltr.training_mode,
+          ltr.rehab_step,
+          cs.session_id::text AS session_id,
+          ltr.result_id::text AS result_id,
+          ltr.source_history_id,
+          ltr.aq,
+          cs.completed_at,
+          ltr.step_scores,
+          ltr.measurement_quality,
+          ltr.step_details->'__meta'->'vnv' AS vnv
+        FROM language_training_results ltr
+        JOIN clinical_sessions cs ON cs.session_id = ltr.session_id
+        WHERE ltr.patient_pseudonym_id = ANY($1::text[])
+        ORDER BY cs.completed_at DESC
+        LIMIT 100
+      `,
+      [patientPseudonymIds],
+    ),
+    pool.query(
+      `
+        SELECT
+          sr.patient_pseudonym_id,
+          cs.session_id::text AS session_id,
+          sr.result_id::text AS result_id,
+          sr.score,
+          sr.song_key,
+          cs.completed_at
+        FROM sing_results sr
+        JOIN clinical_sessions cs ON cs.session_id = sr.session_id
+        WHERE sr.patient_pseudonym_id = ANY($1::text[])
+        ORDER BY cs.completed_at DESC
+        LIMIT 100
+      `,
+      [patientPseudonymIds],
+    ),
+  ]);
 
-  return details
-    .flatMap((detail) => detail.entries)
-    .sort((left, right) => right.completedAt - left.completedAt);
+  const emptyStepDetails = {
+    step1: [],
+    step2: [],
+    step3: [],
+    step4: [],
+    step5: [],
+    step6: [],
+  };
+  const emptyStepScores = {
+    step1: 0,
+    step2: 0,
+    step3: 0,
+    step4: 0,
+    step5: 0,
+    step6: 0,
+  };
+
+  const languageEntries = languageRowsResult.rows.map((row: any) => {
+    const summary = summaryByPseudonym.get(String(row.patient_pseudonym_id));
+    return {
+      historyId: row.source_history_id ? String(row.source_history_id) : String(row.result_id),
+      sessionId: String(row.session_id),
+      patientKey: String(row.patient_pseudonym_id),
+      patientName: summary?.patientName ?? "사용자",
+      birthDate: summary?.birthDate ? String(summary.birthDate) : "",
+      age: 0,
+      educationYears: 0,
+      place: "home",
+      trainingMode: row.training_mode === "rehab" ? "rehab" : "self",
+      rehabStep: row.rehab_step == null ? undefined : Number(row.rehab_step),
+      completedAt: new Date(row.completed_at).getTime(),
+      aq: Number(row.aq ?? 0),
+      stepScores: row.step_scores ?? emptyStepScores,
+      stepDetails: emptyStepDetails,
+      measurementQuality: row.measurement_quality ?? undefined,
+      vnv: row.vnv ?? undefined,
+      dbSaveState: "saved",
+    } as TrainingHistoryEntry & { dbSaveState: string };
+  });
+
+  const singEntries = singRowsResult.rows.map((row: any) => {
+    const summary = summaryByPseudonym.get(String(row.patient_pseudonym_id));
+    const score = Number(row.score ?? 0);
+    return {
+      historyId: `history_sing_${String(row.result_id ?? new Date(row.completed_at).getTime())}`,
+      sessionId: String(row.session_id),
+      patientKey: String(row.patient_pseudonym_id),
+      patientName: summary?.patientName ?? "사용자",
+      birthDate: summary?.birthDate ? String(summary.birthDate) : "",
+      age: 0,
+      educationYears: 0,
+      place: "brain-sing",
+      trainingMode: "sing",
+      completedAt: new Date(row.completed_at).getTime(),
+      aq: score,
+      singResult: {
+        song: String(row.song_key ?? ""),
+        score,
+        finalJitter: "-",
+        finalSi: "-",
+        rtLatency: "-",
+        finalConsonant: "-",
+        finalVowel: "-",
+        lyricAccuracy: "-",
+        transcript: "",
+        comment: "",
+        rankings: [],
+      },
+      stepScores: emptyStepScores,
+      stepDetails: emptyStepDetails,
+      dbSaveState: "saved",
+    } as TrainingHistoryEntry & { dbSaveState: string };
+  });
+
+  return [...languageEntries, ...singEntries].sort(
+    (left, right) => right.completedAt - left.completedAt,
+  );
 }
 
 export async function getTherapistPatientReportDetail(

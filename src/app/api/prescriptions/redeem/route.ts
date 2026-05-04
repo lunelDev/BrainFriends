@@ -13,6 +13,10 @@ import {
 } from "@/lib/server/accountAuth";
 import { redeemPrescription } from "@/lib/server/prescriptionsDb";
 import { safeAppendAccess } from "@/lib/server/auditLog";
+import {
+  PrescriptionRedeemInputSchema,
+  validateInput,
+} from "@/lib/server/inputSchemas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,20 +33,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 
-  let body: Record<string, unknown>;
+  let body: unknown;
   try {
-    body = (await req.json()) as Record<string, unknown>;
+    body = await req.json();
   } catch {
     return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400 });
   }
 
-  const code = typeof body.code === "string" ? body.code.trim() : "";
-  if (!code) {
+  // SI-05: zod 통합 스키마로 검증.
+  const parsed = validateInput(PrescriptionRedeemInputSchema, body);
+  if (!parsed.ok || !parsed.data) {
     return NextResponse.json(
-      { ok: false, error: "missing_code" },
+      { ok: false, error: "invalid_payload" },
       { status: 400 },
     );
   }
+  const code = parsed.data.code;
 
   try {
     const rx = await redeemPrescription({ code, patientUserId: ctx.userId });

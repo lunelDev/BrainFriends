@@ -31,6 +31,7 @@ export async function GET() {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Content-Disposition": 'attachment; filename="brainfriends-vnv-evidence-report.json"',
+      "Cache-Control": "no-store",
     },
   });
 }

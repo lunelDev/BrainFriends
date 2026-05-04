@@ -1,0 +1,49 @@
+{
+  "manifestVersion": 1,
+  "productName": "golden",
+  "productVersion": "0.1.0",
+  "manifestHash": "97079f5ff913e6eb825f3d08171ea0b2fd4878d6607f018622c08c7d306a7810",
+  "components": [
+    {
+      "id": "git-sha",
+      "description": "Git HEAD commit (코드 base)",
+      "sha256": "22853fc9f2b3d00d647ccaa9af2039781579d4bbd4c468240315152f8db82422",
+      "meta": {
+        "dirty": true,
+        "gitSha": "f18702e5baeb968eee562da4e4118b689d6f156a"
+      }
+    },
+    {
+      "id": "package-lock",
+      "description": "npm 의존성 lock (정확한 트리)",
+      "sha256": "8b39d7c218fa33146202cf7ac872bd9d6f8784137fe016f2ff2f66e558a475c8",
+      "meta": {
+        "path": "package-lock.json"
+      }
+    },
+    {
+      "id": "python-requirements",
+      "description": "voice-analysis-service Python 의존성 동결",
+      "sha256": "b357a8b79899718a2a5b2a6dded3eef96c1850cdac634eaa3bf5aec3735d2f4b",
+      "meta": {
+        "path": "voice-analysis-service/requirements.txt"
+      }
+    },
+    {
+      "id": "sbom",
+      "description": "SBOM (CycloneDX, npm 트리)",
+      "sha256": "9204cf7cc0d1eed1cee55c11394f0f5103d127b152ec79a98abb7c7b9f5a7f99",
+      "meta": {
+        "path": "docs/security/sbom/latest.json"
+      }
+    },
+    {
+      "id": "soup",
+      "description": "SOUP 목록 (npm + pypi + model)",
+      "sha256": "8a7dc2ea950a616c088e2961d445c7bade7d3a96e5e93c465028eb7c304ea3e8",
+      "meta": {
+        "path": "docs/security/soup/latest.json"
+      }
+    }
+  ]
+}

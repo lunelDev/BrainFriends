@@ -37,6 +37,18 @@ import type {
   TherapistPatientNote,
 } from "@/lib/server/therapistNotes";
 
+type GuardianContactRecord = {
+  id: string;
+  guardianNameMasked: string;
+  relationship: string;
+  contactType: "email" | "phone";
+  contactMasked: string;
+  consentState: "pending" | "granted" | "revoked" | "expired";
+  effectiveConsentState: "pending" | "granted" | "revoked" | "expired";
+  reportAccessAllowed: boolean;
+  updatedAt: string;
+};
+
 function formatDate(value: number) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
@@ -60,7 +72,7 @@ function formatMode(entry: TrainingHistoryEntry) {
     return `언어 재활${entry.rehabStep ? ` · Step ${entry.rehabStep}` : ""}`;
   }
   if (entry.trainingMode === "sing") return "브레인 노래방";
-  return "자가 진단";
+  return "자가점검";
 }
 
 function getQualityLabel(quality: string) {
@@ -364,6 +376,16 @@ export default function TherapistPatientDetailPage() {
   const [isRevokingGuardianLink, setIsRevokingGuardianLink] = useState(false);
   const [guardianLinkNotice, setGuardianLinkNotice] = useState("");
   const [guardianLinkError, setGuardianLinkError] = useState("");
+  const [guardianContacts, setGuardianContacts] = useState<GuardianContactRecord[]>([]);
+  const [guardianName, setGuardianName] = useState("");
+  const [guardianRelationship, setGuardianRelationship] = useState("보호자");
+  const [guardianContactType, setGuardianContactType] =
+    useState<"email" | "phone">("phone");
+  const [guardianContactValue, setGuardianContactValue] = useState("");
+  const [guardianConsentGranted, setGuardianConsentGranted] = useState(false);
+  const [isSavingGuardianContact, setIsSavingGuardianContact] = useState(false);
+  const [guardianContactNotice, setGuardianContactNotice] = useState("");
+  const [guardianContactError, setGuardianContactError] = useState("");
 
   useEffect(() => {
     // admin/therapist 가 아니면 가드 훅이 redirect 하므로 fetch 자체를 보류.
@@ -421,6 +443,29 @@ export default function TherapistPatientDetailPage() {
       cancelled = true;
     };
   }, [patientId]);
+
+  useEffect(() => {
+    if (!isReady || !isAuthorized || !patientId) return;
+    let cancelled = false;
+    void fetch(`/api/guardian/contacts?patientId=${encodeURIComponent(patientId)}`)
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.ok) {
+          throw new Error(payload?.error || "guardian_contacts_failed");
+        }
+        if (!cancelled) {
+          setGuardianContacts(
+            Array.isArray(payload.contacts) ? payload.contacts : [],
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setGuardianContacts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [patientId, isReady, isAuthorized]);
 
   const summary = useMemo(() => {
     const measuredCount = entries.filter(
@@ -491,6 +536,10 @@ export default function TherapistPatientDetailPage() {
         })),
       ),
     [entries],
+  );
+  const grantedGuardianContact = useMemo(
+    () => guardianContacts.find((contact) => contact.reportAccessAllowed) ?? null,
+    [guardianContacts],
   );
 
   const exportPatientDetail = () => {
@@ -581,6 +630,71 @@ export default function TherapistPatientDetailPage() {
       );
     } finally {
       setIsSavingNote(false);
+    }
+  };
+
+  const saveGuardianContact = async () => {
+    if (!patientId) return;
+    setGuardianContactNotice("");
+    setGuardianContactError("");
+    setIsSavingGuardianContact(true);
+    try {
+      const response = await fetch("/api/guardian/contacts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patientId,
+          guardianName,
+          relationship: guardianRelationship,
+          contactType: guardianContactType,
+          contactValue: guardianContactValue,
+          consentGranted: guardianConsentGranted,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok || !payload?.contact) {
+        throw new Error(payload?.error || "guardian_contact_failed");
+      }
+      setGuardianContacts((prev) => [payload.contact, ...prev]);
+      setGuardianName("");
+      setGuardianContactValue("");
+      setGuardianConsentGranted(false);
+      setGuardianContactNotice("보호자 연락처와 동의 상태를 저장했습니다.");
+    } catch (contactError) {
+      setGuardianContactError(
+        contactError instanceof Error
+          ? contactError.message
+          : "보호자 연락처를 저장하지 못했습니다.",
+      );
+    } finally {
+      setIsSavingGuardianContact(false);
+    }
+  };
+
+  const revokeGuardianContact = async (contactId: string) => {
+    if (!patientId) return;
+    setGuardianContactNotice("");
+    setGuardianContactError("");
+    try {
+      const response = await fetch("/api/guardian/contacts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ patientId, contactId }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok || !payload?.contact) {
+        throw new Error(payload?.error || "guardian_contact_revoke_failed");
+      }
+      setGuardianContacts((prev) =>
+        prev.map((item) => (item.id === contactId ? payload.contact : item)),
+      );
+      setGuardianContactNotice("보호자 리포트 동의를 철회했습니다.");
+    } catch (contactError) {
+      setGuardianContactError(
+        contactError instanceof Error
+          ? contactError.message
+          : "보호자 동의를 철회하지 못했습니다.",
+      );
     }
   };
 
@@ -711,7 +825,7 @@ export default function TherapistPatientDetailPage() {
             <button
               type="button"
               onClick={createGuardianReportLink}
-              disabled={isGeneratingGuardianLink}
+              disabled={isGeneratingGuardianLink || !grantedGuardianContact}
               className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-black text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <LinkIcon className="h-4 w-4" />
@@ -727,6 +841,108 @@ export default function TherapistPatientDetailPage() {
           </div>
         </div>
       </article>
+
+      <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-sm font-black text-slate-950">보호자 연락처·동의</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">
+              원문 연락처는 저장하지 않고 마스킹값과 hash만 보존합니다. 동의 승인 상태에서만 리포트 링크와 주간 발송 후보가 생성됩니다.
+            </p>
+          </div>
+          <Badge tone={grantedGuardianContact ? "emerald" : "amber"}>
+            {grantedGuardianContact ? "동의 승인" : "동의 필요"}
+          </Badge>
+        </div>
+
+        <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_0.8fr_0.7fr_1fr_auto]">
+          <input
+            value={guardianName}
+            onChange={(event) => setGuardianName(event.target.value)}
+            placeholder="보호자 이름"
+            className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-sky-300"
+          />
+          <input
+            value={guardianRelationship}
+            onChange={(event) => setGuardianRelationship(event.target.value)}
+            placeholder="관계"
+            className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-sky-300"
+          />
+          <select
+            value={guardianContactType}
+            onChange={(event) =>
+              setGuardianContactType(event.target.value === "email" ? "email" : "phone")
+            }
+            className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-sky-300"
+          >
+            <option value="phone">휴대폰</option>
+            <option value="email">이메일</option>
+          </select>
+          <input
+            value={guardianContactValue}
+            onChange={(event) => setGuardianContactValue(event.target.value)}
+            placeholder={guardianContactType === "email" ? "guardian@example.com" : "010-0000-0000"}
+            className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-sky-300"
+          />
+          <button
+            type="button"
+            onClick={saveGuardianContact}
+            disabled={isSavingGuardianContact}
+            className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSavingGuardianContact ? "저장 중" : "저장"}
+          </button>
+        </div>
+        <label className="mt-3 flex items-center gap-2 text-sm font-bold text-slate-700">
+          <input
+            type="checkbox"
+            checked={guardianConsentGranted}
+            onChange={(event) => setGuardianConsentGranted(event.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          보호자 주간 리포트 수신 및 정보 제공 동의 확인
+        </label>
+        {guardianContactNotice ? (
+          <p className="mt-3 text-xs font-bold text-emerald-600">{guardianContactNotice}</p>
+        ) : null}
+        {guardianContactError ? (
+          <p className="mt-3 text-xs font-bold text-rose-600">{guardianContactError}</p>
+        ) : null}
+
+        {guardianContacts.length ? (
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            {guardianContacts.slice(0, 4).map((contact) => (
+              <div
+                key={contact.id}
+                className="rounded-[22px] border border-slate-200 bg-slate-50 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-slate-950">
+                      {contact.guardianNameMasked} · {contact.relationship}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      {contact.contactType === "email" ? "이메일" : "휴대폰"} {contact.contactMasked}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      상태 {contact.effectiveConsentState} · {formatDate(new Date(contact.updatedAt).getTime())}
+                    </p>
+                  </div>
+                  {contact.reportAccessAllowed ? (
+                    <button
+                      type="button"
+                      onClick={() => revokeGuardianContact(contact.id)}
+                      className="rounded-full border border-rose-200 bg-white px-3 py-1 text-xs font-black text-rose-700 transition hover:bg-rose-50"
+                    >
+                      동의 철회
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </section>
 
       {(guardianLinkUrl || guardianLinkNotice || guardianLinkError) ? (
         <section className="rounded-[28px] border border-sky-100 bg-white p-5 shadow-sm">
@@ -796,7 +1012,7 @@ export default function TherapistPatientDetailPage() {
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatusCard
-              title="최근 AQ"
+              title="최근 보조점수"
               value={`${Number(summary.latest?.aq ?? 0).toFixed(1)}점`}
               note={summary.latest ? formatDate(summary.latest.completedAt) : "기록 없음"}
             />
@@ -1096,7 +1312,7 @@ export default function TherapistPatientDetailPage() {
                   </div>
                   <div className="flex flex-wrap gap-2 text-xs font-black">
                     {/*
-                      자가진단(self) = 6 step 모두 거쳐 종합 AQ 산출.
+                      자가점검(self) = 6 step 모두 거쳐 보조점수 산출.
                       언어재활(rehab) = 단일 step 만 진행 → AQ 종합 표시는 임상적으로 모순.
                       따라서 trainingMode 에 따라 표시를 분기한다.
                       - self  : AQ 종합 + V&V

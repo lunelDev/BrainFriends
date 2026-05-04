@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TherapistAdminChromeBar } from "@/app/therapist/_components/TherapistAdminChromeBar";
-import { ChevronRight, Sparkles, Trophy } from "lucide-react";
+import { Box, ChevronRight, Sparkles, Trophy } from "lucide-react";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import {
   SessionManager,
@@ -24,10 +24,10 @@ type HistoryStats = {
 const MODE_CARDS = [
   {
     key: "diagnosis",
-    title: "자가 진단",
+    title: "자가점검",
     modeLabel: "Assessment",
     desc: "현재 상태를 빠르게 확인하고 다음 훈련 방향을 정합니다.",
-    actionLabel: "자가 진단 시작",
+    actionLabel: "자가점검 시작",
     imagePath: "/images/mode/self-assessment.png",
     accentColor: "from-orange-500/80 to-orange-700/70",
     onSelect: "/select-page/self-assessment",
@@ -139,8 +139,8 @@ function getQualityUi(level?: MeasurementQualityLevel) {
 function getNextGoal(latestAq: number | null | undefined) {
   const aq = Number(latestAq);
   if (!Number.isFinite(aq)) return "첫 결과를 만들어 보세요";
-  if (aq < 70) return "AQ 70점 이상 달성";
-  if (aq < 85) return `AQ ${Math.max(85, Math.ceil(aq + 3))}점 목표`;
+  if (aq < 70) return "보조점수 70점 이상 목표";
+  if (aq < 85) return `보조점수 ${Math.max(85, Math.ceil(aq + 3))}점 목표`;
   return "측정 품질을 유지하며 꾸준히 훈련";
 }
 
@@ -165,7 +165,7 @@ export default function ModeSelectPage() {
   const [isMounted, setIsMounted] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showFirstDiagnosisModal, setShowFirstDiagnosisModal] = useState(false);
-  const [pendingModeTitle, setPendingModeTitle] = useState("자가 진단");
+  const [pendingModeTitle, setPendingModeTitle] = useState("자가점검");
 
   useEffect(() => {
     setIsMounted(true);
@@ -358,6 +358,13 @@ export default function ModeSelectPage() {
               내 재활 관리
             </button>
             <button
+              onClick={() => router.push("/webxr")}
+              className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-black text-indigo-700 transition hover:bg-indigo-100"
+            >
+              <Box className="h-4 w-4" />
+              XR 공간
+            </button>
+            <button
               onClick={logout}
               className="rounded-full bg-slate-900 px-4 py-2 text-sm font-black text-white transition hover:bg-slate-800"
             >
@@ -371,7 +378,7 @@ export default function ModeSelectPage() {
         <section className="mb-4 flex flex-wrap gap-2">
           <Pill subtle>연속 훈련 {dashboard.streakDays}일</Pill>
           <Pill subtle>측정 품질 {dashboard.quality.label}</Pill>
-          <Pill subtle>자가진단 {dashboard.selfCount}건</Pill>
+          <Pill subtle>자가점검 {dashboard.selfCount}건</Pill>
           <Pill subtle>재활 {dashboard.rehabCount}건</Pill>
           <Pill subtle>노래 훈련 {dashboard.singCount}건</Pill>
         </section>
@@ -383,11 +390,11 @@ export default function ModeSelectPage() {
             value={`${dashboard.todayTrainings}`}
             hint="오늘 완료한 기록"
             actionLabel="훈련 시작하기"
-            onClick={() => moveToSelectedMode("/select-page/self-assessment", "자가 진단")}
+            onClick={() => moveToSelectedMode("/select-page/self-assessment", "자가점검")}
           />
           <MetricCard
             icon={<Trophy className="h-5 w-5 text-amber-500" />}
-            label="최근 AQ"
+            label="최근 보조점수"
             value={formatAq(dashboard.recentAq)}
             hint={
               dashboard.aqDelta == null
@@ -407,7 +414,7 @@ export default function ModeSelectPage() {
             label="최근 결과"
             value={
               dashboard.latest
-                ? `${formatDate(dashboard.latest.completedAt)} · AQ ${formatAq(dashboard.latest.aq)}`
+                ? `${formatDate(dashboard.latest.completedAt)} · 보조점수 ${formatAq(dashboard.latest.aq)}`
                 : "최근 결과 없음"
             }
             hint={dashboard.latest ? "결과 확인하기" : "첫 훈련을 시작해 보세요"}
@@ -437,7 +444,7 @@ export default function ModeSelectPage() {
             <div className="mt-6 space-y-4">
               {isFirstTraining ? (
                 <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm font-bold text-amber-800">
-                  최초 이용 시에는 모든 훈련에 앞서 자가진단을 먼저 진행합니다.
+                  최초 이용 시에는 모든 훈련에 앞서 자가점검을 먼저 진행합니다.
                 </div>
               ) : null}
               {MODE_CARDS.map((card) => {
@@ -504,18 +511,18 @@ export default function ModeSelectPage() {
               First Diagnosis
             </p>
             <h2 className="mt-3 text-lg font-black tracking-tight text-slate-950 sm:text-xl lg:text-2xl">
-              최초 1회는 자가진단이 필요합니다.
+              최초 1회는 자가점검이 필요합니다.
             </h2>
             <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
               {pendingModeTitle}을(를) 시작하기 전에 현재 상태를 확인하기 위한
-              자가진단을 먼저 진행합니다.
+              자가점검을 먼저 진행합니다.
             </p>
             <div className="mt-6 flex flex-col gap-3">
               <button
                 type="button"
                 onClick={() => {
                   setShowFirstDiagnosisModal(false);
-                  // 최초 자가진단은 "우리집(home)" place 로 바로 step-1 진입.
+                  // 최초 자가점검은 "우리집(home)" place 로 바로 step-1 진입.
                   // self-assessment select 페이지에서 set 되던 trainingMode 플래그를
                   // 건너뛰지 않도록 같이 set.
                   if (typeof window !== "undefined") {
@@ -528,7 +535,7 @@ export default function ModeSelectPage() {
                 }}
                 className="rounded-full bg-slate-900 px-5 py-3 text-sm font-black text-white transition hover:bg-slate-800"
               >
-                자가진단 시작
+                자가점검 시작
               </button>
               <button
                 type="button"
@@ -626,4 +633,3 @@ function Pill({
     </span>
   );
 }
-

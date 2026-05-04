@@ -1,0 +1,256 @@
+{
+  "datasetId": "rtf-fixture-v0.1",
+  "generatedAt": "2026-04-30T00:00:00.000Z",
+  "modelId": "wasm:Xenova/whisper-tiny",
+  "p95TargetMs": 41.5,
+  "rowCount": 10,
+  "rows": [
+    {
+      "age": 68,
+      "ageGroup": "60s",
+      "audioDurationMs": 2500,
+      "deviceType": "android",
+      "noiseLevel": "low",
+      "passesP95Target": true,
+      "processingMs": 38,
+      "rtf": 0.0152,
+      "sampleId": "P001",
+      "severity": "moderate"
+    },
+    {
+      "age": 72,
+      "ageGroup": "70s",
+      "audioDurationMs": 3200,
+      "deviceType": "ios",
+      "noiseLevel": "mid",
+      "passesP95Target": false,
+      "processingMs": 45.2,
+      "rtf": 0.0141,
+      "sampleId": "P002",
+      "severity": "severe"
+    },
+    {
+      "age": 75,
+      "ageGroup": "70s",
+      "audioDurationMs": 1800,
+      "deviceType": "android",
+      "noiseLevel": "low",
+      "passesP95Target": true,
+      "processingMs": 30.5,
+      "rtf": 0.0169,
+      "sampleId": "P003",
+      "severity": "mild"
+    },
+    {
+      "age": 82,
+      "ageGroup": "80s",
+      "audioDurationMs": 4100,
+      "deviceType": "ipad",
+      "noiseLevel": "high",
+      "passesP95Target": false,
+      "processingMs": 68.3,
+      "rtf": 0.0167,
+      "sampleId": "P004",
+      "severity": "severe"
+    },
+    {
+      "age": 65,
+      "ageGroup": "60s",
+      "audioDurationMs": 2200,
+      "deviceType": "android",
+      "noiseLevel": "low",
+      "passesP95Target": true,
+      "processingMs": 35,
+      "rtf": 0.0159,
+      "sampleId": "P005",
+      "severity": "moderate"
+    },
+    {
+      "age": 71,
+      "ageGroup": "70s",
+      "audioDurationMs": 2800,
+      "deviceType": "ios",
+      "noiseLevel": "low",
+      "passesP95Target": true,
+      "processingMs": 40.1,
+      "rtf": 0.0143,
+      "sampleId": "P006",
+      "severity": "mild"
+    },
+    {
+      "age": 78,
+      "ageGroup": "70s",
+      "audioDurationMs": 3500,
+      "deviceType": "android",
+      "noiseLevel": "mid",
+      "passesP95Target": false,
+      "processingMs": 52.7,
+      "rtf": 0.0151,
+      "sampleId": "P007",
+      "severity": "severe"
+    },
+    {
+      "age": 84,
+      "ageGroup": "80s",
+      "audioDurationMs": 3900,
+      "deviceType": "ipad",
+      "noiseLevel": "high",
+      "passesP95Target": false,
+      "processingMs": 75.4,
+      "rtf": 0.0193,
+      "sampleId": "P008",
+      "severity": "moderate"
+    },
+    {
+      "age": 67,
+      "ageGroup": "60s",
+      "audioDurationMs": 2100,
+      "deviceType": "android",
+      "noiseLevel": "low",
+      "passesP95Target": true,
+      "processingMs": 33.2,
+      "rtf": 0.0158,
+      "sampleId": "P009",
+      "severity": "mild"
+    },
+    {
+      "age": 73,
+      "ageGroup": "70s",
+      "audioDurationMs": 2900,
+      "deviceType": "ios",
+      "noiseLevel": "mid",
+      "passesP95Target": true,
+      "processingMs": 41,
+      "rtf": 0.0141,
+      "sampleId": "P010",
+      "severity": "moderate"
+    }
+  ],
+  "summary": {
+    "byAgeGroup": {
+      "60s": {
+        "meanLatencyMs": 35.4,
+        "meanRtf": 0.0156,
+        "p50LatencyMs": 35,
+        "p95LatencyMs": 37.7,
+        "p99LatencyMs": 37.94,
+        "passRateP95Target": 1,
+        "total": 3
+      },
+      "70s": {
+        "meanLatencyMs": 41.9,
+        "meanRtf": 0.0149,
+        "p50LatencyMs": 41,
+        "p95LatencyMs": 51.2,
+        "p99LatencyMs": 52.4,
+        "passRateP95Target": 0.6,
+        "total": 5
+      },
+      "80s": {
+        "meanLatencyMs": 71.85,
+        "meanRtf": 0.018,
+        "p50LatencyMs": 71.85,
+        "p95LatencyMs": 75.045,
+        "p99LatencyMs": 75.329,
+        "passRateP95Target": 0,
+        "total": 2
+      }
+    },
+    "byDevice": {
+      "android": {
+        "meanLatencyMs": 37.88,
+        "meanRtf": 0.0158,
+        "p50LatencyMs": 35,
+        "p95LatencyMs": 49.76,
+        "p99LatencyMs": 52.112,
+        "passRateP95Target": 0.8,
+        "total": 5
+      },
+      "ios": {
+        "meanLatencyMs": 42.1,
+        "meanRtf": 0.0142,
+        "p50LatencyMs": 41,
+        "p95LatencyMs": 44.78,
+        "p99LatencyMs": 45.116,
+        "passRateP95Target": 0.6667,
+        "total": 3
+      },
+      "ipad": {
+        "meanLatencyMs": 71.85,
+        "meanRtf": 0.018,
+        "p50LatencyMs": 71.85,
+        "p95LatencyMs": 75.045,
+        "p99LatencyMs": 75.329,
+        "passRateP95Target": 0,
+        "total": 2
+      }
+    },
+    "byNoise": {
+      "high": {
+        "meanLatencyMs": 71.85,
+        "meanRtf": 0.018,
+        "p50LatencyMs": 71.85,
+        "p95LatencyMs": 75.045,
+        "p99LatencyMs": 75.329,
+        "passRateP95Target": 0,
+        "total": 2
+      },
+      "low": {
+        "meanLatencyMs": 35.36,
+        "meanRtf": 0.0156,
+        "p50LatencyMs": 35,
+        "p95LatencyMs": 39.68,
+        "p99LatencyMs": 40.016,
+        "passRateP95Target": 1,
+        "total": 5
+      },
+      "mid": {
+        "meanLatencyMs": 46.3,
+        "meanRtf": 0.0144,
+        "p50LatencyMs": 45.2,
+        "p95LatencyMs": 51.95,
+        "p99LatencyMs": 52.55,
+        "passRateP95Target": 0.3333,
+        "total": 3
+      }
+    },
+    "bySeverity": {
+      "mild": {
+        "meanLatencyMs": 34.6,
+        "meanRtf": 0.0157,
+        "p50LatencyMs": 33.2,
+        "p95LatencyMs": 39.41,
+        "p99LatencyMs": 39.962,
+        "passRateP95Target": 1,
+        "total": 3
+      },
+      "moderate": {
+        "meanLatencyMs": 47.35,
+        "meanRtf": 0.0161,
+        "p50LatencyMs": 39.5,
+        "p95LatencyMs": 70.24,
+        "p99LatencyMs": 74.368,
+        "passRateP95Target": 0.75,
+        "total": 4
+      },
+      "severe": {
+        "meanLatencyMs": 55.4,
+        "meanRtf": 0.0153,
+        "p50LatencyMs": 52.7,
+        "p95LatencyMs": 66.74,
+        "p99LatencyMs": 67.988,
+        "passRateP95Target": 0,
+        "total": 3
+      }
+    },
+    "overall": {
+      "meanLatencyMs": 45.94,
+      "meanRtf": 0.0157,
+      "p50LatencyMs": 40.55,
+      "p95LatencyMs": 72.205,
+      "p99LatencyMs": 74.761,
+      "passRateP95Target": 0.6,
+      "total": 10
+    }
+  }
+}

@@ -6,6 +6,7 @@ import type { SttUseCase } from "@/lib/speech/sttPolicy";
 import { buildKoreanSttPrompt } from "@/lib/speech/sttPrompt";
 import { resolveSttRuntime } from "@/lib/speech/sttRuntime";
 import { transcribeWithWasmStt } from "@/lib/speech/wasmSttAdapter";
+import { resolveSttLanguageCode } from "@/lib/speech/sttLanguage";
 import {
   resolveSttReviewOutcome,
   toReviewRequiredStatus,
@@ -17,6 +18,7 @@ export interface SpeechAnalysisResult {
   confidence: number;
   pronunciationScore: number;
   duration: number;
+  processingMs: number;
   audioLevel: number;
   audioBlob?: Blob;
   errorReason?: string;
@@ -30,6 +32,12 @@ export interface SpeechAnalysisResult {
     vowelAccuracy: number;
   };
 }
+
+export type SttLifecycleCallbacks = {
+  onWasmLoadStart?: () => void;
+  onWasmLoadSuccess?: () => void;
+  onWasmLoadError?: (errorCode: string) => void;
+};
 
 export interface PronunciationMetrics {
   syllableAccuracy: number;
@@ -170,6 +178,7 @@ export class WhisperTranscriber {
     options?: {
       targetText?: string;
       useCase?: SttUseCase;
+      lifecycle?: SttLifecycleCallbacks;
     },
   ): Promise<{
     text: string;
@@ -198,10 +207,20 @@ export class WhisperTranscriber {
     }
 
     if (runtime.engine === "wasm_whisper") {
-      const result = await transcribeWithWasmStt(audioBlob, {
-        targetText: options?.targetText,
-        useCase,
-      });
+      options?.lifecycle?.onWasmLoadStart?.();
+      let result: Awaited<ReturnType<typeof transcribeWithWasmStt>>;
+      try {
+        result = await transcribeWithWasmStt(audioBlob, {
+          targetText: options?.targetText,
+          useCase,
+        });
+        options?.lifecycle?.onWasmLoadSuccess?.();
+      } catch (error) {
+        options?.lifecycle?.onWasmLoadError?.(
+          error instanceof Error ? error.message : "wasm_stt_unknown_error",
+        );
+        throw error;
+      }
       return {
         text: result.text,
         confidence: result.confidence,
@@ -224,7 +243,7 @@ export class WhisperTranscriber {
     const formData = new FormData();
     formData.append("file", audioBlob, `audio.${extension}`);
     formData.append("model", "whisper-1");
-    formData.append("language", "ko");
+    formData.append("language", resolveSttLanguageCode());
     formData.append("response_format", "verbose_json");
     formData.append("sttUseCase", useCase);
     const prompt = buildKoreanSttPrompt(options?.targetText);
@@ -443,7 +462,10 @@ export class SpeechAnalyzer {
     await this.recorder.startRecording(onAudioLevel, inputStream);
   }
 
-  async stopAnalysis(expectedText: string): Promise<SpeechAnalysisResult> {
+  async stopAnalysis(
+    expectedText: string,
+    options?: { lifecycle?: SttLifecycleCallbacks },
+  ): Promise<SpeechAnalysisResult> {
     let audioBlob: Blob;
     const duration = Date.now() - this.startTime;
     try {
@@ -454,6 +476,7 @@ export class SpeechAnalyzer {
         confidence: 0,
         pronunciationScore: 0,
         duration: Math.max(0, duration),
+        processingMs: 0,
         audioLevel: 0,
         sttStatus: "review_required",
         sttDetailStatus: "stt_failed",
@@ -477,6 +500,7 @@ export class SpeechAnalyzer {
         confidence: 0.99,
         pronunciationScore: 95,
         duration,
+        processingMs: 0,
         audioLevel: 50,
         audioBlob,
         sttStatus: "ok",
@@ -488,6 +512,7 @@ export class SpeechAnalyzer {
     }
 
     try {
+      const transcribeStartedAt = performance.now();
       const {
         text,
         confidence,
@@ -498,7 +523,12 @@ export class SpeechAnalyzer {
       } = await this.transcriber.transcribe(audioBlob, {
         targetText: expectedText,
         useCase: "daily_training",
+        lifecycle: options?.lifecycle,
       });
+      const processingMs = Math.max(
+        0,
+        Math.round((performance.now() - transcribeStartedAt) * 10) / 10,
+      );
       const metrics = this.pronunciationAnalyzer.analyzeDetailed(
         expectedText,
         text,
@@ -509,6 +539,7 @@ export class SpeechAnalyzer {
         confidence,
         pronunciationScore: Math.round(metrics.clarityScore),
         duration,
+        processingMs,
         audioLevel: 0,
         audioBlob,
         sttStatus,
@@ -527,6 +558,7 @@ export class SpeechAnalyzer {
         confidence: 0,
         pronunciationScore: 0,
         duration,
+        processingMs: 0,
         audioLevel: 0,
         audioBlob,
         sttStatus: "review_required",

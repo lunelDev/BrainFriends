@@ -1,0 +1,11 @@
+sample_id,age,severity,device_type,noise,audio_duration_ms,processing_ms
+P001,68,moderate,android,low,2500,38.0
+P002,72,severe,ios,mid,3200,45.2
+P003,75,mild,android,low,1800,30.5
+P004,82,severe,ipad,high,4100,68.3
+P005,65,moderate,android,low,2200,35.0
+P006,71,mild,ios,low,2800,40.1
+P007,78,severe,android,mid,3500,52.7
+P008,84,moderate,ipad,high,3900,75.4
+P009,67,mild,android,low,2100,33.2
+P010,73,moderate,ios,mid,2900,41.0

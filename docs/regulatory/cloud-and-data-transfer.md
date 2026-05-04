@@ -74,7 +74,7 @@
 | --- | --- | --- | --- |
 | audio file | 사용자가 녹음한 음성 원본 | 높음 | useCase 제한, 프록시 경유, review metadata 기록 |
 | model | 현재 `whisper-1` | 낮음 | version metadata 기록 |
-| language | 기본 `ko` | 낮음 | 고정 또는 요청값 |
+| language | `ko` 고정 | 낮음 | 클라이언트 요청값 무시, `sttLanguage.ts` 상수 사용 |
 | prompt | 한국어 재활 과제 어휘 prompt | 중간 | prompt version/hash 기록 |
 
 외부 STT 응답에서 저장·전달되는 항목은 다음이다.
@@ -98,7 +98,7 @@
 | gaze 누적 지표 | 적용 | 브라우저 세션 누적 |
 | AAC 문장 preview | 적용 | 브라우저에서 규칙 기반 preview |
 | AAC commit 검증 | 서버 재계산 | 서버에서 같은 sequence로 sentence 재생성 |
-| STT | 부분 적용 예정 | 정책상 WASM 우선이나 실제 WASM STT 엔진은 미연결 |
+| STT | 부분 적용 | 훈련 useCase WASM adapter wiring 완료. 실측 RTF/WER 및 브라우저 호환성 검증 필요 |
 
 ## 5. 저장 위치
 
@@ -165,7 +165,7 @@ STT 또는 AI 관련 결과에는 다음 메타데이터를 남기는 것을 기
 
 | 우선순위 | 작업 | 이유 |
 | --- | --- | --- |
-| P0-Code | WASM STT 실제 엔진 연결 또는 STT 클레임 하향 유지 결정 | 제품제안서의 온디바이스 STT 클레임과 직접 연결 |
+| P0-Code | WASM STT 실측 RTF/WER 및 브라우저 호환성 검증 | 제품제안서의 온디바이스 STT 클레임 방어 |
 | P0-Reg | STT 외부 서비스 위탁/제3자 처리 고지 문구 확정 | 개인정보·보안 심사 대응 |
 | P1 | STT WER/CER 검증셋 구축 | 성능 수치 방어 |
 | P1 | 결과 리포트에 STT metadata 표시 또는 export 포함 | 변경관리 증적 |
@@ -184,4 +184,4 @@ STT 또는 AI 관련 결과에는 다음 메타데이터를 남기는 것을 기
 | 저장 실패 | fallback/재시도/수동 검토 V&V 구현 | Phase 1 완료 |
 | Traceability | RM/SR/TC/파일 연결 문서 작성 | v0.1 완료 |
 
-P0는 “규제 리스크를 줄이는 Phase 1 증적” 기준으로는 대부분 완료다. 다만 “제품제안서 클레임을 100% 구현” 기준으로는 WASM-STT 실제 엔진, AAC 사용 빈도 기반 UX, Gaze calibration UI가 아직 남아 있다. 현재 코드는 WASM 엔진이 없을 때 훈련 음성 서버 업로드를 client preflight 로 차단하는 방식을 적용한다.
+P0는 “규제 리스크를 줄이는 Phase 1 증적” 기준으로는 대부분 완료다. 다만 “제품제안서 클레임을 100% 구현” 기준으로는 WASM-STT 실측 RTF/WER, AAC 사용 빈도 기반 UX, Gaze calibration UI가 아직 남아 있다. 현재 코드는 훈련 useCase의 WASM adapter wiring을 포함하고, WASM 미지원 환경에서는 훈련 음성 서버 업로드를 client preflight 로 차단한다.

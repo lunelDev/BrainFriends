@@ -589,7 +589,7 @@ function ResultRehabPage() {
               className="px-3 sm:px-4 py-2 bg-sky-500 text-white rounded-xl text-[11px] sm:text-xs font-bold shadow-sm hover:bg-sky-600 active:scale-95 transition-all inline-flex items-center gap-1.5"
             >
               <Printer className="w-3.5 h-3.5" />
-              진단서 출력
+              리포트 출력
             </button>
             <button
               type="button"

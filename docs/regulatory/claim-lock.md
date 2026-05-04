@@ -28,6 +28,7 @@
 | 제품 유형 | 브레인프렌즈는 언어재활 훈련과 경과 모니터링을 보조하는 독립형 디지털의료기기소프트웨어로 개발 중이다. | 웹 기반 SaMD 구조, 디지털의료기기 허가·심사 대상성 |
 | 1차 적응 범위 | 뇌졸중, 외상성 뇌손상, 기타 뇌질환 이후 발생한 실어증·마비말장애 환자의 언어재활 보조를 1차 범위로 한다. | 현재 훈련·평가 흐름과 K-WAB 기반 구조 |
 | 사용자 구조 | 환자, 치료사·의사, 보호자를 포함한 3-Tier 사용 구조를 지원한다. | 환자 훈련, 치료사 대시보드, 보호자 리포트 링크 |
+| 사용 환경 (장면 시나리오) | 가정, 병원, 커피숍, 은행, 공원, 마트 6개 장면을 훈련/평가 시나리오로 제공한다. 신규 환경 추가는 임상가 검토 + 이미지 자산 + 정식 PROTOCOL 확정 + 변경허가 신청을 거친다. | `trainingData.ts` PlaceType (6), `inputSchemas.ts` PlaceTypeSchema, `aacData.ts` AAC_PLACE_SYMBOLS, visual/speech/auditory/writing/reading/fluency 시나리오 매핑 |
 | 멀티모달 입력 | 음성, 안면 움직임, 반응시간, 시선, AAC 심볼 입력을 재활 훈련 및 모니터링 보조 지표로 수집·분석한다. | STT, FaceLandmarker, reactionTime, gaze data layer, AAC Phase 1 |
 | 안면 분석 | MediaPipe 기반 안면 랜드마크를 활용해 구강 개폐, 입술 움직임, 조음 관련 보조 지표를 산출한다. | `FaceTracker`, `faceAnalysis`, V&V |
 | 시선 분석 | 홍채·눈 주변 랜드마크 기반으로 화면 중앙 응시 비율, 이탈 시간, 측정 품질을 보조 지표로 산출한다. | gaze metrics, accumulator, V&V |
@@ -35,6 +36,13 @@
 | K-WAB | K-WAB 기반 하위검사 결과를 자동 계산하고 치료사 검토를 보조한다. | K-WAB scoring, final result API |
 | 운영 기능 | 치료사 메모, 처방, follow-up, 보호자 read-only 리포트 링크 등 재활 운영 보조 기능을 제공한다. | therapist, prescriptions, guardian report link |
 | 안전·품질 기반 | V&V, 보안 감사, AI 성능평가, 부작용 보고 기능을 제품 개발 산출물로 관리한다. | V&V, security, AI evaluation, adverse-events |
+| 사이버보안 통제 | 식약처 사이버보안 가이드라인 35 항목 중 ~77% 를 결정성 V&V (TC-SEC-*) 와 산출물 도큐멘테이션으로 검증한다. 비밀번호 강도, 5회 실패 잠금, 30분 idle, sliding window rate limit, HMAC 감사로그 체인, 통합 오류 dictionary, zod 입력 검증, SOUP 정규화, release manifest 무결성, **CVE 면제 등록부 (high 7건 reachability 평가)** 를 운영 중이다. | `SR-SEC-IA05/IA07/UC03/RA01/UC07/TRE01/SI07/SI05/SI04-SOUP/SI04-MANIFEST` + 결정성 TC 10건 + `docs/security/cve-exemptions.md` v0.1 |
+| 형상관리·변경관리 | git SHA + package-lock + Python requirements + SBOM + SOUP + 모델 자산 sha256 을 release manifest 로 동결하고, release manifest delta 에 따라 영향받는 SR-* 와 변경허가 신청 필요 여부를 자동 산출한다. | `SR-SEC-SI04-MANIFEST`, `SR-CHANGE-016`, `lib/server/changeImpactAnalysis.ts`, `docs/security/manifest/latest.json` |
+| 추적성 매트릭스 | 인허가 신청용 IEC 62304 별지 제2호 양식의 추적성 매트릭스 (요구사항-설계-구현-시험-위해 통합) 를 결정성 함수로 산출하고 JSON / Markdown / CSV 로 export 한다. | `SR-IEC62304-EXPORT`, `lib/vnv/iec62304Export.ts`, `/api/therapist/system/iec62304-traceability` |
+| ISO 14971 위험관리 | 21개 RM-* 위해요인 (RM-021 DoS 신규 등재 포함) 을 V&V 결정성 함수와 매핑하고, 변경 발생 시 영향받는 위해요인을 자동 산정한다. | `docs/regulatory/risk-management-file.md` v0.3, `SR-RISK-012`, `lib/server/riskClassification.ts` |
+| IEC 62366 사용적합성 | Primary Operating Function 12종 (critical 2종 포함) 을 식별하고 formative 5/5/5~8 + summative 15명 (U1 8 + U2 4 + U3 3) 설계의 사용성평가 프로토콜을 운영한다. summative 합격기준 (critical=100% / primary=80% / severe unmitigated=0) 은 결정성 함수로 자동 산출되며, 12 시나리오가 RM-001/002/003/004/005/006/008/009/010/013/016/018 위해요인 통제를 검증한다. | `docs/regulatory/usability-evaluation-protocol.md` v0.1, `SR-USABILITY-017`, `lib/usability/useScenarioValidator.ts` |
+| WASM 온디바이스 STT (훈련 useCase) | 일상 훈련(daily_training) 과 게임 훈련(game_training) 의 음성 인식은 transformers.js 기반 Whisper-tiny 모델로 브라우저 내 온디바이스 처리한다. 원본 음성은 외부로 전송되지 않으며, 모델은 IndexedDB 자동 캐싱으로 1회만 다운로드된다. | `docs/remediation/00-summary/spec-gap-roadmap.md` (L 엔트리), `SR-STT-009`, `lib/speech/wasmSttAdapter.ts` (transformers.js@4.2.0:Xenova/whisper-tiny:v0.1) |
+| 적응형 난이도 (IRT 결정성) | 2PL Item Response Theory 모델 (a, b parameter + θ EAP 추정) + Maximum Fisher Information 문항 선택을 결정성 함수로 산출한다. 임상 calibration (item bank a/b 추정) 후 §4 "Bayesian Adaptive Testing 적용" 클레임 §3 으로 완전 승격 가능. | `SR-IRT-018`, `lib/adaptive/irt.ts` (irt:2pl-mfi:v0.1), `TC-IRT-001` |
 
 ## 4. 조건부 클레임
 
@@ -43,10 +51,10 @@
 | 디지털치료기기 | 디지털치료기기 트랙 진입을 검토 중인 재활 보조 SaMD이다. | 아직 치료효과 확증 임상 근거가 부족하므로 “허가된 디지털치료기기”로 표현하지 않는다. |
 | 품목 등급 | 2등급 가능성을 기준으로 개발·문서화를 준비한다. | 최종 등급은 식약처 품목분류 또는 사전상담 결과에 따른다. |
 | AI 분석 | AI 기반 분석은 환자 상태 평가와 훈련 난이도 조정을 보조한다. | 최종 진단, 치료 결정, 처방 판단은 의료진이 수행한다고 함께 명시한다. |
-| 온디바이스 처리 | 안면·시선 분석은 브라우저 내 WASM 기반 온디바이스 처리를 적용한다. | 현재 STT는 사용 케이스에 따라 서버 프록시 또는 정책 제한이 필요하다. 제품 전체를 “원본 미전송”으로 표현하지 않는다. |
-| STT | 음성 인식은 훈련·평가 목적에 따라 보안 정책이 적용된 STT 경로를 사용한다. | Whisper-ko fine-tuning, 완전 온디바이스 STT, WER 15% 달성은 아직 별도 근거가 필요하다. |
+| 온디바이스 처리 | 안면·시선 분석과 훈련용 STT 는 브라우저 내 WASM 기반 온디바이스 처리를 적용한다. | 평가용 STT (weekly_kwab, clinical_evaluation) 는 사용 케이스에 따라 서버 프록시 경로를 사용한다. 제품 전체를 "원본 미전송"으로 표현할 때는 useCase 분리를 함께 명시한다. |
+| STT | 일상·게임 훈련 useCase 는 WASM 온디바이스 Whisper-tiny 로 처리하고, 주간 K-WAB·임상평가 useCase 는 보안 정책이 적용된 서버 Whisper 경로를 사용한다. | Whisper-ko fine-tuning, WER 15% 달성은 아직 별도 근거가 필요하다. 온디바이스 모델 정확도(KO) 는 v0.2 평가 단계에서 측정 예정. |
 | WER 목표 | 한국어 실어증·조음장애 음성에 대한 WER/CER 평가 체계를 구축하고 목표 성능을 검증할 예정이다. | 실제 검증셋 결과 전까지 “WER 15% 이하 달성” 금지. |
-| 적응형 난이도 | 현재는 규칙 기반 난이도 조정과 향후 IRT/Bayesian 모델 도입 계획을 보유한다. | IRT 구현 전까지 “Bayesian Adaptive Testing 적용” 금지. |
+| 적응형 난이도 | 2PL IRT 모델 + MFI 문항 선택 알고리즘이 코드 수준으로 구현되어 있으며, 임상 calibration 후 통합 예정이다. | 임상 item calibration (실제 환자 응답 기반 a, b 추정) 완료 전까지 "임상에서 검증된 IRT 적용" 표현 금지. |
 | 임상 근거 | 내부 단일군 관찰 자료와 사용성 데이터를 축적 중이다. | 유효성 입증, 치료 효과 확정 표현은 전향적 임상시험 이후 사용. |
 | 보호자 리포트 | 보호자에게 read-only 리포트 링크를 제공할 수 있다. | 자동 이메일·카카오 발송은 구현 후 별도 클레임으로 승격. |
 
@@ -154,6 +162,40 @@
 | AAC 의도 템플릿 | `src/lib/aac/intentTemplate.ts` |
 | 시선 분석 | `src/utils/faceAnalysis.ts`, `src/lib/training/gazeAccumulator.ts` |
 | 보호자 리포트 | `src/lib/guardian/weeklyReportSummary.ts`, `src/app/api/guardian/report-link/route.ts` |
+| 위험관리 파일 | `docs/regulatory/risk-management-file.md` (v0.3) |
+| 사용성평가 프로토콜 | `docs/regulatory/usability-evaluation-protocol.md` (v0.1) — IEC 62366-1 §5.4~5.9 |
+| 사용성평가 결정성 함수 | `src/lib/usability/useScenarioValidator.ts` (`SR-USABILITY-017`) |
+| WASM STT 어댑터 | `src/lib/speech/wasmSttAdapter.ts` (transformers.js@4.2.0:Xenova/whisper-tiny:v0.1, `SR-STT-009`, `TC-STT-WASM-001`) |
+| AI STT 성능평가 runner | `src/lib/ai/werRunner.ts` (`SR-AI-EVAL-RUNNER`, `TC-AI-EVAL-RUNNER-001`), `scripts/ai-eval-wer-runner.ts` (npm run ai-eval:wer) |
+| STT 성능 벤치마크 runner | `src/lib/ai/sttBenchmark.ts` (`SR-AI-RTF-RUNNER`, `TC-AI-RTF-RUNNER-001`), `scripts/ai-eval-rtf-runner.ts` (npm run ai-eval:rtf) |
+| WASM STT 로드 상태 머신 | `src/lib/speech/wasmSttLoadingState.ts` (`SR-WASM-STT-LOADING`, `TC-WASM-STT-LOADING-001`) |
+| WASM STT 모델 평가 계획 | `docs/regulatory/wasm-stt-model-evaluation-plan.md` v0.1 (3 단계 결정 게이트 + 후보 5종) |
+| WASM-STT 공인시험 사전 시험설계서 | `docs/regulatory/accredited-test-preplan-wasm-stt.md` v0.1 (정확도·성능·운영안정성 시험항목, 절차, 판정 원칙) |
+| CVE 면제 등록부 | `docs/security/cve-exemptions.md` v0.1 (high 7건: fast-xml-parser/@aws-sdk/xml-builder R2 deferred-patch + next R2 immediate-patch + flatted/minimatch/picomatch/music-metadata R0 noop-exempt) |
+| GMP/QMS 결정 매트릭스 | `docs/regulatory/gmp-qms-decision-matrix.md` v0.1 (3 옵션 A/B/C trade-off, PM 1차 권고 C 하이브리드) |
+| 사용성평가 IRB 부속자료 | `docs/regulatory/usability-evaluation-irb-package.md` v0.1 (동의서·모집공고문·위해성·보상·폐기 SOP·평가자 자격) |
+| AI 평가 데이터 수집 가이드 | `docs/regulatory/ai-evaluation-data-collection-guide.md` v0.1 (60s 10/70s 12/80s 8 = 30건 분포, 30 자극어, CSV 양식 + 합격기준 5 지표) |
+| WASM-STT 로딩 인디케이터 | `src/components/training/WasmSttLoadingIndicator.tsx` (presentation only — 부모 컴포넌트가 wasmSttLoadingState 보유) |
+| 적응형 난이도 (IRT) | `src/lib/adaptive/irt.ts` (`SR-IRT-018`, `TC-IRT-001`, irt:2pl-mfi:v0.1) |
+| SRS / SDS (IEC 62304) | `docs/regulatory/srs.md`, `docs/regulatory/sds.md` v0.1 (별표3 [별첨2~3] 양식) |
+| 시판 후 감시 + CAPA | `docs/regulatory/post-market-surveillance-plan.md`, `pms-capa-procedure.md`, `change-approval-sop.md` v0.1 |
+| 시판 전 점검 + 사전상담 | `docs/regulatory/pre-launch-checklist.md`, `mfds-pre-consultation-pack.md` v0.1 |
+| 사용자 매뉴얼 (3 사용자) | `docs/manuals/manual-therapist.md`, `manual-patient.md`, `manual-guardian.md` v0.1 |
+| WASM-STT React 통합 | `src/lib/speech/useWasmSttLoading.ts` (hook), `src/components/training/WasmSttLoadingIndicator.tsx`, `src/app/dev/wasm-stt-test/page.tsx` |
+| WASM 모델 캐싱 | `src/lib/speech/wasmSttCacheStrategy.ts`, `public/sw.js` (Service Worker stub) |
+| 환자 온보딩 exclusion | `src/lib/onboarding/exclusionCheck.ts` (`SR-ONBOARDING-EXCLUSION`, `TC-ONBOARDING-EXCLUSION-001`, RM-007 통제) |
+| 감사로그 확대 | `src/lib/server/auditExpansion.ts` (`SR-SEC-AUDIT-EXPANSION`, RM-016 보강) |
+| 보호자 발송 (Phase 2) | `src/lib/server/weeklyReportSender.ts` (`SR-GUARDIAN-SENDER`, decideSend + executeSendBatch + stub adapter) |
+| IRT item bank v0.1 | `src/lib/adaptive/itemBank.ts` (`SR-IRT-ITEMBANK`, step-1 / step-2 / step-4) |
+| PII/PHI 분리 강화 계획 | `docs/regulatory/pii-phi-separation-strengthening-plan.md` v0.1 (4 Phase, 별도 세션) |
+| 추적성 매트릭스 export | `src/lib/vnv/iec62304Export.ts`, `src/app/api/therapist/system/iec62304-traceability/route.ts` |
+| 사이버보안 결정성 함수 | `src/lib/server/{accountAuth,loginLockout,sessionLockout,rateLimit,auditChain,errorCodes,inputSchemas,soupRegistry,releaseManifest,releaseManifestStartup,phiMasking,riskClassification,changeImpactAnalysis}.ts` |
+| Release manifest | `scripts/generate-release-manifest.mjs`, `docs/security/manifest/latest.json` (sha256 동결) |
+| SOUP 목록 | `scripts/generate-soup-list.mjs`, `docs/security/soup/latest.json` |
+| SBOM | `scripts/generate-sbom.mjs`, `docs/security/sbom/latest.json` |
+| WER/CER 평가 함수 | `src/lib/ai/werCalculator.ts` (`SR-AI-EVAL-014`) |
+| 보호자 동의 상태머신 | `src/lib/guardian/consentState.ts` (`SR-CONSENT-015`) |
+| NIDS 답변 (SaMD ⊃ DTx) | `docs/decisions/2026-04-30-nids-samd-dtx-relationship.md` |
 
 ## 11. 갱신 트리거
 
@@ -167,6 +209,21 @@
 - 임상시험계획서 확정 또는 IRB 승인
 - 위험관리 파일 또는 사이버보안 문서 주요 변경
 - 허가 신청서 본문 변경
+- NIDS / 한국의료기기안전정보원 / 식약처 디지털의료제품지원총괄과 답변 수령
+- V&V 결정성 회귀 (npm run test:vnv 실패) 또는 release manifest 무결성 검증 실패
+- IEC 62304 별지 제2호 추적성 매트릭스에서 uncovered/untested 카운트 증가
+- 사이버보안 35 항목 일치도 5%p 이상 변동
+- 사용성평가 프로토콜 갱신 (POF / critical task 추가, summative 합격기준 변경, formative round 추가)
+- WASM STT 엔진 변경 (transformers.js 버전, Whisper 모델 교체, sampleRate 변경) → release manifest 갱신 + WER/CER 재평가 트리거
+- AI STT 성능평가 신규 실측값 입력 (`npm run ai-eval:wer`) → §4 WER 행 검토 + risk-management RM-001 P 값 재산정 트리거
+- STT 성능 벤치마크 (RTF/P95) 신규 실측값 입력 (`npm run ai-eval:rtf`) → §4 STT 행 + 제품기획서 P95 41.5ms 클레임 검증 트리거
+- WASM STT 모델 평가 계획 §2 후보 추가/교체 → release manifest 갱신 + 1·2·3 단계 재평가 트리거
+- 신규 CVE high/critical 보고 (`npm run security:audit`) → `docs/security/cve-exemptions.md` §3 행 추가 의무 + reachability (R0~R3) 평가 + 면제 결정 (immediate/deferred/conditional/noop) 트리거
+- IRT item bank 신규 calibration (실제 환자 응답 기반 a/b 추정) → claim-lock §4 적응형 난이도 행 → §3 완전 승격 검토 트리거
+- 사용성평가 summative 15명 실시 결과 수집 → risk-management v1.x 잔여위험 재산정 + claim-lock §3 IEC 62366 행 갱신
+- 임상 협력기관 30건 음성·전사 입력 → npm run ai-eval:wer 실행 → claim-lock §4 WER 행 → §3 승격 검토
+- WASM-STT 내부 실측 또는 시험기관 사전상담 결과 수령 → `accredited-test-preplan-wasm-stt.md` 시험항목·판정기준 갱신 + claim-lock §4 STT/WER 행 검토
+- GMP/QMS 외주사 견적 수령 → gmp-qms-decision-matrix §5 가중치 재산정
 
 ## 12. 다음 산출물
 
@@ -176,6 +233,27 @@
 
 ## 13. 갱신 이력
 
+- 2026-04-30 v0.3.0: **16개 작업 일괄 처리 (사용자 위임 — D-tasks 7 + C-tasks 9)**.
+  D-tasks ✅: SRS / SDS (IEC 62304 양식), 시판 후 감시 + CAPA + 변경허가 SOP, 시판 전 체크리스트, 식약처 사전상담 패키지, 사용자 매뉴얼 3종 (치료사 / 환자 / 보호자).
+  C-tasks ✅ (단독 가능 부분): C1 next 16.2.4 package.json (실제 install 은 운영환경 — bash mount rename 제약), C5 환자 온보딩 exclusion check (RM-007 통제), C8 Service Worker 모델 캐싱, C9 dev/wasm-stt-test 검증 page, C2 WASM-STT React hook + Indicator 컴포넌트 (실제 sentence-magic/sing-training/step-1 통합은 다음), C6 감사로그 확대 helper (RM-016 보강 5 카테고리), C4 보호자 SMTP 발송 stub (Phase 2), C3 IRT item bank v0.1 (step-1/2/4 calibrated 단어 + step page 통합은 다음).
+  C-tasks 부분 ⚠: C7 PII/PHI 분리 — 정책 문서만 (실제 DB migration 은 별도 세션 4 Phase).
+  **새 SR-* 4건**: SR-ONBOARDING-EXCLUSION + SR-SEC-AUDIT-EXPANSION + SR-GUARDIAN-SENDER + SR-IRT-ITEMBANK. **새 TC 4건** (각 8~22 assertions).
+  추적성 매트릭스 47행 → 51행, SR-* 풀 31 → 35, TC-* 풀 49 → 53. §10 11행 추가, §13 changelog.
+  검증: `npm run test:vnv` → 53/53 PASS, `npx tsc --noEmit` → exit 0
+- 2026-04-30 v0.2.5: 7개 P0 일괄 처리 (사용자 요청). (1) IRT 2PL+MFI 결정성 구현 (`lib/adaptive/irt.ts`, SR-IRT-018, TC-IRT-001 22 assertions). (2) GMP/QMS 결정 매트릭스 (3 옵션 trade-off, PM 1차 권고 C 하이브리드). (3) 사용성평가 IRB 부속자료 패키지 (동의서·모집공고문·폐기 SOP). (4) AI 평가 데이터 수집 가이드 (60~80대 30건 분포 + 30 자극어). (5) WasmSttLoadingIndicator React 컴포넌트 (presentation only, 통합은 다음). (6) **risk-management-file v1.0 마감** (§11.8 신규 산출물 7종 매핑 + §11.9 잔여위험 재평가, 개인정보/보안 → 수용 가능 승격). §3 IRT 행 추가 + §4 적응형 난이도 행 정정 + §10 5행 추가 + §11 갱신 트리거 4건. SR-* 풀 30 → 31, TC-* 48 → 49 (TC-IRT-001 신규). `npm run test:vnv` → 49/49 PASS, `npx tsc --noEmit` → exit 0
+- 2026-04-30 v0.2.0: CVE 면제 (Exemption) 등록부 v0.1 신규 산출 (P0-4 완료). `docs/security/cve-exemptions.md` (177 lines) — npm audit high 7건 (fast-xml-parser, @aws-sdk/xml-builder, next, flatted, minimatch, picomatch, music-metadata) 전수 reachability 평가 (R0 unreachable 4건 / R2 transitive-conditional 3건). S3 presigned URL 영향평가 (`src/lib/server/ncpObjectStorage.ts` 단일 사용처) — vulnerable function 은 NCP Object Storage 응답 XML 파싱 경로만, sanitization + TLS + randomUUID 완화 통제 4종. 결정: immediate-patch 1 (next 16.2.4) / deferred-patch 2 (S3 SDK 차기 minor) / noop-exempt 4 (devDeps R0). §10 1행 추가, §11 갱신 트리거 1건 추가, §13 changelog. 사이버보안 35 항목 일치도 ~74% → **~77%** (SI-04 소프트웨어 구성요소 보안 행 도큐멘테이션 ✅). risk-management RM-015 (사이버보안 취약점) 잔여위험 평가 갱신 가능
+- 2026-04-30 v0.1.9: WASM-STT 2단계 부분 완료 (P0-1 2단계). (1) `src/lib/ai/sttBenchmark.ts` 신규 — RTF / mean / P50/P95/P99 latency / passRateP95Target 결정성 함수 + percentile 보간. `scripts/ai-eval-rtf-runner.ts` CLI + `npm run ai-eval:rtf`. P95 target 기본 41.5ms (제품기획서 클레임). (2) `src/lib/speech/wasmSttLoadingState.ts` 신규 — not_started/loading/ready/failed 상태 머신 + 한국어 friendly message + clamp 결정성 (실제 UI 컴포넌트 통합은 다음 세션). (3) `docs/regulatory/wasm-stt-model-evaluation-plan.md` v0.1 신규 — 후보 5종 (C1~C5: tiny/base/small + KoWhisper TBD) + 3 단계 결정 게이트 (RTF/P95 → WER/CER → 운영 안정성) + 합격 임계값. SR-AI-RTF-RUNNER + SR-WASM-STT-LOADING + TC-AI-RTF-RUNNER-001 (18 assertions) + TC-WASM-STT-LOADING-001 (23 assertions) 등재. 추적성 매트릭스 43행 → 46행. §10 4행 + §11 트리거 2건 추가. `npm run test:vnv` → 48/48 PASS, `npx tsc --noEmit` → exit 0
+- 2026-04-30 v0.1.8: AI STT 성능평가 (WER/CER) runner 신규 산출 (P0-3 일부). `src/lib/ai/werRunner.ts` 결정성 함수 (parseWerCsv RFC 4180 quoted field, evaluateWerRows stratified by ageGroup/severity/noise/device, classifyAgeGroup 60s/70s/80s/other, JSON sortKeys 직렬화, Markdown 안정 출력). `scripts/ai-eval-wer-runner.ts` CLI + `npm run ai-eval:wer` script. `data/ai-eval/sample-fixture.csv` 5행 fixture. SR-AI-EVAL-RUNNER + TC-AI-EVAL-RUNNER-001 등재 (14 assertions). 추적성 매트릭스 41행 → 43행 (runner 모듈 + CLI 2행). claim-lock §4 "WER/CER 평가 체계 구축 중" 행: **체계 ✅** / 측정값 ✗ (60~80대 30건 입력 대기). `npm run test:vnv` → 46/46 PASS, `npx tsc --noEmit` → exit 0. 후속: 임상 협력기관 (부산대 등) 30건 음성·전사 입력 → npm run ai-eval:wer 실행 → claim-lock §4 WER 행 → §3 승격 가능
+- 2026-04-30 v0.1.7: WASM 온디바이스 STT 실제 엔진 연결 (P0-1 1단계). transformers.js @huggingface/transformers v4.2.0 + Xenova/whisper-tiny 모델. `src/lib/speech/wasmSttAdapter.ts` 실제 wiring (lazy import, AudioContext 16kHz mono Float32Array 변환, 한국어 transcribe, IndexedDB 자동 캐싱, 명시 에러 4종). §3 사용 가능 클레임에 WASM 온디바이스 STT (훈련 useCase) 행 신규, §4 STT / 온디바이스 처리 행 정정, §10 어댑터 경로 매핑, §11 엔진 변경 트리거 1건 추가. SR-STT-009 + TC-STT-WASM-001 등재 (Node 환경 5종 결정성 assertion + idempotent reset + 2 rejection round-trip). 추적성 매트릭스 40행 → 41행. `npm run test:vnv` → 45/45 PASS, `npx tsc --noEmit` → exit 0
+- 2026-04-30 v0.1.6: IEC 62366 사용성평가 프로토콜 v0.1 신규 산출. POF 12종 (critical 2종: POF-05 환자 중단 / POF-07 K-WAB 검토 확정) 식별, use scenario 12종 + HRUS 12 RM-* 매핑, summative 15명 (U1 8 + U2 4 + U3 3, 60~80대 중점) + DEFAULT_SUMMATIVE_CRITERIA (critical=1.0 / primary=0.8 / severe unmitigated=0) 결정성 합격기준. SR-USABILITY-017 + TC-USABILITY-001 등재. `npm run test:vnv` → 44/44 PASS, `npx tsc --noEmit` → exit 0. §3 / §10 / §11 / §13 갱신
+- 2026-04-30: NIDS 답변 반영 — SaMD ⊃ DTx, 1차 SaMD 신청 + DTx 분류 후속/병행 (양자택일 아님). `docs/decisions/2026-04-30-nids-samd-dtx-relationship.md` 작성, gap-matrix §4-2/4-3/§6 정정
+- 2026-04-30: 사이버보안 35 항목 일치도 ~70% → ~74%. SI-04 SOUP + Release Manifest 두 산출물 모두 ✅. SR-SEC-IA05/IA07/UC03/RA01/UC07/TRE01/SI07/SI05/SI04-SOUP/SI04-MANIFEST 10종 결정성 V&V 등재
+- 2026-04-30: V&V SR-* 풀 21개 → 27개로 확장. SR-RISK-012 (ISO 14971 분류) / SR-PHI-013 (마스킹) / SR-AI-EVAL-014 (WER/CER) / SR-CONSENT-015 (보호자 동의 상태머신) / SR-CHANGE-016 (CIA) / SR-IEC62304-EXPORT 6종 신규. 추적성 매트릭스 13행 → 39행
+- 2026-04-30: IEC 62304 별지 제2호 추적성 매트릭스 export 신규 — `/api/therapist/system/iec62304-traceability?format=json|md|csv` 결정성 산출. 7개 hazard ↔ SR-* 매핑 + V&V run 결과 통합
+- 2026-04-30: ISO 14971 위험관리 파일 v0.3 — RM-021 (DoS) 신규 등재, HAZARD_LINKS 식별자 RM-* 통일, 결정성 V&V 함수 + IEC 62304 export 매핑 (§11) 보강
+- 2026-04-30: zod 입력 검증 6개 라우트 (login / aac/intent / reset-password / find-login-id / signup / link-care / prescription redeem / adverse-events) 통합. AdverseEventInputSchema severity 형식 (number 1/2/3) DB 와 통일
+- 2026-04-30: 첫 release manifest 산출 — manifestHash `97079f5f…7c304ea3e8`, 5 components (git-sha + package-lock + python-requirements + sbom + soup) 동결. SOUP 23 entries (npm 8 / pypi 13 / model 2)
+- 2026-04-30: V&V 결정성 테스트 36 → 43건 (TC-SEC-SI04-MANIFEST-001 / TC-RISK-012-001 / TC-PHI-013-001 / TC-AI-EVAL-014-001 / TC-CONSENT-015-001 / TC-CHANGE-016-001 / TC-IEC62304-001 신규)
 - 2026-04-29: 디지털의료제품 관점의 클레임 잠금표 초안 작성
 - 2026-04-29: `intended-use-and-contraindications.md` 작성. 1차 허가 범위를 뇌질환 이후 실어증·마비말장애 재활 보조 SaMD로 제한하고 MCI·치매 예방·자동 진단·자동 처방 클레임을 제외
 - 2026-04-29: `risk-management-file.md` 작성. RM-001~RM-020 위험관리 매트릭스와 예비 SW 안전성 등급 Class B 준비 권고 정리
@@ -189,6 +267,8 @@
 - 2026-04-29: `cloud-and-data-transfer.md` 작성. 안면·시선 온디바이스 범위, STT useCase별 서버 송신 정책, 외부 STT 전송 항목, 금지 클레임, P0 구현 상태 정리
 - 2026-04-29: `ai-role-boundary.md` 작성. STT, 음향·조음, 안면, 시선, AAC, K-WAB, 보호자 리포트의 AI·알고리즘 역할을 의료진 보조 지표로 제한하고 금지 사용 문구 정리
 - 2026-04-29: Gaze 리포트 저장/치료사 표시 구현. `TrainingHistoryEntry.gazeSummary`, 치료사 환자 상세 응시율·이탈·홍채 검출·샘플 표시, `TC-GAZE-003` V&V 추가
-- 2026-04-29: AAC 주요 훈련 통합 구현. step-2, step-4, sentence-magic에 “말 대신 심볼” 토글 연결, `inputModality=aac` 결과 metadata 보존, `TC-AAC-002` V&V 추가
+- 2026-04-29: AAC 주요 훈련 통합 구현. step-2, step-4, sentence-magic에 "말 대신 심볼" 토글 연결, `inputModality=aac` 결과 metadata 보존, `TC-AAC-002` V&V 추가
 - 2026-04-29: STT client preflight 구현. game/daily training에서 WASM 미가용 + fallback off 상태면 `/api/proxy/stt` 업로드 전 차단, sentence-magic 직접 STT 호출 보강, `TC-STT-002` V&V 추가
 - 2026-04-29: STT runtime 상태 분리. `mock_stt`, `wasm_whisper`, `server_whisper`, `disabled`를 `sttRuntime.ts`로 통합하고 `wasmSttAdapter.ts` 골격 추가, DEV_MODE는 실제 WASM이 아닌 mock으로 문서화, `TC-STT-003` V&V 추가
+- 2026-05-04: STT 언어 정책 정리. 서버 STT의 클라이언트 `language` 요청값 수용 제거, `sttLanguage.ts`로 한국어 고정 (`ko` / `korean` / `ko-KR`) 및 `TC-STT-004` 추가. cloud/traceability 문서의 WASM-STT 상태를 “엔진 wiring 완료, 실측 RTF/WER 필요”로 정정
+- 2026-05-04: WASM-STT 공인시험 사전 시험설계서 v0.1 작성. `docs/regulatory/accredited-test-preplan-wasm-stt.md` 에 정확도(WER/CER), 처리성능(RTF/P95/cache), 운영 안정성, 데이터셋, 시험환경, 절차, 판정 원칙을 정리. 본 문서는 공인성적서 자체가 아니라 내부 실측과 시험기관 협의용 pre-plan 으로 잠금.

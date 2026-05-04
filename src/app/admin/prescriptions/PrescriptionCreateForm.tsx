@@ -6,7 +6,7 @@
 import { useState } from "react";
 
 const PROGRAM_OPTIONS = [
-  { value: "step-1", label: "Step 1 (자가진단)" },
+  { value: "step-1", label: "Step 1 (자가점검)" },
   { value: "step-2", label: "Step 2 (음성 분석)" },
   { value: "step-3", label: "Step 3" },
   { value: "step-4", label: "Step 4" },

@@ -11,6 +11,7 @@ import {
   resolveGuardianReportLinkStatus,
 } from "@/lib/guardian/reportLinkPolicy";
 import { safeAppendAccess } from "@/lib/server/auditLog";
+import { getGrantedGuardianContactForPatient } from "@/lib/server/guardianContactsDb";
 
 export type GuardianReportLink = {
   id: string;
@@ -84,6 +85,10 @@ export async function createGuardianReportLink(input: {
 }): Promise<GuardianReportLink> {
   await ensureGuardianReportTables();
   const pool = getDbPool();
+  const guardianContact = await getGrantedGuardianContactForPatient(input.patientId);
+  if (!guardianContact?.reportAccessAllowed) {
+    throw new Error("guardian_consent_required");
+  }
   const patientResult = await pool.query(
     `
       SELECT
@@ -104,7 +109,10 @@ export async function createGuardianReportLink(input: {
   const expiresAt = new Date(
     Date.now() + normalizeGuardianReportTtlDays(input.ttlDays) * 24 * 60 * 60 * 1000,
   );
-  const recipientLabel = String(input.recipientLabel ?? "").trim() || null;
+  const recipientLabel =
+    String(input.recipientLabel ?? "").trim() ||
+    guardianContact.relationship ||
+    "보호자";
 
   const result = await pool.query(
     `
@@ -427,6 +435,17 @@ export async function listGuardianWeeklyReportCandidates(input: {
         )
       `
       : "";
+  const guardianContactFilter = (await tableExists("guardian_contacts"))
+    ? `
+        AND EXISTS (
+          SELECT 1
+          FROM guardian_contacts gc
+          WHERE gc.patient_id = pii.patient_id
+            AND gc.consent_state = 'granted'
+            AND gc.revoked_at IS NULL
+        )
+      `
+    : "AND FALSE";
 
   const result = await pool.query(
     `
@@ -449,6 +468,7 @@ export async function listGuardianWeeklyReportCandidates(input: {
       ) activity ON TRUE
       WHERE TRUE
         ${assignmentFilter}
+        ${guardianContactFilter}
         ${patientFilter}
       GROUP BY pii.patient_id, pii.full_name
       HAVING MAX(activity.completed_at) >= NOW() - INTERVAL '7 days'

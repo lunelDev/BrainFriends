@@ -21,19 +21,10 @@ import {
 import { getDbPool } from "@/lib/server/postgres";
 import { safeAppendAccess } from "@/lib/server/auditLog";
 import { buildAacIntentSentence } from "@/lib/aac/intentTemplate";
+import { AacIntentInputSchema, validateInput } from "@/lib/server/inputSchemas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const MAX_SEQUENCE = 200;
-const ALLOWED_PLACES = new Set([
-  "home",
-  "hospital",
-  "cafe",
-  "bank",
-  "park",
-  "mart",
-]);
 
 async function ensureTable() {
   const pool = getDbPool();
@@ -72,28 +63,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
   }
 
-  const place = String((body as any)?.place ?? "").trim();
-  const symbolIdsRaw = (body as any)?.symbolIds;
-  const clientSentence = String((body as any)?.sentence ?? "").trim();
-
-  if (!ALLOWED_PLACES.has(place)) {
-    return NextResponse.json({ ok: false, error: "invalid_place" }, { status: 400 });
-  }
-  if (!Array.isArray(symbolIdsRaw) || symbolIdsRaw.length === 0) {
-    return NextResponse.json({ ok: false, error: "empty_sequence" }, { status: 400 });
-  }
-  if (symbolIdsRaw.length > MAX_SEQUENCE) {
+  // SI-05: zod 통합 스키마로 검증. 결정성 + 라우트별 수동 검증 제거.
+  const parsed = validateInput(AacIntentInputSchema, body);
+  if (!parsed.ok || !parsed.data) {
     return NextResponse.json(
-      { ok: false, error: "sequence_too_long" },
+      { ok: false, error: parsed.publicError ?? "invalid_payload" },
       { status: 400 },
     );
   }
-  const symbolIds: string[] = symbolIdsRaw.map((id: unknown) => String(id || "").trim()).filter(
-    Boolean,
-  );
-  if (symbolIds.length === 0) {
-    return NextResponse.json({ ok: false, error: "empty_sequence" }, { status: 400 });
-  }
+  const { place, symbolIds, sentence: clientSentence } = parsed.data;
 
   // 서버 측에서 다시 한 번 결정성 있게 문장을 생성. 클라이언트가 보낸 문장과 비교해
   // 불일치는 audit 로그에 남기되 거부하지는 않는다 (V&V 추적성).

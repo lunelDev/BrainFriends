@@ -170,7 +170,7 @@ function getSelfNextAction(params: {
     return "카메라와 마이크 상태를 다시 확인한 뒤 같은 훈련을 한 번 더 진행해 보세요.";
   }
   if (scoreDelta !== null && scoreDelta > 0) {
-    return "지금 흐름이 좋습니다. 다음 자가진단 전에 언어 재활 훈련을 이어서 진행해 보세요.";
+    return "지금 흐름이 좋습니다. 다음 자가점검 전에 언어 재활 훈련을 이어서 진행해 보세요.";
   }
   if (improvedMetrics >= 4) {
     return "상세 항목은 안정적으로 유지되고 있습니다. 오늘 결과를 저장하고 다음 목표를 설정해 보세요.";
@@ -269,7 +269,13 @@ function summaryToPartialEntry(
   return base;
 }
 
-export function ReportContent({ embedded = false }: { embedded?: boolean } = {}) {
+export function ReportContent({
+  embedded = false,
+  deferInitialDetail = false,
+}: {
+  embedded?: boolean;
+  deferInitialDetail?: boolean;
+} = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isHydrated, setIsHydrated] = useState(false);
@@ -387,6 +393,7 @@ export function ReportContent({ embedded = false }: { embedded?: boolean } = {})
   );
 
   // 선택 항목 관리: summary 가 새로 오면 첫 항목 자동 선택.
+  // /mypage 임베드에서는 초기 상세 payload 를 아끼기 위해 사용자 클릭 전까지 선택하지 않는다.
   useEffect(() => {
     if (!filteredSummary.length) {
       setSelectedHistoryId(null);
@@ -395,10 +402,14 @@ export function ReportContent({ embedded = false }: { embedded?: boolean } = {})
     const exists = filteredSummary.some(
       (row) => row.historyId === selectedHistoryId,
     );
-    if (!selectedHistoryId || !exists) {
+    if (selectedHistoryId && !exists) {
+      setSelectedHistoryId(null);
+      return;
+    }
+    if (!selectedHistoryId && !deferInitialDetail) {
       setSelectedHistoryId(filteredSummary[0].historyId);
     }
-  }, [filteredSummary, selectedHistoryId]);
+  }, [deferInitialDetail, filteredSummary, selectedHistoryId]);
 
   // selectedHistoryId 가 바뀌면 detail 을 fetch — cache 히트면 재요청 스킵.
   useEffect(() => {
@@ -700,7 +711,7 @@ export function ReportContent({ embedded = false }: { embedded?: boolean } = {})
       weakestText: `${weakest.label} ${formatSelfMetricDisplay(weakest.key, weakest.score)}`,
       encourageText: "하루 15분 · 주 5회 생활 연습",
       summary: `일상 대화의 바탕이 잘 유지되고 있으며, 전반적으로 의사소통을 이어갈 수 있는 힘이 확인됩니다. 특히 ${strongest.label}은 안정적으로 나타났고, ${weakest.label}은 생활 속 반복 연습을 통해 더 편안해질 수 있습니다.`,
-      strength: `${strongest.label}(${formatSelfMetricDisplay(strongest.key, strongest.score)})이 특히 안정적으로 확인되었습니다. 이 부분은 아주 건강하시네요!`,
+      strength: `${strongest.label}(${formatSelfMetricDisplay(strongest.key, strongest.score)})이 특히 안정적으로 확인되었습니다. 치료사 검토 시 강점 영역으로 참고할 수 있습니다.`,
       need: `${weakest.label}(${formatSelfMetricDisplay(weakest.key, weakest.score)})은 조금 더 연습이 필요한 부분입니다. 이 부분이 좋아지면 가족과 대화할 때 떠오른 생각을 더 또렷하게 전하고, 외출이나 전화 상황에서도 원하는 말을 더 편안하게 표현하는 데 도움이 됩니다.`,
       recommendation:
         "오늘은 집에서 15분만 가볍게 연습해 보세요. 사진이나 생활 물건을 보며 이름 말하기 5분, 짧은 문장 따라 말하기 5분, 소리 내어 읽기 5분을 주 5회 꾸준히 이어가면 일상 대화가 한층 자연스러워집니다.",
@@ -1697,10 +1708,10 @@ export function ReportContent({ embedded = false }: { embedded?: boolean } = {})
             <div className={`space-y-4 ${embedded ? "" : "max-h-[calc(100vh-7rem)] overflow-y-auto pr-2 pb-24"}`}>
               <section className="rounded-2xl bg-gradient-to-r from-orange-600 to-orange-500 text-white p-5 shadow-sm h-[140px] flex flex-col justify-center">
                 <p className="text-xs font-black opacity-90">
-                  {selected.patientName || "사용자"} 님의 자가진단 리포트
+                  {selected.patientName || "사용자"} 님의 자가점검 리포트
                 </p>
                 <h2 className="text-2xl sm:text-3xl font-black mt-1">
-                  종합 점수 {Number(selected.aq || 0).toFixed(1)}점
+                  자가점검 보조점수 {Number(selected.aq || 0).toFixed(1)}점
                 </h2>
                 <p className="text-xs sm:text-sm opacity-90 mt-2">
                   검사일시:{" "}
@@ -1722,7 +1733,7 @@ export function ReportContent({ embedded = false }: { embedded?: boolean } = {})
                   </div>
                   <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <div className="rounded-2xl bg-orange-50 px-4 py-4">
-                      <p className="text-xs font-black text-orange-700">현재 AQ</p>
+                      <p className="text-xs font-black text-orange-700">현재 보조점수</p>
                       <p className="mt-2 text-3xl font-black text-slate-900">
                         {selfCurrentScore.toFixed(1)}
                       </p>

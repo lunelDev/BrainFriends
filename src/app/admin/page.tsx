@@ -6,7 +6,6 @@ import {
 } from "@/lib/server/accountAuth";
 import {
   listAdminPatientReportSummaries,
-  listAdminReportValidationSample,
 } from "@/lib/server/adminReportsDb";
 import { listAvailableOrganizations } from "@/lib/server/organizationCatalogDb";
 import { listTherapistColleagueSummaries } from "@/lib/server/therapistReportsDb";
@@ -49,13 +48,11 @@ export default async function AdminPage({
     patients,
     organizations,
     therapists,
-    validationSampleEntries,
     organizationRequests,
   ] = await Promise.all([
     listAdminPatientReportSummaries(token!),
     listAvailableOrganizations(),
     listTherapistColleagueSummaries(token!),
-    listAdminReportValidationSample(token!),
     listOrganizationRegistrationRequests(),
   ]);
 
@@ -75,7 +72,7 @@ export default async function AdminPage({
       organizationRequests={visibleOrganizationRequests}
       patients={patients}
       therapists={therapists}
-      validationSampleEntries={validationSampleEntries}
+      validationSampleEntries={[]}
     />
   );
 }

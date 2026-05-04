@@ -275,8 +275,36 @@ export function buildPatientProfile(row: {
   } satisfies PatientProfile;
 }
 
+// 비밀번호 강도 정책. 식약처 디지털의료기기 사이버보안 가이드라인 IA-05 대응.
+// SR-SEC-IA05 (V&V 추적 대상). 변경 시 V&V 결정성 테스트와 함께 갱신할 것.
+// 정책:
+//   - 최소 8자 이상
+//   - 영문 / 숫자 / 특수문자 중 최소 2종 이상 포함
+//   - 동일 문자 4회 이상 연속 금지
+const MIN_PASSWORD_LENGTH = 8;
+
+export function validatePasswordStrength(password: string): {
+  ok: boolean;
+  reason?: "too_short" | "low_complexity" | "repeating_chars";
+} {
+  if (typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH) {
+    return { ok: false, reason: "too_short" };
+  }
+  const hasLetter = /[A-Za-z]/.test(password);
+  const hasDigit = /[0-9]/.test(password);
+  const hasSymbol = /[^A-Za-z0-9]/.test(password);
+  const classCount = [hasLetter, hasDigit, hasSymbol].filter(Boolean).length;
+  if (classCount < 2) {
+    return { ok: false, reason: "low_complexity" };
+  }
+  if (/(.)\1{3,}/.test(password)) {
+    return { ok: false, reason: "repeating_chars" };
+  }
+  return { ok: true };
+}
+
 function validatePassword(password: string) {
-  return password.length >= 6;
+  return validatePasswordStrength(password).ok;
 }
 
 function isDatabaseUnavailableError(error: unknown) {

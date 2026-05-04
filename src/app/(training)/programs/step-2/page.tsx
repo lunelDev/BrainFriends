@@ -61,12 +61,17 @@ import {
   removeTransientStepStorage,
   saveTransientStepStorage,
 } from "@/lib/security/transientStepStorage";
+import { getSessionShuffledItems } from "@/lib/training/questionOrder";
 import {
   buildAacTrainingMetadata,
   persistAacIntentBestEffort,
   scoreAacTranscriptMatch,
   type AacTrainingCommit,
 } from "@/lib/aac/trainingIntegration";
+import { useWasmSttLoading } from "@/lib/speech/useWasmSttLoading";
+import WasmSttLoadingIndicator from "@/components/training/WasmSttLoadingIndicator";
+import { buildAdaptiveTrainingOrder } from "@/lib/adaptive/adaptiveTraining";
+import { STEP2_REPETITION_BANK } from "@/lib/adaptive/itemBank";
 
 export const dynamic = "force-dynamic";
 
@@ -195,6 +200,7 @@ function Step2Content() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const wasmSttLoading = useWasmSttLoading();
   const [isSaving, setIsSaving] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isPromptPlaying, setIsPromptPlaying] = useState(false);
@@ -273,17 +279,42 @@ function Step2Content() {
       ...sorted.slice(4, 10),
     ];
   }, [place]);
+  const baseOrderedProtocol = useMemo(
+    () =>
+      getSessionShuffledItems(
+        `btt-question-order:step2:${sessionId}:${place}`,
+        protocol,
+        (item) => `${item.id ?? ""}|${item.text ?? ""}`,
+      ),
+    [place, protocol, sessionId],
+  );
+  const adaptiveOrder = useMemo(
+    () =>
+      buildAdaptiveTrainingOrder({
+        step: 2,
+        items: baseOrderedProtocol,
+        responses: analysisResults.map((row) => ({
+          itemKey: String(row?.adaptiveItemKey || row?.text || ""),
+          correct: Boolean(row?.isCorrect),
+        })),
+        getItemKey: (item) => String(item.text ?? ""),
+        getItemText: (item) => String(item.text ?? ""),
+        calibratedBank: STEP2_REPETITION_BANK,
+      }),
+    [analysisResults, baseOrderedProtocol],
+  );
+  const orderedProtocol = adaptiveOrder.orderedItems;
   const stepSignature = useMemo(
     () =>
       buildStepSignature(
         "step2",
         place,
-        protocol.map((item) => `${item.id ?? ""}|${item.text ?? ""}`),
+        orderedProtocol.map((item) => `${item.id ?? ""}|${item.text ?? ""}`),
       ),
-    [place, protocol],
+    [place, orderedProtocol],
   );
 
-  const currentItem = protocol[currentIndex];
+  const currentItem = orderedProtocol[currentIndex];
 
   useEffect(() => {
     articulationStateRef.current = createInitialArticulationAnalyzerState();
@@ -426,7 +457,7 @@ function Step2Content() {
       router.push("/");
       return;
     }
-    // 최초 자가진단 흐름이면 활동 선택으로 돌아간다.
+    // 최초 자가점검 흐름이면 활동 선택으로 돌아간다.
     if (isFirstDiagnosisFlow()) {
       clearFirstDiagnosisFlow();
       saveTrainingExitProgress(place, 2);
@@ -650,22 +681,22 @@ function Step2Content() {
       if (saved.length > 0) {
         const byIndex = new Map<number, any>();
         saved
-          .slice(-protocol.length)
+          .slice(-orderedProtocol.length)
           .forEach((row: any, fallbackIndex: number) => {
             const resolvedIndex = Number.isFinite(Number(row?.index))
               ? Number(row.index)
               : fallbackIndex;
-            if (resolvedIndex < 0 || resolvedIndex >= protocol.length) return;
+            if (resolvedIndex < 0 || resolvedIndex >= orderedProtocol.length) return;
             byIndex.set(resolvedIndex, row);
           });
         const restored = Array.from(byIndex.entries())
           .sort((a, b) => a[0] - b[0])
           .map((entry) => entry[1]);
-        const safeCount = Math.min(restored.length, protocol.length);
-        if (safeCount < protocol.length) {
+        const safeCount = Math.min(restored.length, orderedProtocol.length);
+        if (safeCount < orderedProtocol.length) {
           setAnalysisResults(restored as any[]);
           setCurrentIndex(
-            Math.min(Math.max(0, safeCount), Math.max(0, protocol.length - 1)),
+            Math.min(Math.max(0, safeCount), Math.max(0, orderedProtocol.length - 1)),
           );
         }
       }
@@ -716,7 +747,7 @@ function Step2Content() {
       cancelSpeechPlayback();
       resetRuntimeStatus();
     };
-  }, [protocol.length, resetRuntimeStatus, stepSignature]);
+  }, [orderedProtocol.length, resetRuntimeStatus, stepSignature]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -767,7 +798,7 @@ function Step2Content() {
     }
     setIsPlayingAudio(false);
 
-    if (currentIndex < protocol.length - 1) {
+    if (currentIndex < orderedProtocol.length - 1) {
       setCurrentIndex((prev) => prev + 1);
       setStatusText("");
       setResultScore(null);
@@ -807,6 +838,13 @@ function Step2Content() {
         sm.saveStep2Result({
           items: analysisResults.map((row) => ({
             text: row.text,
+            adaptiveItemKey: row.adaptiveItemKey,
+            adaptiveItemId: row.adaptiveItemId,
+            adaptiveTheta: row.adaptiveTheta,
+            adaptiveSd: row.adaptiveSd,
+            itemDifficulty: row.itemDifficulty,
+            itemDiscrimination: row.itemDiscrimination,
+            selectionMethod: row.selectionMethod,
             transcript: String(row.transcript || ""),
             isCorrect: Boolean(row.isCorrect),
             symmetryScore: Number(row.symmetryScore ?? row.faceScore ?? 0),
@@ -865,7 +903,7 @@ function Step2Content() {
     }
   }, [
     currentIndex,
-    protocol.length,
+    orderedProtocol.length,
     analysisResults,
     isSaving,
     router,
@@ -971,7 +1009,7 @@ function Step2Content() {
     isAdmin,
     isRehabMode,
     place,
-    protocol,
+    orderedProtocol,
     pushStep3OrRehabResult,
     rehabTargetStep,
     resetRuntimeStatus,
@@ -1000,6 +1038,13 @@ function Step2Content() {
       try {
         const result = await analyzerRef.current!.stopAnalysis(
           currentItem.text,
+          {
+            lifecycle: {
+              onWasmLoadStart: wasmSttLoading.beginLoad,
+              onWasmLoadSuccess: wasmSttLoading.finishLoad,
+              onWasmLoadError: wasmSttLoading.fail,
+            },
+          },
         );
         if (result.errorReason) {
           setTranscript("");
@@ -1102,6 +1147,8 @@ function Step2Content() {
 
         const currentResultEntry = {
           index: currentIndex,
+          adaptiveItemKey: currentItem.text,
+          ...(adaptiveOrder.itemMetaByKey[currentItem.text] ?? {}),
           text: currentItem.text,
           transcript: displayTranscript,
           isCorrect: finalScore >= 60,
@@ -1127,6 +1174,8 @@ function Step2Content() {
           dataSource: "measured" as const,
           audioLevel: audioLevel,
           responseTime: responseTimeMs,
+          audioDurationMs: result.duration,
+          processingMs: result.processingMs,
           acoustic: acousticSnapshot,
         };
         articulationAggregateRef.current = {
@@ -1174,12 +1223,12 @@ function Step2Content() {
 
                 const byIndex = new Map<number, any>();
                 existing
-                  .slice(-protocol.length)
+                  .slice(-orderedProtocol.length)
                   .forEach((row: any, fallbackIndex: number) => {
                     const resolvedIndex = Number.isFinite(Number(row?.index))
                       ? Number(row.index)
                       : fallbackIndex;
-                    if (resolvedIndex < 0 || resolvedIndex >= protocol.length)
+                    if (resolvedIndex < 0 || resolvedIndex >= orderedProtocol.length)
                       return;
                     byIndex.set(resolvedIndex, row);
                   });
@@ -1188,7 +1237,7 @@ function Step2Content() {
                   .sort((a, b) => a[0] - b[0])
                   .map((entry) => entry[1])
                   .slice(
-                    -Math.min(STEP2_MAX_STORED_AUDIO_ITEMS, protocol.length),
+                    -Math.min(STEP2_MAX_STORED_AUDIO_ITEMS, orderedProtocol.length),
                   );
                 let saved = false;
                 let droppedByQuota = 0;
@@ -1303,7 +1352,7 @@ function Step2Content() {
             const resolvedIndex = Number.isFinite(Number(row?.index))
               ? Number(row.index)
               : fallbackIndex;
-            if (resolvedIndex < 0 || resolvedIndex >= protocol.length) return;
+            if (resolvedIndex < 0 || resolvedIndex >= orderedProtocol.length) return;
             byIndex.set(resolvedIndex, row);
           });
           byIndex.set(currentIndex, currentResultEntry);
@@ -1341,6 +1390,8 @@ function Step2Content() {
       const metadata = buildAacTrainingMetadata(payload);
       const currentResultEntry = {
         index: currentIndex,
+        adaptiveItemKey: currentItem.text,
+        ...(adaptiveOrder.itemMetaByKey[currentItem.text] ?? {}),
         text: currentItem.text,
         transcript: payload.sentence,
         isCorrect: finalScore >= 60,
@@ -1360,18 +1411,18 @@ function Step2Content() {
 
       const existing = loadTransientStepStorage<any>(STEP2_AUDIO_STORAGE_KEY);
       const byIndex = new Map<number, any>();
-      existing.slice(-protocol.length).forEach((row: any, fallbackIndex: number) => {
+      existing.slice(-orderedProtocol.length).forEach((row: any, fallbackIndex: number) => {
         const resolvedIndex = Number.isFinite(Number(row?.index))
           ? Number(row.index)
           : fallbackIndex;
-        if (resolvedIndex < 0 || resolvedIndex >= protocol.length) return;
+        if (resolvedIndex < 0 || resolvedIndex >= orderedProtocol.length) return;
         byIndex.set(resolvedIndex, row);
       });
       byIndex.set(currentIndex, currentResultEntry);
       const next = Array.from(byIndex.entries())
         .sort((a, b) => a[0] - b[0])
         .map((entry) => entry[1])
-        .slice(-Math.min(STEP2_MAX_STORED_AUDIO_ITEMS, protocol.length));
+        .slice(-Math.min(STEP2_MAX_STORED_AUDIO_ITEMS, orderedProtocol.length));
       saveTransientStepStorage(STEP2_AUDIO_STORAGE_KEY, next);
       saveResumeMeta(STEP2_AUDIO_STORAGE_KEY, stepSignature, next.length);
       void persistAacIntentBestEffort(payload);
@@ -1388,7 +1439,7 @@ function Step2Content() {
           const resolvedIndex = Number.isFinite(Number(row?.index))
             ? Number(row.index)
             : fallbackIndex;
-          if (resolvedIndex < 0 || resolvedIndex >= protocol.length) return;
+          if (resolvedIndex < 0 || resolvedIndex >= orderedProtocol.length) return;
           byIndex.set(resolvedIndex, row);
         });
         byIndex.set(currentIndex, currentResultEntry);
@@ -1404,7 +1455,14 @@ function Step2Content() {
         message: "AAC 입력 저장 완료",
       });
     },
-    [currentIndex, currentItem, protocol.length, stepSignature, updateRuntimeStatus],
+    [
+      adaptiveOrder,
+      currentIndex,
+      currentItem,
+      orderedProtocol.length,
+      stepSignature,
+      updateRuntimeStatus,
+    ],
   );
 
   if (!isMounted || !currentItem) return null;
@@ -1417,7 +1475,7 @@ function Step2Content() {
       <div className="fixed top-0 left-0 w-full h-1 z-[60] bg-slate-100">
         <div
           className={`h-full ${isRehabMode ? "bg-sky-500 shadow-[0_0_10px_rgba(14,165,233,0.45)]" : "bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.5)]"}`}
-          style={{ width: `${((currentIndex + 1) / protocol.length) * 100}%` }}
+          style={{ width: `${((currentIndex + 1) / orderedProtocol.length) * 100}%` }}
         />
       </div>
 
@@ -1463,7 +1521,7 @@ function Step2Content() {
           <div
             className={`px-4 py-1.5 rounded-full font-black text-xs border ${isRehabMode ? "bg-sky-50 text-sky-700 border-sky-200" : "bg-orange-50 text-orange-700 border-orange-200"}`}
           >
-            {currentIndex + 1} / {protocol.length} 문항
+            {currentIndex + 1} / {orderedProtocol.length} 문항
           </div>
           <button
             type="button"
@@ -1539,6 +1597,13 @@ function Step2Content() {
                         : guideText || "녹음 버튼을 눌러 시작해 주세요"}
               </h1>
             </div>
+
+            <WasmSttLoadingIndicator
+              state={wasmSttLoading.state}
+              onRetry={wasmSttLoading.reset}
+              className="border-orange-200 bg-orange-50 text-orange-900"
+              barColorClassName="bg-orange-500"
+            />
 
             {/* 결과 리포트 카드 */}
             {resultScore !== null && (

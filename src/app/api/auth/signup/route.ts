@@ -1,3 +1,7 @@
+import {
+  SignupInputSchema,
+  validateInput,
+} from "@/lib/server/inputSchemas";
 import { NextResponse } from "next/server";
 import { createAccount } from "@/lib/server/accountAuth";
 import { upsertTherapistRegistrationProfile } from "@/lib/server/therapistRegistrationProfiles";
@@ -17,6 +21,22 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   if (!body) {
+    return NextResponse.json(
+      { ok: false, error: "invalid_signup_payload" },
+      { status: 400 },
+    );
+  }
+
+  // SI-05: zod 통합 스키마로 환자 기본 필드 검증 (loginId/password/name/phone/birthDate). 역할별 추가 필드는 아래 로직에서 검증.
+  const baseParsed = validateInput(SignupInputSchema, {
+    loginId: typeof body.loginId === "string" ? body.loginId : "",
+    password: typeof body.password === "string" ? body.password : "",
+    name: typeof body.name === "string" ? body.name : "",
+    phone: typeof body.phone === "string" ? body.phone : "",
+    birthDate: typeof body.birthDate === "string" ? body.birthDate : "",
+    email: typeof body.email === "string" && body.email ? body.email : undefined,
+  });
+  if (!baseParsed.ok || !baseParsed.data) {
     return NextResponse.json(
       { ok: false, error: "invalid_signup_payload" },
       { status: 400 },

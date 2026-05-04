@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { Noto_Sans_KR } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import {
   AUTH_COOKIE_NAME,
@@ -161,16 +162,19 @@ export default async function RootLayout({
 
   return (
     <html lang="ko" suppressHydrationWarning>
-      <head />
-      <body
-        suppressHydrationWarning
-        className={`${notoSansKr.variable} antialiased`}
-      >
-        <script
+      <head>
+        <Script
+          id="brainfriends-storage-bootstrap"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: buildStorageBootstrapScript(clientPatient, clientDrafts),
           }}
         />
+      </head>
+      <body
+        suppressHydrationWarning
+        className={`${notoSansKr.variable} antialiased`}
+      >
         {children}
       </body>
     </html>

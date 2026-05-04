@@ -1,0 +1,6 @@
+sample_id,age,severity,device_type,noise,lighting,ground_truth,transcript
+P001,68,moderate,android,low,normal,"오늘 날씨가 좋네요","오늘 날씨가 좋네요"
+P002,72,severe,ios,mid,dim,"점심 뭐 드실래요","점심 뭐 드 시래요"
+P003,75,mild,android,low,bright,"커피 한잔 주세요","커피 한잔 주세요"
+P004,82,severe,ipad,high,dim,"화장실 어디예요","화장실 어 디예요"
+P005,65,moderate,android,low,normal,"감사합니다","감사 합 니다"

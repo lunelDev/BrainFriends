@@ -35,6 +35,9 @@ import {
   loadTransientStepStorage,
   saveTransientStepStorage,
 } from "@/lib/security/transientStepStorage";
+import { getSessionShuffledItems } from "@/lib/training/questionOrder";
+import { buildAdaptiveTrainingOrder } from "@/lib/adaptive/adaptiveTraining";
+import { STEP1_WORD_BANK } from "@/lib/adaptive/itemBank";
 
 let GLOBAL_SPEECH_LOCK: Record<number, boolean> = {};
 const STEP_RESPONSE_BONUS_THRESHOLD_MS = 6000;
@@ -137,9 +140,30 @@ function Step1Content() {
     };
   }, [placeParam]);
 
-  const trainingData = useMemo(() => {
-    return buildStep1TrainingData(placeParam);
-  }, [placeParam]);
+  const baseTrainingData = useMemo(() => {
+    return getSessionShuffledItems(
+      `btt-question-order:step1:${sessionId}:${placeParam}`,
+      buildStep1TrainingData(placeParam),
+      (item) => `${item.id}|${item.question}|${item.answer ? "1" : "0"}`,
+    ).slice(0, 10);
+  }, [placeParam, sessionId]);
+  const adaptiveOrder = useMemo(
+    () =>
+      buildAdaptiveTrainingOrder({
+        step: 1,
+        items: baseTrainingData,
+        responses: questionResults.map((row) => ({
+          itemKey: String(row?.adaptiveItemKey || row?.question || row?.text || ""),
+          correct: Boolean(row?.isCorrect),
+        })),
+        getItemKey: (item) => String(item.question),
+        getItemText: (item) => String(item.question),
+        calibratedBank: STEP1_WORD_BANK,
+        maxItems: 10,
+      }),
+    [baseTrainingData, questionResults],
+  );
+  const trainingData = adaptiveOrder.orderedItems;
   const stepSignature = useMemo(
     () =>
       buildStepSignature(
@@ -214,7 +238,7 @@ function Step1Content() {
       router.push("/");
       return;
     }
-    // 최초 자가진단 흐름이면 장소 선택이 아니라 활동 선택으로 돌아간다.
+    // 최초 자가점검 흐름이면 장소 선택이 아니라 활동 선택으로 돌아간다.
     if (isFirstDiagnosisFlow()) {
       clearFirstDiagnosisFlow();
       saveTrainingExitProgress(placeParam, 1);
@@ -245,6 +269,13 @@ function Step1Content() {
         // 1. ✅ Result 페이지용 백업 (text 필드 사용)
         const formattedForResult = results.map((r) => ({
           text: r.question,
+          adaptiveItemKey: r.adaptiveItemKey,
+          adaptiveItemId: r.adaptiveItemId,
+          adaptiveTheta: r.adaptiveTheta,
+          adaptiveSd: r.adaptiveSd,
+          itemDifficulty: r.itemDifficulty,
+          itemDiscrimination: r.itemDiscrimination,
+          selectionMethod: r.selectionMethod,
           userAnswer: r.userAnswer,
           isCorrect: r.isCorrect,
           responseTime: r.responseTime,
@@ -256,6 +287,13 @@ function Step1Content() {
         // 2. ✅ SessionManager용 데이터 (question 필드 사용)
         const formattedForSession = results.map((r) => ({
           question: r.question,
+          adaptiveItemKey: r.adaptiveItemKey,
+          adaptiveItemId: r.adaptiveItemId,
+          adaptiveTheta: r.adaptiveTheta,
+          adaptiveSd: r.adaptiveSd,
+          itemDifficulty: r.itemDifficulty,
+          itemDiscrimination: r.itemDiscrimination,
+          selectionMethod: r.selectionMethod,
           userAnswer: r.userAnswer,
           correctAnswer: r.correctAnswer,
           isCorrect: r.isCorrect,
@@ -369,6 +407,8 @@ function Step1Content() {
       const updatedResults = [
         ...questionResults,
         {
+          adaptiveItemKey: currentItem.question,
+          ...(adaptiveOrder.itemMetaByKey[currentItem.question] ?? {}),
           question: currentItem.question,
           userAnswer,
           isCorrect,
@@ -383,6 +423,13 @@ function Step1Content() {
         const progressForStorage = updatedResults.map((r) => ({
           question: r.question,
           text: r.question,
+          adaptiveItemKey: r.adaptiveItemKey,
+          adaptiveItemId: r.adaptiveItemId,
+          adaptiveTheta: r.adaptiveTheta,
+          adaptiveSd: r.adaptiveSd,
+          itemDifficulty: r.itemDifficulty,
+          itemDiscrimination: r.itemDiscrimination,
+          selectionMethod: r.selectionMethod,
           userAnswer: r.userAnswer,
           correctAnswer: r.correctAnswer,
           isCorrect: r.isCorrect,
@@ -425,6 +472,7 @@ function Step1Content() {
       isAnswered,
       questionStartTime,
       questionResults,
+      adaptiveOrder,
       saveStep1Results,
       isRehabMode,
       rehabTargetStep,
