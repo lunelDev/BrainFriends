@@ -64,7 +64,7 @@
 | SR-IRT-018 | 2PL IRT + MFI 적응형 알고리즘 결정성 |
 | SR-AI-EVAL-RUNNER | WER/CER runner CLI 결정성 (stratified by ageGroup/severity/noise/device) |
 | SR-AI-RTF-RUNNER | RTF/P95 latency runner CLI 결정성 |
-| SR-WASM-STT-LOADING | WASM Whisper 로드 상태 머신 결정성 |
+| SR-WASM-STT-LOADING | 실험/오프라인 후보 STT 로드 상태 머신 결정성 |
 
 ### 3.6 사이버보안 (SR-SEC-IA05/IA07/UC03/RA01/UC07/TRE01/SI07/SI05/SI04-SOUP/SI04-MANIFEST)
 
@@ -87,7 +87,7 @@
 - 브라우저 환경: Chromium 110+, Safari 16+, Firefox 110+ (WASM + AudioContext 필요)
 - Node.js: ≥ 20.6 (tsx 실행)
 - DB: PostgreSQL ≥ 14
-- 모델 자산: face_landmarker.task (`docs/security/manifest/latest.json` sha256 동결), Xenova/whisper-tiny (IndexedDB 캐싱)
+- 모델 자산: `public/mediapipe/models/face_landmarker.task` (`docs/security/manifest/latest.json` sha256 동결). STT는 현재 서버 보안 프록시 경로를 기본값으로 관리한다.
 
 ## 6. 인터페이스
 

@@ -359,10 +359,7 @@ export function parseStoredArray(key: string) {
 }
 
 export function shouldShowPlayButton(stepId: number, item: any) {
-  return (
-    [2, 4, 5].includes(stepId) &&
-    Boolean(item?.audioUrl || item?.text || item?.transcript || item?.targetText || item?.prompt)
-  );
+  return [2, 4, 5].includes(stepId) && typeof item?.audioUrl === "string" && item.audioUrl.length > 0;
 }
 
 function hasMeasuredSpeechTranscript(item: any) {

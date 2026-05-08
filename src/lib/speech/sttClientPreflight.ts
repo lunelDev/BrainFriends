@@ -15,11 +15,13 @@ export function resolveClientSttPreflight(params: {
   useCase: SttUseCase;
   wasmAvailable?: boolean;
   allowTrainingServerFallback?: boolean;
+  allowWasmExperiment?: boolean;
 }): ClientSttPreflightDecision {
   const runtime = resolveSttRuntime({
     useCase: params.useCase,
     wasmAvailable: params.wasmAvailable,
     allowTrainingServerFallback: params.allowTrainingServerFallback,
+    allowWasmExperiment: params.allowWasmExperiment,
   });
 
   return {

@@ -37,8 +37,10 @@ import {
 } from "@/lib/speech/SpeechAnalyzer";
 import { type AcousticSnapshot } from "@/lib/kwab/SessionManager";
 import { callVoiceAnalysis } from "@/lib/audio/voiceAnalysisClient";
+import { playRecordingStartBeep } from "@/lib/audio/playRecordingStartBeep";
 import { useWasmSttLoading } from "@/lib/speech/useWasmSttLoading";
 import WasmSttLoadingIndicator from "@/components/training/WasmSttLoadingIndicator";
+import { SING_ADAPTIVE_BANK } from "@/lib/adaptive/itemBank";
 
 type Phase = "select" | "ready" | "calibrating" | "countdown" | "singing" | "result";
 
@@ -60,6 +62,9 @@ type SingResultEnvelope = {
   song: string;
   userName: string;
   score: number;
+  scoringVersion?: string;
+  scoreReason?: string;
+  expectedLyrics?: string;
   finalJitter: string;
   finalSi: string;
   facialResponseDelta?: string;
@@ -83,6 +88,13 @@ type SingResultEnvelope = {
     | "not_recorded"
     | "pending_result_sync";
   reviewAudioUploadError?: string | null;
+  adaptiveItemKey?: string;
+  adaptiveItemId?: string;
+  adaptiveTheta?: number;
+  adaptiveSd?: number;
+  itemDifficulty?: number;
+  itemDiscrimination?: number;
+  adaptiveSelectionMethod?: "irt_mfi" | "sequential_fallback";
   // Parselmouth 음향 측정값 (REQ-ACOUSTIC-001~004). 결과 페이지 참고용.
   acoustic?: AcousticSnapshot | null;
   governance: {
@@ -101,6 +113,7 @@ type BaselineFaceMetrics = {
 
 const SING_RESULT_SESSION_KEY = "bf_sing_result_transient";
 const SING_LAST_SONG_SESSION_KEY = "bf_sing_song_transient";
+const SING_SCORING_VERSION = "sing-score-v2-transcript-required";
 
 const LYRIC_LEAD_OFFSET_SEC = 0.28;
 const AUDIO_LEVEL_ONSET_THRESHOLD = 0.02;
@@ -114,6 +127,21 @@ const CALIBRATION_MIN_TRACKING_QUALITY = 30;
 const CALIBRATION_MIN_FACE_WIDTH = 0.1;
 const CALIBRATION_MAX_CENTER_OFFSET = 0.18;
 const CALIBRATION_STABLE_MS = 400;
+
+function getSingAdaptiveEvidence(song: SongKey) {
+  const item = SING_ADAPTIVE_BANK.find(
+    (candidate) => candidate.id === `sing-${song.replace(/\s+/g, "-")}`,
+  );
+  return {
+    adaptiveItemKey: song,
+    adaptiveItemId: item?.id ?? `sing-${song}`,
+    adaptiveTheta: 0,
+    adaptiveSd: 1,
+    itemDifficulty: item?.b ?? 0,
+    itemDiscrimination: item?.a ?? 1,
+    adaptiveSelectionMethod: "irt_mfi" as const,
+  };
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -279,7 +307,8 @@ async function analyzeSongPronunciation(params: {
     const transcriber = new WhisperTranscriber();
     const analyzer = new PronunciationAnalyzer();
     const { text } = await transcriber.transcribe(params.audioBlob, {
-      targetText: params.expectedLyrics,
+      // 목표 가사를 STT prompt 로 넣으면 배경음/힌트 영향으로 과대 전사가 생길 수 있다.
+      targetText: undefined,
       useCase: "daily_training",
       lifecycle: params.lifecycle,
     });
@@ -321,27 +350,53 @@ function calculateCompositeSingScore(metrics: {
   facialResponseChange: number | null;
   latencyMs: number | null;
 }) {
-  const weightedParts: Array<{ value: number | null; weight: number }> = [
-    { value: metrics.consonantAccuracy, weight: 0.4 },
-    { value: metrics.vowelAccuracy, weight: 0.4 },
-    { value: metrics.lyricAccuracy, weight: 0.15 },
-    {
-      value:
-        metrics.latencyMs == null
-          ? null
-          : clamp(100 - Math.max(0, metrics.latencyMs - 180) / 6, 0, 100),
-      weight: 0.05,
-    },
-  ];
+  if (
+    metrics.consonantAccuracy == null ||
+    metrics.vowelAccuracy == null ||
+    metrics.lyricAccuracy == null
+  ) {
+    return 0;
+  }
 
-  const available = weightedParts.filter((part) => part.value != null);
-  if (!available.length) return 0;
-  const totalWeight = available.reduce((sum, part) => sum + part.weight, 0);
-  const totalScore = available.reduce(
-    (sum, part) => sum + Number(part.value) * (part.weight / totalWeight),
-    0,
-  );
-  return Math.round(clamp(totalScore, 0, 100));
+  const latencyScore =
+    metrics.latencyMs == null
+      ? 0
+      : clamp(100 - Math.max(0, metrics.latencyMs - 180) / 6, 0, 100);
+  const rawScore =
+    metrics.consonantAccuracy * 0.35 +
+    metrics.vowelAccuracy * 0.35 +
+    metrics.lyricAccuracy * 0.25 +
+    latencyScore * 0.05;
+
+  const lyricGuardCap = metrics.lyricAccuracy < 45 ? metrics.lyricAccuracy + 20 : 100;
+  return Math.round(clamp(Math.min(rawScore, lyricGuardCap), 0, 100));
+}
+
+function buildSingScoreReason(params: {
+  hasMeasuredPronunciation: boolean;
+  consonantAccuracy: number | null;
+  vowelAccuracy: number | null;
+  lyricAccuracy: number | null;
+  latencyMs: number | null;
+  transcript: string;
+  errorReason: string | null;
+}) {
+  if (!params.hasMeasuredPronunciation) {
+    return `score_not_calculated:${params.errorReason || "missing_pronunciation_metrics"}`;
+  }
+
+  const latencyText =
+    params.latencyMs == null
+      ? "latency=not_measured"
+      : `latency=${Math.round(params.latencyMs)}ms`;
+  return [
+    SING_SCORING_VERSION,
+    `consonant=${params.consonantAccuracy?.toFixed(1)}`,
+    `vowel=${params.vowelAccuracy?.toFixed(1)}`,
+    `lyric=${params.lyricAccuracy?.toFixed(1)}`,
+    latencyText,
+    `transcriptChars=${params.transcript.replace(/\s+/g, "").length}`,
+  ].join("; ");
 }
 
 function normalizeTrackingQuality(value: number) {
@@ -483,6 +538,9 @@ function buildSkippedSingResult(params: {
     song: params.song,
     userName: params.userName || "사용자",
     score: 72,
+    scoringVersion: SING_SCORING_VERSION,
+    scoreReason: "demo_skip:not_measured",
+    expectedLyrics: buildExpectedSongLyrics(params.song),
     finalJitter: "6.4%",
     finalSi: "96.2",
     facialResponseDelta: "3.8",
@@ -506,6 +564,7 @@ function buildSkippedSingResult(params: {
         ? "pending_result_sync"
         : "not_recorded",
     reviewAudioUploadError: null,
+    ...getSingAdaptiveEvidence(params.song),
     governance: params.governance,
     versionSnapshot: buildVersionSnapshot("sing", {
       algorithm_version: params.governance.analysisVersion,
@@ -892,7 +951,7 @@ function BrainSingPageContent() {
     }
   };
 
-  const startVoiceRecording = () => {
+  const startVoiceRecording = async () => {
     const stream = streamRef.current;
     if (!stream || typeof MediaRecorder === "undefined") return;
     const audioTracks = stream.getAudioTracks();
@@ -919,6 +978,7 @@ function BrainSingPageContent() {
           recordedChunksRef.current.push(event.data);
         }
       };
+      await playRecordingStartBeep();
       recorder.start();
       mediaRecorderRef.current = recorder;
     } catch (error) {
@@ -1057,7 +1117,7 @@ function BrainSingPageContent() {
             countdownTimerRef.current = null;
           }
           window.setTimeout(() => {
-            startSinging();
+            void startSinging();
           }, 450);
           return 0;
         }
@@ -1140,8 +1200,7 @@ function BrainSingPageContent() {
       effectiveFacialResponseDelta != null &&
       calibrationCompletedRef.current &&
       effectiveFaceSampleCount >= 1;
-    const metricSource =
-      hasMeasuredPronunciation || hasMeasuredFace ? "measured" : "demo";
+    const metricSource = hasMeasuredPronunciation ? "measured" : "demo";
     const effectiveJitter = avgJ ?? 0;
     const score = calculateCompositeSingScore({
       consonantAccuracy: pronunciation.consonantAccuracy,
@@ -1152,6 +1211,15 @@ function BrainSingPageContent() {
         ? clamp(effectiveFacialResponseDelta * 12, 0, 100)
         : null,
       latencyMs,
+    });
+    const scoreReason = buildSingScoreReason({
+      hasMeasuredPronunciation,
+      consonantAccuracy: pronunciation.consonantAccuracy,
+      vowelAccuracy: pronunciation.vowelAccuracy,
+      lyricAccuracy: pronunciation.lyricAccuracy,
+      latencyMs,
+      transcript: pronunciation.transcript,
+      errorReason: pronunciation.errorReason,
     });
 
     const finalJitterText = effectiveJitter.toFixed(2);
@@ -1221,6 +1289,9 @@ function BrainSingPageContent() {
           song,
           userName,
           score,
+        scoringVersion: SING_SCORING_VERSION,
+        scoreReason,
+        expectedLyrics,
         finalJitter: finalJitterText,
         finalSi: finalSiText,
         facialResponseDelta: facialResponseDeltaText,
@@ -1242,6 +1313,7 @@ function BrainSingPageContent() {
         reviewAudioUploadState,
         reviewAudioUploadError,
         acoustic: acousticSnapshot,
+        ...getSingAdaptiveEvidence(song),
         governance: {
           catalogVersion:
             currentSong.governance.catalogVersion ?? SING_TRAINING_CATALOG_VERSION,
@@ -1259,6 +1331,13 @@ function BrainSingPageContent() {
           config_version:
             currentSong.governance.catalogVersion ?? SING_TRAINING_CATALOG_VERSION,
           measurement_metadata: {
+            scoring_version: SING_SCORING_VERSION,
+            score_reason: scoreReason,
+            expected_lyrics: expectedLyrics,
+            transcript: pronunciation.transcript,
+            lyric_accuracy: pronunciation.lyricAccuracy,
+            consonant_accuracy: pronunciation.consonantAccuracy,
+            vowel_accuracy: pronunciation.vowelAccuracy,
             facial_response_delta:
               hasMeasuredFace && effectiveFacialResponseDelta != null
                 ? Number(effectiveFacialResponseDelta.toFixed(1))
@@ -1288,7 +1367,7 @@ function BrainSingPageContent() {
     }
   };
 
-  const startSinging = () => {
+  const startSinging = async () => {
     const startedAt = performance.now();
     const jitterData: number[] = [];
     const siData: number[] = [];
@@ -1305,7 +1384,7 @@ function BrainSingPageContent() {
     setJitterHistory([]);
     setSiHistory([]);
     setLyricFillPct(0);
-    startVoiceRecording();
+    await startVoiceRecording();
 
     const hasReliableAudioDuration = audioReady && songDurationSec > 0;
     const finishAtSec = hasReliableAudioDuration

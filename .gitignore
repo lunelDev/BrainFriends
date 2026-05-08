@@ -55,6 +55,10 @@ coverage/
 next-env.d.ts
 .vercel
 data/audit/*.ndjson
+data/local-media/
+public/models/
+!public/mediapipe/models/
+public/models/**/*.onnx
 
 # ===============================
 # voice-analysis-service (Python FastAPI)

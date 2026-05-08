@@ -31,6 +31,11 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
   const isReportRoute = pathname === "/report";
   const isProgramRoute = pathname.startsWith("/programs/");
   const isLingoRoute = pathname.startsWith("/programs/lingo/");
+  // XR 프리뷰 라우트는 임상 chrome (white shell, KPI panel, 백그라운드 FaceTracker) 를
+  // 입히지 않고 페이지 자체 레이아웃 (다크 테마, 자체 카메라) 으로 풀스크린 렌더한다.
+  // (training) 그룹 안에 있는 이유는 보호 라우팅 + AuthProvider 공유를 위함이지,
+  // 시각적 chrome 을 공유하기 위해서가 아니다.
+  const isXrRoute = pathname.startsWith("/select-page/xr");
   const cameraEnabledProgramRoutes = new Set([
     "/programs/step-2",
     "/programs/step-4",
@@ -206,6 +211,17 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
     return count > 0 ? sum / count : 0;
   };
 
+  // XR 라우트: 자체 풀스크린 렌더. 흰색 셸/오버플로우 클립/KPI 패널/백그라운드
+  // FaceTracker 모두 우회한다.
+  //
+  // body 자체에 다크 배경을 강제 적용해야 함:
+  //   globals.css 가 body 에 `background: ... #eef7fd` (라이트 블루) 를 박아서,
+  //   wrapper 만 다크로 바꾸면 스크롤 영역/오버플로우에서 라이트 블루가 새어 나온다.
+  //   라우트 active 동안만 body.style.background 를 직접 덮어쓰고, 이탈 시 복구.
+  if (isXrRoute) {
+    return <XrRouteShell>{children}</XrRouteShell>;
+  }
+
   return (
     <div className="training-print-root min-h-screen lg:h-screen w-full bg-[#F3F4F6] overflow-y-auto lg:overflow-hidden">
       <div className="training-print-shell w-full min-h-screen lg:h-screen bg-white flex flex-col overflow-y-auto lg:overflow-hidden relative">
@@ -328,5 +344,32 @@ export default function TrainingLayout({
     <TrainingProvider>
       <TrainingLayoutContent>{children}</TrainingLayoutContent>
     </TrainingProvider>
+  );
+}
+
+// XR 라우트 전용 셸. body 의 globals.css 라이트 블루 배경을 라우트 active 동안만
+// 다크 컬러로 덮어쓴다. 이탈 시 원본 inline style 을 정확히 복구.
+function XrRouteShell({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const body = document.body;
+    const html = document.documentElement;
+    const prevBodyBg = body.style.background;
+    const prevBodyColor = body.style.color;
+    const prevHtmlBg = html.style.background;
+    body.style.background = "#06091c";
+    body.style.color = "#ffffff";
+    html.style.background = "#06091c";
+    return () => {
+      body.style.background = prevBodyBg;
+      body.style.color = prevBodyColor;
+      html.style.background = prevHtmlBg;
+    };
+  }, []);
+
+  return (
+    <div className="min-h-screen w-full bg-[#06091c] text-white">
+      {children}
+    </div>
   );
 }

@@ -6,7 +6,7 @@ import {
   type IrtResponse,
 } from "./irt";
 
-type AdaptiveStep = 1 | 2 | 4;
+type AdaptiveStep = 1 | 2 | 4 | 5 | "sing";
 
 export interface AdaptiveTrainingResponse {
   itemKey: string;
@@ -61,7 +61,7 @@ function inferItemParams(params: {
   const normalizedText = normalizeAdaptiveKey(params.itemText);
   const normalizedKey = normalizeAdaptiveKey(params.itemKey);
   const matched = params.calibratedBank?.find((item) => {
-    const idTail = String(item.id).replace(/^step\d+-/, "");
+    const idTail = String(item.id).replace(/^(?:step\d+|sing)-/, "");
     return (
       normalizeAdaptiveKey(item.id) === normalizedKey ||
       normalizeAdaptiveKey(idTail) === normalizedText ||
@@ -80,7 +80,16 @@ function inferItemParams(params: {
   }
 
   const plainLength = normalizeAdaptiveKey(params.itemText).length || 1;
-  const stepOffset = params.step === 1 ? -0.6 : params.step === 2 ? -0.2 : 0.2;
+  const stepOffset =
+    params.step === 1
+      ? -0.6
+      : params.step === 2
+        ? -0.2
+        : params.step === 4
+          ? 0.2
+          : params.step === 5
+            ? 0.45
+            : 0.1;
   const inferredDifficulty = clamp(
     stepOffset + (plainLength - 4) / 5 + params.fallbackIndex * 0.04,
     -2.5,
@@ -88,7 +97,7 @@ function inferItemParams(params: {
   );
   const discrimination = clamp(0.9 + Math.min(plainLength, 14) * 0.02, 0.9, 1.2);
   return {
-    id: `step${params.step}-${normalizedKey || params.fallbackIndex}`,
+    id: `step${String(params.step)}-${normalizedKey || params.fallbackIndex}`,
     a: round3(discrimination),
     b: round3(inferredDifficulty),
     metadata: {

@@ -23,7 +23,8 @@ import {
   startLoading,
   type WasmSttLoadingState,
 } from "@/lib/speech/wasmSttLoadingState";
-import { WASM_STT_MODEL_ID } from "@/lib/speech/wasmSttAdapter";
+
+const WASM_STT_EXPERIMENT_MODEL_ID = "Xenova/whisper-tiny";
 
 export function useWasmSttLoading() {
   const [state, setState] = useState<WasmSttLoadingState>(
@@ -33,7 +34,7 @@ export function useWasmSttLoading() {
   const beginLoad = useCallback(() => {
     setState((prev) =>
       startLoading(prev, {
-        modelId: WASM_STT_MODEL_ID,
+        modelId: WASM_STT_EXPERIMENT_MODEL_ID,
         startedAtMs: Date.now(),
       }),
     );

@@ -5,7 +5,6 @@
 import type { SttUseCase } from "@/lib/speech/sttPolicy";
 import { buildKoreanSttPrompt } from "@/lib/speech/sttPrompt";
 import { resolveSttRuntime } from "@/lib/speech/sttRuntime";
-import { transcribeWithWasmStt } from "@/lib/speech/wasmSttAdapter";
 import { resolveSttLanguageCode } from "@/lib/speech/sttLanguage";
 import {
   resolveSttReviewOutcome,
@@ -207,6 +206,7 @@ export class WhisperTranscriber {
     }
 
     if (runtime.engine === "wasm_whisper") {
+      const { transcribeWithWasmStt } = await import("@/lib/speech/wasmSttAdapter");
       options?.lifecycle?.onWasmLoadStart?.();
       let result: Awaited<ReturnType<typeof transcribeWithWasmStt>>;
       try {

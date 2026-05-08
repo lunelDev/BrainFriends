@@ -1,6 +1,8 @@
 // Deterministic V&V checks runner. SR-* 요건별 단위 검증을 모은 단일 entry point.
 // `npm run test:vnv` 가 본 파일을 tsx 로 직접 실행한다.
 // Last sync: 2026-04-30 — TC-USABILITY-001 (IEC 62366) added.
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { strict as assert } from "node:assert";
 import { calculateKWABScores } from "@/lib/kwab/KWABScoring";
@@ -108,11 +110,21 @@ import {
 } from "@/lib/server/guardianContactsDb";
 import {
   getItemBankForStep,
+  SING_ADAPTIVE_BANK,
   STEP1_WORD_BANK,
   STEP2_REPETITION_BANK,
   STEP4_SENTENCE_BANK,
+  STEP5_READING_BANK,
 } from "@/lib/adaptive/itemBank";
 import { buildAdaptiveTrainingOrder } from "@/lib/adaptive/adaptiveTraining";
+import {
+  collectAdaptiveEvidence,
+  serializeAdaptiveEvidenceCsv,
+  serializeAdaptiveEvidenceItemSummaryCsv,
+  serializeAdaptiveEvidenceSessionSummaryCsv,
+  summarizeAdaptiveEvidence,
+  summarizeAdaptiveEvidenceRows,
+} from "@/lib/adaptive/evidence";
 import {
   evaluateGuardianConsent,
   isLegalTransition,
@@ -145,6 +157,10 @@ import {
   scoreAacTranscriptMatch,
 } from "@/lib/aac/trainingIntegration";
 import {
+  calculateStep2FinalScore,
+  mergeStep2ResultsByIndex,
+} from "@/lib/training/step2Scoring";
+import {
   buildKoreanSttPrompt,
   hashSttPrompt,
   STT_PROMPT_VERSION,
@@ -157,6 +173,10 @@ import {
   isWasmSttAvailable,
   transcribeWithWasmStt,
   WASM_STT_ENGINE_VERSION,
+  WASM_STT_LOCAL_MODEL_BASE_PATH,
+  WASM_STT_LOCAL_ONNX_MJS_PATH,
+  WASM_STT_LOCAL_ONNX_WASM_PATH,
+  WASM_STT_MODEL_DTYPE,
   WASM_STT_MODEL_ID,
   WASM_STT_PACKAGE_VERSION,
   WASM_STT_SAMPLE_RATE,
@@ -746,6 +766,53 @@ function runAacTrainingIntegrationCheck(): CheckResult {
   };
 }
 
+function runStep2ScoringPersistenceCheck(): CheckResult {
+  const highPhrase = calculateStep2FinalScore({
+    targetText: "사과를 주세요.",
+    transcript: "사과를 주세요.",
+    consonantAccuracy: 22,
+    vowelAccuracy: 28,
+  });
+  const shortPromptBiasGuard = calculateStep2FinalScore({
+    targetText: "방",
+    transcript: "방",
+    consonantAccuracy: 20,
+    vowelAccuracy: 20,
+  });
+  const articulationOnly = calculateStep2FinalScore({
+    targetText: "사과를 주세요.",
+    transcript: "",
+    consonantAccuracy: 70,
+    vowelAccuracy: 80,
+  });
+  const merged = mergeStep2ResultsByIndex(
+    [
+      { index: 0, finalScore: 40 },
+      { index: 1, finalScore: 50 },
+    ],
+    { index: 1, finalScore: 90 },
+    10,
+  );
+
+  assert.equal(highPhrase.finalScore, 47.5);
+  assert.equal(shortPromptBiasGuard.finalScore, 44);
+  assert.equal(articulationOnly.finalScore, 52.5);
+  assert.equal(merged.length, 2);
+  assert.equal(merged[1]?.finalScore, 90);
+
+  return {
+    id: "TC-STEP2-003",
+    area: "training",
+    requirementIds: ["SR-HISTORY-005"],
+    inputSummary:
+      "step2 phrase-aware scoring + same-index result merge fixture",
+    expected:
+      "Phrase match is weighted, short target prompt-bias cannot force 100, and latest item replaces stale same-index state",
+    actual: `phrase=${highPhrase.finalScore}, short=${shortPromptBiasGuard.finalScore}, articulation=${articulationOnly.finalScore}, merged=${merged[1]?.finalScore}`,
+    detail: `phraseScore=${highPhrase.phraseMatchScore}; shortPhrase=${shortPromptBiasGuard.phraseMatchScore}; articulationScore=${articulationOnly.articulationScore}; mergedLength=${merged.length}`,
+  };
+}
+
 function runSttPolicyCheck(): CheckResult {
   const mock = resolveSttPolicy({
     useCase: "daily_training",
@@ -761,8 +828,9 @@ function runSttPolicyCheck(): CheckResult {
     wasmAvailable: false,
     allowTrainingServerFallback: false,
   });
-  assert.equal(blocked.engine, "disabled");
-  assert.equal(blocked.rawAudioLeavesDevice, false);
+  assert.equal(blocked.engine, "server_whisper");
+  assert.equal(blocked.rawAudioLeavesDevice, true);
+  assert.equal(blocked.reason, "server_default_for_training");
 
   const evaluation = resolveSttPolicy({
     useCase: "weekly_kwab",
@@ -783,6 +851,7 @@ function runSttPolicyCheck(): CheckResult {
     useCase: "daily_training",
     wasmAvailable: true,
     allowTrainingServerFallback: false,
+    allowWasmExperiment: true,
   });
   assert.equal(wasm.engine, "wasm_whisper");
   assert.equal(wasm.rawAudioLeavesDevice, false);
@@ -796,9 +865,9 @@ function runSttPolicyCheck(): CheckResult {
     area: "stt",
     requirementIds: ["SR-STT-009"],
     inputSummary:
-      "daily/weekly/fallback/wasm STT policy fixture + Korean prompt fixture",
+      "daily/weekly/default server/wasm experiment STT policy fixture + Korean prompt fixture",
     expected:
-      "dev mock, daily blocked, weekly server, training fallback server, wasm local, prompt includes target terms",
+      "dev mock, daily server, weekly server, training fallback server, wasm only with experiment flag, prompt includes target terms",
     actual: `mock=${mock.engine}, daily=${blocked.engine}, weekly=${evaluation.engine}, fallback=${temporaryFallback.engine}, wasm=${wasm.engine}, promptHasTarget=${prompt.includes("바다")}`,
     detail: `mock=${mock.engine}; daily=${blocked.engine}; weekly=${evaluation.engine}; fallback=${temporaryFallback.engine}; wasm=${wasm.engine}`,
   };
@@ -822,6 +891,7 @@ function runSttRuntimeResolutionCheck(): CheckResult {
     devMode: false,
     wasmAvailable: true,
     allowTrainingServerFallback: false,
+    allowWasmExperiment: true,
   });
   const server = resolveSttRuntime({
     useCase: "weekly_kwab",
@@ -833,8 +903,9 @@ function runSttRuntimeResolutionCheck(): CheckResult {
   assert.equal(isWasmSttAvailable(), false);
   assert.equal(mock.engine, "mock_stt");
   assert.equal(mock.isMock, true);
-  assert.equal(blocked.engine, "disabled");
-  assert.equal(blocked.canUploadToServer, false);
+  assert.equal(blocked.engine, "server_whisper");
+  assert.equal(blocked.canUploadToServer, true);
+  assert.equal(blocked.reason, "server_default_for_training");
   assert.equal(wasm.engine, "wasm_whisper");
   assert.equal(wasm.rawAudioLeavesDevice, false);
   assert.equal(server.engine, "server_whisper");
@@ -845,9 +916,9 @@ function runSttRuntimeResolutionCheck(): CheckResult {
     area: "stt",
     requirementIds: ["SR-STT-009"],
     inputSummary:
-      "mock / blocked / wasm / server STT runtime fixture + adapter availability",
+      "mock / training server / wasm experiment / evaluation server STT runtime fixture + adapter availability",
     expected:
-      "runtime separates mock, blocked, wasm, and server states; default WASM adapter is unavailable",
+      "runtime uses server STT by default for training, keeps WASM behind experiment flag, and supports evaluation server STT",
     actual: `mock=${mock.engine}, blocked=${blocked.engine}, wasm=${wasm.engine}, server=${server.engine}, adapter=${isWasmSttAvailable()}`,
     detail: `mock=${mock.engine}; blocked=${blocked.engine}; wasm=${wasm.engine}; server=${server.engine}; adapter=${isWasmSttAvailable()}`,
   };
@@ -876,10 +947,11 @@ function runSttClientPreflightCheck(): CheckResult {
     wasmAvailable: false,
     allowTrainingServerFallback: false,
   });
-  const gameFallback = resolveClientSttPreflight({
+  const gameWasmExperiment = resolveClientSttPreflight({
     useCase: "game_training",
-    wasmAvailable: false,
-    allowTrainingServerFallback: true,
+    wasmAvailable: true,
+    allowTrainingServerFallback: false,
+    allowWasmExperiment: true,
   });
   const weekly = resolveClientSttPreflight({
     useCase: "weekly_kwab",
@@ -887,11 +959,12 @@ function runSttClientPreflightCheck(): CheckResult {
     allowTrainingServerFallback: false,
   });
 
-  assert.equal(gameBlocked.canUploadToServer, false);
-  assert.equal(gameBlocked.rawAudioLeavesDevice, false);
-  assert.equal(gameBlocked.reason, "wasm_unavailable_server_blocked");
-  assert.equal(gameFallback.canUploadToServer, true);
-  assert.equal(gameFallback.rawAudioLeavesDevice, true);
+  assert.equal(gameBlocked.canUploadToServer, true);
+  assert.equal(gameBlocked.rawAudioLeavesDevice, true);
+  assert.equal(gameBlocked.reason, "server_default_for_training");
+  assert.equal(gameWasmExperiment.canUploadToServer, false);
+  assert.equal(gameWasmExperiment.rawAudioLeavesDevice, false);
+  assert.equal(gameWasmExperiment.engine, "wasm_whisper");
   assert.equal(weekly.canUploadToServer, true);
   assert.equal(weekly.reason, "server_allowed_for_evaluation");
 
@@ -900,11 +973,11 @@ function runSttClientPreflightCheck(): CheckResult {
     area: "stt",
     requirementIds: ["SR-STT-009"],
     inputSummary:
-      "game_training client preflight without WASM/fallback + fallback enabled + weekly_kwab fixture",
+      "game_training client preflight server default + WASM experiment + weekly_kwab fixture",
     expected:
-      "game training blocks server upload unless explicit fallback; weekly evaluation can upload",
-    actual: `game=${gameBlocked.canUploadToServer}/${gameBlocked.reason}, fallback=${gameFallback.canUploadToServer}, weekly=${weekly.canUploadToServer}/${weekly.reason}`,
-    detail: `gameUpload=${gameBlocked.canUploadToServer}; rawLeaves=${gameBlocked.rawAudioLeavesDevice}; weekly=${weekly.canUploadToServer}`,
+      "game training uses server STT by default; explicit WASM experiment keeps raw audio local; weekly evaluation can upload",
+    actual: `game=${gameBlocked.canUploadToServer}/${gameBlocked.reason}, wasm=${gameWasmExperiment.engine}, weekly=${weekly.canUploadToServer}/${weekly.reason}`,
+    detail: `gameUpload=${gameBlocked.canUploadToServer}; rawLeaves=${gameBlocked.rawAudioLeavesDevice}; wasmRawLeaves=${gameWasmExperiment.rawAudioLeavesDevice}; weekly=${weekly.canUploadToServer}`,
   };
 }
 
@@ -2736,12 +2809,69 @@ async function runWasmSttAdapterCheck(): Promise<CheckResult> {
 
   // 안정 식별자 — release manifest 의 model 자산 추적과 결합된다.
   assert.equal(WASM_STT_MODEL_ID, "Xenova/whisper-tiny");
+  assert.equal(WASM_STT_MODEL_DTYPE, "fp32");
+  assert.equal(WASM_STT_LOCAL_MODEL_BASE_PATH, "/models/wasm-stt/");
+  assert.equal(
+    WASM_STT_LOCAL_ONNX_WASM_PATH,
+    "/vendor/onnxruntime/ort-wasm-simd-threaded.asyncify.wasm",
+  );
+  assert.equal(
+    WASM_STT_LOCAL_ONNX_MJS_PATH,
+    "/vendor/onnxruntime/ort-wasm-simd-threaded.asyncify.mjs",
+  );
   assert.equal(WASM_STT_PACKAGE_VERSION, "4.2.0");
   assert.equal(WASM_STT_SAMPLE_RATE, 16000);
   assert.equal(
     WASM_STT_ENGINE_VERSION,
-    "transformers.js@4.2.0:Xenova/whisper-tiny:v0.1",
+    "transformers.js@4.2.0:Xenova/whisper-tiny:fp32:local-assets:v0.2",
   );
+
+  const expectedLocalAssetPaths = [
+    "public/models/wasm-stt/Xenova/whisper-tiny/config.json",
+    "public/models/wasm-stt/Xenova/whisper-tiny/generation_config.json",
+    "public/models/wasm-stt/Xenova/whisper-tiny/preprocessor_config.json",
+    "public/models/wasm-stt/Xenova/whisper-tiny/tokenizer.json",
+    "public/models/wasm-stt/Xenova/whisper-tiny/tokenizer_config.json",
+    "public/models/wasm-stt/Xenova/whisper-tiny/special_tokens_map.json",
+    "public/models/wasm-stt/Xenova/whisper-tiny/normalizer.json",
+    "public/models/wasm-stt/Xenova/whisper-tiny/vocab.json",
+    "public/models/wasm-stt/Xenova/whisper-tiny/merges.txt",
+    "public/models/wasm-stt/Xenova/whisper-tiny/added_tokens.json",
+    "public/models/wasm-stt/Xenova/whisper-tiny/onnx/encoder_model.onnx",
+    "public/models/wasm-stt/Xenova/whisper-tiny/onnx/decoder_model_merged.onnx",
+    "public/vendor/onnxruntime/ort-wasm-simd-threaded.asyncify.mjs",
+    "public/vendor/onnxruntime/ort-wasm-simd-threaded.asyncify.wasm",
+  ];
+  const localAssetSizes = expectedLocalAssetPaths.map((assetPath) => {
+    const fullPath = join(process.cwd(), assetPath);
+    assert.equal(existsSync(fullPath), true, `${assetPath} should exist`);
+    const size = statSync(fullPath).size;
+    assert.ok(size > 0, `${assetPath} should be non-empty`);
+    return size;
+  });
+  const totalLocalAssetBytes = localAssetSizes.reduce((sum, size) => sum + size, 0);
+  const manifestPath = join(
+    process.cwd(),
+    "public/models/wasm-stt/asset-manifest.json",
+  );
+  assert.equal(existsSync(manifestPath), true, "WASM-STT asset manifest should exist");
+  const assetManifest = JSON.parse(
+    readFileSync(manifestPath, "utf8").replace(/^\uFEFF/, ""),
+  ) as {
+    schemaVersion?: string;
+    modelId?: string;
+    modelDtype?: string;
+    remoteModelLoading?: boolean;
+    files?: Array<{ path: string; bytes: number; sha256: string }>;
+  };
+  assert.equal(
+    assetManifest.schemaVersion,
+    "brainfriends-wasm-stt-local-assets-v1",
+  );
+  assert.equal(assetManifest.modelId, WASM_STT_MODEL_ID);
+  assert.equal(assetManifest.modelDtype, WASM_STT_MODEL_DTYPE);
+  assert.equal(assetManifest.remoteModelLoading, false);
+  assert.equal(assetManifest.files?.length, expectedLocalAssetPaths.length);
 
   // Node 에서 transcribeWithWasmStt 는 명시 에러로 차단되어야 한다.
   let thrown: Error | null = null;
@@ -2776,11 +2906,11 @@ async function runWasmSttAdapterCheck(): Promise<CheckResult> {
     area: "stt",
     requirementIds: ["SR-STT-009"],
     inputSummary:
-      "Node 환경에서 isWasmSttAvailable / transcribeWithWasmStt / 상수 / 캐시 reset 결정성 검증",
+      "Node 환경에서 isWasmSttAvailable / transcribeWithWasmStt / 로컬 WASM-STT 자산 / 캐시 reset 결정성 검증",
     expected:
-      "isWasmSttAvailable=false, transcribeWithWasmStt rejects with wasm_stt_unavailable (반복), 모델/패키지/엔진 버전 상수 안정, sampleRate=16000, __resetWasmSttPipelineForTest idempotent",
-    actual: `wasmAvailable=${isWasmSttAvailable()}; sampleRate=${WASM_STT_SAMPLE_RATE}; modelId=${WASM_STT_MODEL_ID}; engine=${WASM_STT_ENGINE_VERSION}; rejection=${thrown!.message}/${thrownAgain!.message}`,
-    detail: `transformers.js@${WASM_STT_PACKAGE_VERSION} adapter contract — Node 환경 5종 결정성 assertion + 1 반복 호출 = 2 rejection round-trip`,
+      "isWasmSttAvailable=false, transcribeWithWasmStt rejects with wasm_stt_unavailable (반복), fp32 로컬 모델/ONNX 런타임 자산 존재, sampleRate=16000, __resetWasmSttPipelineForTest idempotent",
+    actual: `wasmAvailable=${isWasmSttAvailable()}; sampleRate=${WASM_STT_SAMPLE_RATE}; modelId=${WASM_STT_MODEL_ID}; dtype=${WASM_STT_MODEL_DTYPE}; engine=${WASM_STT_ENGINE_VERSION}; assets=${expectedLocalAssetPaths.length}; assetBytes=${totalLocalAssetBytes}; rejection=${thrown!.message}/${thrownAgain!.message}`,
+    detail: `transformers.js@${WASM_STT_PACKAGE_VERSION} local fp32 adapter contract — Node 환경 5종 + 로컬 자산 ${expectedLocalAssetPaths.length}개 결정성 검증 + 2 rejection round-trip`,
   };
 }
 
@@ -3061,7 +3191,7 @@ function runWasmSttLoadingStateCheck(): CheckResult {
   });
   assert.equal(failState.phase, "failed");
   assert.equal(failState.errorCode, "wasm_stt_model_load_failed:network_error");
-  assert.ok(failState.message.includes("다운로드"));
+  assert.ok(failState.message.includes("로컬 음성 인식 모델"));
   assert.equal(failState.progress, 0.5); // 보존됨
   assert.equal(elapsedLoadingMs(failState, 9999), 1000);
 
@@ -3493,15 +3623,19 @@ async function runGuardianSenderCheck(): Promise<CheckResult> {
 }
 
 function runIrtItemBankCheck(): CheckResult {
-  // step1/2/4 bank 안정 + a/b 정의
+  // step1/2/4/5 + sing bank 안정 + a/b 정의
   assert.ok(STEP1_WORD_BANK.length >= 5);
   assert.ok(STEP2_REPETITION_BANK.length >= 5);
   assert.ok(STEP4_SENTENCE_BANK.length >= 3);
+  assert.ok(STEP5_READING_BANK.length >= 18);
+  assert.ok(SING_ADAPTIVE_BANK.length >= 5);
 
   for (const item of [
     ...STEP1_WORD_BANK,
     ...STEP2_REPETITION_BANK,
     ...STEP4_SENTENCE_BANK,
+    ...STEP5_READING_BANK,
+    ...SING_ADAPTIVE_BANK,
   ]) {
     assert.ok(item.id.length > 0);
     assert.ok(item.a > 0, `a > 0 for ${item.id}`);
@@ -3512,15 +3646,16 @@ function runIrtItemBankCheck(): CheckResult {
   assert.equal(getItemBankForStep(1), STEP1_WORD_BANK);
   assert.equal(getItemBankForStep(2), STEP2_REPETITION_BANK);
   assert.equal(getItemBankForStep(4), STEP4_SENTENCE_BANK);
+  assert.equal(getItemBankForStep(5), STEP5_READING_BANK);
 
   return {
     id: "TC-IRT-ITEMBANK-001",
     area: "adaptive",
     requirementIds: ["SR-IRT-ITEMBANK"],
-    inputSummary: "step-1 (10 단어) + step-2 (7 구문) + step-4 (5 문장) bank",
+    inputSummary: "step-1/2/4/5 + sing calibrated bank",
     expected: "모든 item id 안정 + a/b 정의 + step → bank 매핑",
-    actual: `step1=${STEP1_WORD_BANK.length}, step2=${STEP2_REPETITION_BANK.length}, step4=${STEP4_SENTENCE_BANK.length}`,
-    detail: `IRT item bank v0.1 deterministic — 22+ items × 3 assertion`,
+    actual: `step1=${STEP1_WORD_BANK.length}, step2=${STEP2_REPETITION_BANK.length}, step4=${STEP4_SENTENCE_BANK.length}, step5=${STEP5_READING_BANK.length}, sing=${SING_ADAPTIVE_BANK.length}`,
+    detail: `IRT item bank v0.1 deterministic — step/sing banks verified`,
   };
 }
 
@@ -3582,6 +3717,34 @@ function runAdaptiveTrainingOrderCheck(): CheckResult {
   assert.match(inferred.itemMetaByKey["짧게"].adaptiveItemId, /^step2-/);
   assert.equal(inferred.orderedItems[0].text, "짧게");
 
+  const step5 = buildAdaptiveTrainingOrder({
+    step: 5,
+    items: [
+      { id: 1, text: "아침에 일어나면 세수를 하고 이를 닦습니다." },
+      { id: 2, text: "방이 지저분해서 청소기를 돌립니다." },
+      { id: 3, text: "소파에 앉아서 텔레비전을 봅니다." },
+    ],
+    responses: [{ itemKey: "home-1", correct: true }],
+    getItemKey: (item) => `home-${item.id}`,
+    getItemText: (item) => item.text,
+    calibratedBank: STEP5_READING_BANK,
+  });
+  assert.equal(step5.usedResponses, 1);
+  assert.equal(step5.orderedItems[0].id, 1);
+  assert.equal(step5.itemMetaByKey["home-1"].adaptiveItemId, "step5-home-1");
+
+  const sing = buildAdaptiveTrainingOrder({
+    step: "sing",
+    items: ["나비야", "아리랑", "둥글게 둥글게"],
+    responses: [{ itemKey: "나비야", correct: true }],
+    getItemKey: (item) => item,
+    getItemText: (item) => item,
+    calibratedBank: SING_ADAPTIVE_BANK,
+  });
+  assert.equal(sing.usedResponses, 1);
+  assert.equal(sing.orderedItems[0], "나비야");
+  assert.equal(sing.itemMetaByKey["나비야"].adaptiveItemId, "sing-나비야");
+
   return {
     id: "TC-IRT-TRAINING-001",
     area: "adaptive",
@@ -3592,9 +3755,98 @@ function runAdaptiveTrainingOrderCheck(): CheckResult {
       "동일 응답 시퀀스는 동일 다음 문항 순서, 기존 완료 문항 보존, bank 매칭 및 content 기반 fallback metadata 생성",
     actual: `first=${first.orderedItems[0].text}, afterCorrect=${afterCorrect.orderedItems
       .map((item) => item.text)
-      .join(">")}, inferred=${inferred.orderedItems.map((item) => item.text).join(">")}`,
+      .join(">")}, inferred=${inferred.orderedItems.map((item) => item.text).join(">")}, step5=${step5.orderedItems.map((item) => item.id).join(">")}, sing=${sing.orderedItems.join(">")}`,
     detail:
-      "IRT training order integration deterministic — 10 assertions across MFI ordering / theta update / metadata / fallback",
+      "IRT training order integration deterministic — step-1/2/5/sing MFI ordering / theta update / metadata / fallback",
+  };
+}
+
+function runAdaptiveEvidenceExportCheck(): CheckResult {
+  const entry = {
+    historyId: "history-adaptive-1",
+    sessionId: "session-adaptive-1",
+    patientKey: "patient-adaptive",
+    patientName: "테스트",
+    place: "home",
+    trainingMode: "self",
+    completedAt: 1770000000000,
+    aq: 72,
+    stepScores: {
+      step1: 80,
+      step2: 70,
+      step3: 0,
+      step4: 0,
+      step5: 74,
+      step6: 0,
+    },
+    stepDetails: {
+      step1: [],
+      step2: [],
+      step3: [],
+      step4: [],
+      step5: [
+        {
+          text: "아침에 일어나면 세수를 하고 이를 닦습니다.",
+          isCorrect: true,
+          adaptiveItemKey: "home-1",
+          adaptiveItemId: "step5-home-1",
+          adaptiveTheta: 0.312,
+          adaptiveSd: 0.892,
+          itemDifficulty: -0.4,
+          itemDiscrimination: 1,
+          adaptiveSelectionMethod: "irt_mfi",
+        },
+        {
+          text: "부엌에서 물을 한 잔 마셨습니다.",
+          isCorrect: false,
+          adaptiveItemKey: "home-2",
+          adaptiveItemId: "step5-home-2",
+          adaptiveTheta: 0.428,
+          adaptiveSd: 0.8,
+          itemDifficulty: 0.35,
+          itemDiscrimination: 1.1,
+          adaptiveSelectionMethod: "irt_mfi",
+        },
+      ],
+      step6: [],
+    },
+  } as any;
+
+  const rows = collectAdaptiveEvidence(entry);
+  const summary = summarizeAdaptiveEvidence(entry);
+  const aggregate = summarizeAdaptiveEvidenceRows(rows);
+  const csv = serializeAdaptiveEvidenceCsv(rows);
+  const itemSummaryCsv = serializeAdaptiveEvidenceItemSummaryCsv(aggregate.itemSummaries);
+  const sessionSummaryCsv = serializeAdaptiveEvidenceSessionSummaryCsv(
+    aggregate.sessionSummaries,
+  );
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].itemId, "step5-home-1");
+  assert.equal(rows[0].theta, 0.312);
+  assert.equal(summary?.latestTheta, 0.428);
+  assert.equal(summary?.recommendedDifficulty, 0.428);
+  assert.equal(aggregate.totalRows, 2);
+  assert.equal(aggregate.totalSessions, 1);
+  assert.equal(aggregate.totalItems, 2);
+  assert.equal(aggregate.mfiRows, 2);
+  assert.equal(aggregate.averageAccuracy, 0.5);
+  assert.equal(aggregate.sessionSummaries[0]?.accuracy, 0.5);
+  assert.match(csv, /historyId,completedAt,trainingMode/);
+  assert.match(csv, /step5-home-1/);
+  assert.match(itemSummaryCsv, /exposureCount/);
+  assert.match(sessionSummaryCsv, /latestTheta/);
+
+  return {
+    id: "TC-IRT-EVIDENCE-EXPORT-001",
+    area: "adaptive",
+    requirementIds: ["SR-IRT-018", "SR-IRT-ITEMBANK"],
+    inputSummary: "TrainingHistoryEntry.stepDetails adaptive fields",
+    expected:
+      "adaptive evidence JSON/CSV rows + therapist summary + item/session aggregates deterministic",
+    actual: `rows=${rows.length}, theta=${summary?.latestTheta}, items=${aggregate.totalItems}, sessions=${aggregate.totalSessions}`,
+    detail:
+      "Adaptive evidence export deterministic — step item metadata / theta summary / item-session CSV serializers verified",
   };
 }
 
@@ -3647,6 +3899,7 @@ export async function runDeterministicChecks() {
     runGazeHistorySummaryCheck(),
     runAacIntentTemplateCheck(),
     runAacTrainingIntegrationCheck(),
+    runStep2ScoringPersistenceCheck(),
     runSttPolicyCheck(),
     runSttRuntimeResolutionCheck(),
     runSttLanguageLockCheck(),
@@ -3684,6 +3937,7 @@ export async function runDeterministicChecks() {
     await runGuardianSenderCheck(),
     runIrtItemBankCheck(),
     runAdaptiveTrainingOrderCheck(),
+    runAdaptiveEvidenceExportCheck(),
     await runWasmSttAdapterCheck(),
   ];
   return checks;

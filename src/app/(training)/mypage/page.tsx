@@ -5,7 +5,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { ChevronRight, LineChart, Sparkles, Target, Trophy } from "lucide-react";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { SessionManager, type TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
-import { ReportContent } from "@/app/(training)/report/page";
+import { ReportContent } from "@/app/(training)/report/ReportContent";
 import { PrescriptionBanner } from "@/components/prescription/PrescriptionBanner";
 import { AdverseEventReportButton } from "@/components/adverse-events/AdverseEventReportButton";
 

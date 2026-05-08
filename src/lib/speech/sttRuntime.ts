@@ -4,7 +4,6 @@ import {
   type SttEngine,
   type SttUseCase,
 } from "@/lib/speech/sttPolicy";
-import { isWasmSttAvailable } from "@/lib/speech/wasmSttAdapter";
 
 export type SttRuntimeState = {
   engine: SttEngine;
@@ -16,13 +15,24 @@ export type SttRuntimeState = {
   wasmAvailable: boolean;
 };
 
+function isBrowserWasmAudioAvailable(): boolean {
+  if (typeof window === "undefined") return false;
+  if (typeof WebAssembly === "undefined") return false;
+  const w = window as unknown as {
+    AudioContext?: unknown;
+    webkitAudioContext?: unknown;
+  };
+  return Boolean(w.AudioContext || w.webkitAudioContext);
+}
+
 export function resolveSttRuntime(params: {
   useCase: SttUseCase;
   devMode?: boolean;
   wasmAvailable?: boolean;
   allowTrainingServerFallback?: boolean;
+  allowWasmExperiment?: boolean;
 }): SttRuntimeState {
-  const wasmAvailable = params.wasmAvailable ?? isWasmSttAvailable();
+  const wasmAvailable = params.wasmAvailable ?? isBrowserWasmAudioAvailable();
   const policy = resolveSttPolicy({
     useCase: params.useCase,
     devMode:
@@ -32,6 +42,9 @@ export function resolveSttRuntime(params: {
     allowTrainingServerFallback:
       params.allowTrainingServerFallback ??
       parseBooleanFlag(process.env.NEXT_PUBLIC_STT_TRAINING_SERVER_FALLBACK, false),
+    allowWasmExperiment:
+      params.allowWasmExperiment ??
+      parseBooleanFlag(process.env.NEXT_PUBLIC_STT_WASM_EXPERIMENT, false),
   });
 
   return {

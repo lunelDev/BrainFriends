@@ -935,7 +935,7 @@ export function AdminConsoleClient({
                   </div>
                 </section>
 
-                <section className="grid gap-6 xl:grid-cols-3">
+                <section className="grid gap-6 xl:grid-cols-4">
                   <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
                     <p className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-600">
                       SW V&V
@@ -990,6 +990,32 @@ export function AdminConsoleClient({
                         className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
                       >
                         AI 평가 내보내기
+                      </a>
+                    </div>
+                  </article>
+
+                  <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-emerald-600">
+                      IRT 검증
+                    </p>
+                    <ul className="mt-4 space-y-2 text-sm font-medium leading-6 text-slate-700">
+                      <li>여러 세션의 θ / SD / 문항 난이도 / MFI 선택 근거를 취합</li>
+                      <li>문항별 노출 수·정답률·평균 난이도 요약표 생성</li>
+                      <li>세션별 θ 변화와 추천 근거를 치료사 검토용으로 분리</li>
+                      <li>진단·처방 자동 결정이 아닌 보조 지표 경계 포함</li>
+                    </ul>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      <a
+                        href="/api/therapist/system/adaptive-evidence-export"
+                        className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
+                      >
+                        IRT JSON
+                      </a>
+                      <a
+                        href="/api/therapist/system/adaptive-evidence-export?format=item-summary-csv"
+                        className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
+                      >
+                        문항 CSV
                       </a>
                     </div>
                   </article>
@@ -1260,6 +1286,21 @@ export function AdminConsoleClient({
                               className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
                             >
                               AI 평가 내보내기
+                            </a>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="px-4 py-4 font-black text-slate-950">IRT 검증</td>
+                          <td className="px-4 py-4 font-semibold">θ / 문항 난이도</td>
+                          <td className="px-4 py-4 font-semibold text-slate-600">
+                            적응형 난이도 선택 근거와 문항별 정답률을 취합합니다
+                          </td>
+                          <td className="px-4 py-4">
+                            <a
+                              href="/api/therapist/system/adaptive-evidence-export"
+                              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-100"
+                            >
+                              IRT 내보내기
                             </a>
                           </td>
                         </tr>

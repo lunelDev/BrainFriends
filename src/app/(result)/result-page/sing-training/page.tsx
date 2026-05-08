@@ -6,9 +6,9 @@ import {
   Activity,
   ArrowUpRight,
   Brain,
+  Database,
   Music,
   Printer,
-  RotateCcw,
   Sparkles,
   Trophy,
 } from "lucide-react";
@@ -16,6 +16,8 @@ import type { PatientProfile } from "@/lib/patientStorage";
 import type { VersionSnapshot } from "@/lib/analysis/versioning";
 import { fetchMyHistoryEntries } from "@/lib/client/historyApi";
 import { dataUrlToBlob, uploadClinicalMedia } from "@/lib/client/clinicalMediaUpload";
+import type { ExportFile } from "@/features/result/types";
+import { createZipBlob } from "@/features/result/utils/zipExport";
 import {
   SING_TRAINING_ANALYSIS_VERSION,
   SING_TRAINING_CATALOG_VERSION,
@@ -49,6 +51,9 @@ type SingResult = {
   song: string;
   userName: string;
   score: number;
+  scoringVersion?: string;
+  scoreReason?: string;
+  expectedLyrics?: string;
   finalJitter: string;
   finalSi: string;
   facialResponseDelta?: string;
@@ -123,6 +128,54 @@ function buildSingSourceSessionKey(song: string, completedAt: number) {
   return `sing-${normalizedSong || "song"}-${completedAt}`;
 }
 
+function decodeDataUrlToBytes(dataUrl: string) {
+  const match = /^data:([^;,]+)?(;base64)?,([\s\S]*)$/.exec(dataUrl);
+  if (!match) return null;
+
+  const isBase64 = Boolean(match[2]);
+  const payload = match[3] || "";
+  if (!isBase64) {
+    return new TextEncoder().encode(decodeURIComponent(payload));
+  }
+
+  const binary = window.atob(payload);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function assetUrlToExportFile(
+  name: string,
+  assetUrl: string | null | undefined,
+): Promise<ExportFile | null> {
+  const normalizedUrl = String(assetUrl || "").trim();
+  if (!normalizedUrl) return null;
+
+  try {
+    if (normalizedUrl.startsWith("data:")) {
+      const data = decodeDataUrlToBytes(normalizedUrl);
+      return data ? { name, data } : null;
+    }
+
+    const requestUrl =
+      normalizedUrl.startsWith("blob:") ||
+      normalizedUrl.startsWith("http://") ||
+      normalizedUrl.startsWith("https://")
+        ? normalizedUrl
+        : new URL(normalizedUrl, window.location.origin).toString();
+    const response = await fetch(requestUrl);
+    if (!response.ok) return null;
+    return {
+      name,
+      data: new Uint8Array(await response.arrayBuffer()),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function parseMeasuredNumber(value: string | null | undefined) {
   if (!value) return null;
   const numeric = Number(value.replace(/[^\d.-]/g, ""));
@@ -130,7 +183,13 @@ function parseMeasuredNumber(value: string | null | undefined) {
 }
 
 function isMeasuredSingResult(result: SingResult | null) {
-  return result?.metricSource === "measured";
+  return (
+    result?.metricSource === "measured" &&
+    parseMeasuredNumber(result.finalConsonant) != null &&
+    parseMeasuredNumber(result.finalVowel) != null &&
+    parseMeasuredNumber(result.lyricAccuracy) != null &&
+    Boolean(result.transcript?.trim())
+  );
 }
 
 function isDemoSkipSingResult(result: SingResult | null) {
@@ -214,6 +273,9 @@ function buildFallbackSingResult(
     song,
     userName: patientName || "사용자",
     score: 0,
+    scoringVersion: "sing-score-v2-transcript-required",
+    scoreReason: "fallback:not_measured",
+    expectedLyrics: songMeta.lyrics.map((line) => line.txt).join(" "),
     finalJitter: "--",
     finalSi: "--",
     facialResponseDelta: "--",
@@ -260,6 +322,9 @@ function buildSkippedDemoSingResult(
     song,
     userName: patientName || "관리자",
     score: 72,
+    scoringVersion: "sing-score-v2-transcript-required",
+    scoreReason: "demo_skip:not_measured",
+    expectedLyrics: songMeta.lyrics.map((line) => line.txt).join(" "),
     finalJitter: "6.4%",
     finalSi: "96.2",
     facialResponseDelta: "3.8",
@@ -303,6 +368,9 @@ function buildResultFromHistoryEntry(entry: HistorySingEntry): SingResult {
     userName: entry.patientName,
     score: entry.singResult?.score || 0,
     persistedSessionId: entry.sessionId,
+    scoringVersion: entry.singResult?.scoringVersion,
+    scoreReason: entry.singResult?.scoreReason,
+    expectedLyrics: entry.singResult?.expectedLyrics,
     finalJitter: entry.singResult?.finalJitter || "--",
     finalSi: entry.singResult?.finalSi || "--",
     facialResponseDelta:
@@ -562,6 +630,114 @@ export default function SingTrainingResultPage() {
     });
   };
 
+  const handleExportData = async () => {
+    if (!result) return;
+
+    const pad2 = (n: number) => String(n).padStart(2, "0");
+    const formatExamDateTime = (ts: number) => {
+      const d = new Date(ts);
+      return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+    };
+    const normalizeBirthDate = (raw: any) => {
+      const text = String(raw || "").trim();
+      const digits = text.replace(/[^\d]/g, "");
+      if (digits.length >= 8) return digits.slice(0, 8);
+      return "생년월일미입력";
+    };
+    const sanitizeName = (raw: any) => {
+      const text = String(raw || "").trim() || result.userName || "이름미입력";
+      return text.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_");
+    };
+    const sanitizeSong = (raw: string) =>
+      String(raw || "song")
+        .trim()
+        .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_");
+
+    const currentHistoryRows = historyEntries
+      .filter((entry) => entry.trainingMode === "sing")
+      .sort((a, b) => b.completedAt - a.completedAt);
+    const storageSnapshot = {
+      transientResult: result,
+      historyMatches: currentHistoryRows.filter((entry) =>
+        matchesPersistedSingEntry(entry, result),
+      ),
+      dbSaveState,
+      reviewAudioPresent: Boolean(result.reviewAudioUrl),
+      reviewKeyFrameCount: result.reviewKeyFrames?.length ?? 0,
+    };
+    const files: ExportFile[] = [
+      {
+        name: "result.json",
+        data: new TextEncoder().encode(
+          JSON.stringify(
+            {
+              exportedAt: new Date().toISOString(),
+              patient: patient ?? null,
+              trainingMode: "sing",
+              dbSaveState,
+              result,
+              myRank,
+            },
+            null,
+            2,
+          ),
+        ),
+      },
+      {
+        name: "history.json",
+        data: new TextEncoder().encode(
+          JSON.stringify(currentHistoryRows, null, 2),
+        ),
+      },
+      {
+        name: "storage-snapshot.json",
+        data: new TextEncoder().encode(
+          JSON.stringify(storageSnapshot, null, 2),
+        ),
+      },
+      {
+        name: "scoring-evidence.json",
+        data: new TextEncoder().encode(
+          JSON.stringify(
+            {
+              scoringVersion: result.scoringVersion ?? null,
+              scoreReason: result.scoreReason ?? null,
+              expectedLyrics: result.expectedLyrics ?? null,
+              transcript: result.transcript ?? "",
+              score: result.score,
+              finalConsonant: result.finalConsonant ?? null,
+              finalVowel: result.finalVowel ?? null,
+              lyricAccuracy: result.lyricAccuracy ?? null,
+              measured: isMeasuredSingResult(result),
+              reviewAudioPresent: Boolean(result.reviewAudioUrl),
+            },
+            null,
+            2,
+          ),
+        ),
+      },
+    ];
+
+    const mediaFiles = await Promise.all([
+      assetUrlToExportFile("media/review/audio.webm", result.reviewAudioUrl),
+      ...((result.reviewKeyFrames ?? []).map((frame, index) =>
+        assetUrlToExportFile(
+          `media/review/keyframe-${index + 1}.jpg`,
+          frame.dataUrl,
+        ),
+      )),
+    ]);
+    files.push(...mediaFiles.filter((file): file is ExportFile => Boolean(file)));
+
+    const zipBlob = createZipBlob(files);
+    const url = URL.createObjectURL(zipBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${normalizeBirthDate((patient as any)?.birthDate)}-${sanitizeName((patient as any)?.name)}-${formatExamDateTime(result.completedAt)}-${sanitizeSong(result.song)}-sing.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -725,6 +901,10 @@ export default function SingTrainingResultPage() {
 
   useEffect(() => {
     if (!patient || !result) return;
+    if (!isMeasuredSingResult(result)) {
+      setDbSaveState("local_only");
+      return;
+    }
 
     const persistKey = `${patient.sessionId}:${result.completedAt}:${result.song}`;
     if (lastPersistedKeyRef.current === persistKey) {
@@ -862,10 +1042,79 @@ export default function SingTrainingResultPage() {
         : "짧은 구간 반복과 천천히 따라 부르기로 발화 정확도를 먼저 높이는 것이 좋습니다.";
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f5fbf8_0%,#eef8f3_100%)] px-4 py-6 sm:px-6 sm:py-8">
-      <div className="mx-auto max-w-6xl">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f5fbf8_0%,#eef8f3_100%)] text-slate-900">
+      <header className="no-print h-14 sm:h-16 px-4 sm:px-6 border-b border-emerald-100 flex items-center justify-between bg-white sticky top-0 z-40">
+        <div className="w-full max-w-6xl mx-auto flex items-center justify-between min-w-0">
+          <div className="flex items-center gap-3">
+            <img
+              src="/images/logo/logo.png"
+              alt="GOLDEN logo"
+              className="w-10 h-10 rounded-xl object-cover"
+            />
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-emerald-600">
+                Report
+              </p>
+              <h1 className="text-base sm:text-lg md:text-xl font-black flex items-center gap-1.5">
+                노래 훈련 결과 리포트
+              </h1>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 justify-end">
+            <button
+              type="button"
+              onClick={handleExportData}
+              className="px-3 sm:px-4 py-2 bg-white text-slate-900 border border-emerald-200 rounded-xl text-[11px] sm:text-xs font-bold shadow-sm hover:bg-emerald-50 active:scale-95 transition-all inline-flex items-center gap-1.5"
+            >
+              <Database className="w-3.5 h-3.5 text-emerald-600" />
+              결과 ZIP 다운로드
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="px-3 sm:px-4 py-2 bg-emerald-500 text-white rounded-xl text-[11px] sm:text-xs font-bold shadow-sm hover:bg-emerald-600 active:scale-95 transition-all inline-flex items-center gap-1.5"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              리포트 출력
+            </button>
+            <button
+              type="button"
+              onClick={moveToSongSelect}
+              aria-label="홈으로 이동"
+              title="홈"
+              className="w-9 h-9 rounded-xl border border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50 transition-colors flex items-center justify-center"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M3 10.5 12 3l9 7.5"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M5.5 9.5V21h13V9.5"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M10 21v-5h4v5"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
         <div className="rounded-[34px] border border-emerald-100 bg-white p-6 shadow-[0_24px_70px_rgba(16,185,129,0.08)] sm:p-8">
-          <div className="flex flex-col gap-5 border-b border-emerald-100 pb-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="border-b border-emerald-100 pb-6">
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.24em] text-emerald-600">
                 Brain Karaoke Result
@@ -896,24 +1145,6 @@ export default function SingTrainingResultPage() {
                   <ServerExcludedBadge />
                 </div>
               ) : null}
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 px-5 font-black text-white"
-              >
-                <Printer className="h-4 w-4" />
-                결과 인쇄
-              </button>
-              <button
-                type="button"
-                onClick={moveToSongSelect}
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 font-black text-slate-800"
-              >
-                <RotateCcw className="h-4 w-4" />
-                다른 곡 선택
-              </button>
             </div>
           </div>
 
@@ -1205,7 +1436,7 @@ export default function SingTrainingResultPage() {
             </section>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

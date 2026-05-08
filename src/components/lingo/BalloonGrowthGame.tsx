@@ -510,7 +510,7 @@ export default function BalloonGrowthGame({ onBack }: { onBack?: () => void }) {
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "ko-KR";
-    recognition.onresult = (event) => {
+    recognition.onresult = (event: SpeechRecognitionEventLike) => {
       let transcript = "";
       for (let i = 0; i < event.results.length; i += 1) {
         transcript += `${event.results[i][0]?.transcript ?? ""} `;

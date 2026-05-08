@@ -44,6 +44,8 @@ import {
   saveTransientStepStorage,
 } from "@/lib/security/transientStepStorage";
 import { getSessionShuffledItems } from "@/lib/training/questionOrder";
+import { buildAdaptiveTrainingOrder } from "@/lib/adaptive/adaptiveTraining";
+import { STEP5_READING_BANK } from "@/lib/adaptive/itemBank";
 import {
   clearFirstDiagnosisFlow,
   isFirstDiagnosisFlow,
@@ -90,6 +92,13 @@ interface ReadingMetrics {
   // Parselmouth 음향 측정값 (REQ-ACOUSTIC-001~004). 결과 페이지/DB 까지 같이 흘러간다.
   acoustic?: AcousticSnapshot | null;
   dataSource?: "measured" | "demo";
+  adaptiveItemKey?: string;
+  adaptiveItemId?: string;
+  adaptiveTheta?: number;
+  adaptiveSd?: number;
+  itemDifficulty?: number;
+  itemDiscrimination?: number;
+  adaptiveSelectionMethod?: "irt_mfi" | "sequential_fallback";
 }
 
 const calculateTextSimilarityPercent = (expected: string, actual: string) => {
@@ -311,7 +320,7 @@ function Step5Content() {
     router.push("/select-page/self-assessment");
   };
 
-  const texts = useMemo(
+  const baseReadingTexts = useMemo(
     () =>
       getSessionShuffledItems(
         `btt-question-order:step5:${sessionId}:${place}`,
@@ -320,16 +329,38 @@ function Step5Content() {
       ),
     [place, sessionId],
   );
+  const adaptiveOrder = useMemo(
+    () =>
+      buildAdaptiveTrainingOrder({
+        step: 5,
+        items: baseReadingTexts,
+        responses: results.map((row) => ({
+          itemKey:
+            row.adaptiveItemKey ||
+            `${row.place || place}-${Number.isFinite(Number(row.index)) ? Number(row.index) + 1 : row.text}`,
+          correct: Boolean(row.isCorrect),
+        })),
+        getItemKey: (item) => `${place}-${item.id}`,
+        getItemText: (item) => item.text,
+        calibratedBank: STEP5_READING_BANK,
+      }),
+    [baseReadingTexts, place, results],
+  );
+  const texts = adaptiveOrder.orderedItems;
   const stepSignature = useMemo(
     () =>
       buildStepSignature(
         "step5",
         place,
-        texts.map((item) => item.text),
+        baseReadingTexts.map((item) => item.text),
       ),
-    [place, texts],
+    [baseReadingTexts, place],
   );
   const currentItem = texts[currentIndex];
+  const currentAdaptiveKey = currentItem ? `${place}-${currentItem.id}` : "";
+  const currentAdaptiveMeta = currentAdaptiveKey
+    ? adaptiveOrder.itemMetaByKey[currentAdaptiveKey]
+    : undefined;
   const formattedText = useMemo(
     () => addSentenceLineBreaks(currentItem?.text || ""),
     [currentItem],
@@ -858,6 +889,13 @@ function Step5Content() {
         },
         acoustic: acousticSnapshot,
         dataSource: "measured",
+        adaptiveItemKey: currentAdaptiveKey,
+        adaptiveItemId: currentAdaptiveMeta?.adaptiveItemId,
+        adaptiveTheta: currentAdaptiveMeta?.adaptiveTheta,
+        adaptiveSd: currentAdaptiveMeta?.adaptiveSd,
+        itemDifficulty: currentAdaptiveMeta?.itemDifficulty,
+        itemDiscrimination: currentAdaptiveMeta?.itemDiscrimination,
+        adaptiveSelectionMethod: currentAdaptiveMeta?.selectionMethod,
       };
 
       articulationAggregateRef.current = {
@@ -1084,6 +1122,8 @@ function Step5Content() {
       resetRuntimeStatus();
 
       const demoResults: ReadingMetrics[] = texts.map((item, index) => {
+        const adaptiveKey = `${place}-${item.id}`;
+        const adaptiveMeta = adaptiveOrder.itemMetaByKey[adaptiveKey];
         const totalTime = randomFloat(7, 16, 0);
         const wordsPerMinute = randomFloat(45, 130, 0);
         const readingAccuracyScore = randomFloat(62, 98, 1);
@@ -1127,6 +1167,13 @@ function Step5Content() {
           vowelAccuracy: randomFloat(58, 96),
           articulationWritingConsistency: randomFloat(60, 95),
           dataSource: "demo",
+          adaptiveItemKey: adaptiveKey,
+          adaptiveItemId: adaptiveMeta?.adaptiveItemId,
+          adaptiveTheta: adaptiveMeta?.adaptiveTheta,
+          adaptiveSd: adaptiveMeta?.adaptiveSd,
+          itemDifficulty: adaptiveMeta?.itemDifficulty,
+          itemDiscrimination: adaptiveMeta?.itemDiscrimination,
+          adaptiveSelectionMethod: adaptiveMeta?.selectionMethod,
         };
       });
 
@@ -1174,6 +1221,7 @@ function Step5Content() {
     resetRuntimeStatus,
     sessionId,
     stepSignature,
+    adaptiveOrder.itemMetaByKey,
     texts,
     place,
   ]);

@@ -1,7 +1,7 @@
 // SR-WASM-STT-LOADING. WASM Whisper 모델 로드 상태 머신 결정성 함수.
 //
 // claim-lock §3 "WASM 온디바이스 STT (훈련 useCase)" 행의 사용자 경험 지원.
-// 모델 ~78MB 첫 다운로드 동안 사용자에게 정확한 진행 상태를 표시하기 위한
+// 로컬 정적 모델 자산을 브라우저 런타임에 적재하는 동안 사용자에게 정확한 진행 상태를 표시하기 위한
 // 결정성 상태 머신. 본 모듈은 React/Vue/UI 프레임워크에 의존하지 않으며
 // useState / store / RxJS 등 어떤 reactive 환경에서도 사용 가능.
 //
@@ -15,7 +15,7 @@ export type WasmSttLoadingPhase =
 
 export interface WasmSttLoadingState {
   phase: WasmSttLoadingPhase;
-  /** 모델 다운로드 진행률 0~1 (loading 단계에서만 의미 있음). */
+  /** 모델 로딩 진행률 0~1 (loading 단계에서만 의미 있음). */
   progress: number;
   /** 사람이 읽는 메시지 — 한국어, UI 에 그대로 출력 가능. */
   message: string;
@@ -23,7 +23,7 @@ export interface WasmSttLoadingState {
   errorCode: string | null;
   /** 모델 식별자 — release manifest 추적용. */
   modelId: string | null;
-  /** 첫 다운로드 시작 시각 (ms). 캐시 hit 시 0. */
+  /** 첫 로딩 시작 시각 (ms). 캐시 hit 시 0. */
   startedAtMs: number | null;
   /** ready 또는 failed 도달 시각 (ms). */
   finishedAtMs: number | null;
@@ -54,7 +54,7 @@ export function startLoading(
   return {
     phase: "loading",
     progress: prev.phase === "loading" ? prev.progress : 0,
-    message: "WASM Whisper 모델을 다운로드하고 있습니다…",
+    message: "로컬 음성 인식 모델을 불러오고 있습니다…",
     errorCode: null,
     modelId: params.modelId,
     startedAtMs:
@@ -78,8 +78,8 @@ export function reportProgress(
     progress: next,
     message:
       next >= 1
-        ? "모델 다운로드 완료. 초기화 중…"
-        : `WASM Whisper 모델 다운로드 중 (${Math.round(next * 100)}%)…`,
+        ? "로컬 모델 로딩 완료. 초기화 중…"
+        : `로컬 음성 인식 모델 로딩 중 (${Math.round(next * 100)}%)…`,
   };
 }
 
@@ -123,7 +123,7 @@ function friendlyMessageFor(errorCode: string): string {
     return "오디오 처리 기능이 제한되어 음성 인식을 시작할 수 없습니다.";
   }
   if (errorCode.startsWith("wasm_stt_model_load_failed")) {
-    return "음성 인식 모델 다운로드에 실패했습니다. 네트워크 상태를 확인해주세요.";
+    return "로컬 음성 인식 모델을 불러오지 못했습니다. 앱 자산과 브라우저 캐시를 확인해주세요.";
   }
   if (errorCode.startsWith("wasm_stt_transcription_failed")) {
     return "음성 인식 중 오류가 발생했습니다. 다시 시도해주세요.";
@@ -149,7 +149,7 @@ export function isLegalTransition(
 }
 
 /**
- * 다운로드 소요 시간 (ms). loading 진행 중이면 현재 시각 기반으로 elapsed.
+ * 로딩 소요 시간 (ms). loading 진행 중이면 현재 시각 기반으로 elapsed.
  * ready/failed 에 도달했으면 finishedAtMs - startedAtMs.
  */
 export function elapsedLoadingMs(

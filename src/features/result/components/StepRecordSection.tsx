@@ -186,11 +186,7 @@ export function StepRecordSection({
                             <button
                               onClick={() => {
                                 const id = `s${step.id}-${i}`;
-                                if (it.audioUrl) {
-                                  playAudio(it.audioUrl, id);
-                                } else {
-                                  playSpeechFallback(getPlayableText(it), id);
-                                }
+                                playAudio(it.audioUrl, id);
                               }}
                               className={`mt-auto w-full py-1.5 rounded-md text-xs font-black flex items-center justify-center gap-2 transition-all ${playingIndex === `s${step.id}-${i}` ? "bg-orange-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 group-hover:bg-orange-50 group-hover:text-slate-900"}`}
                             >

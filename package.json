@@ -5,7 +5,7 @@
   "scripts": {
     "ai-eval:rtf": "tsx scripts/ai-eval-rtf-runner.ts",
     "ai-eval:wer": "tsx scripts/ai-eval-wer-runner.ts",
-    "build": "next build",
+    "build": "next build --webpack",
     "dev": "next dev --webpack",
     "lint": "echo 'Lint skipped'",
     "security:all": "npm run security:sbom && npm run security:soup && npm run security:audit && npm run security:manifest",

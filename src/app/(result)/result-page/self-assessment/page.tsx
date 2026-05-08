@@ -51,6 +51,10 @@ import {
 } from "lucide-react";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { clearFirstDiagnosisFlow } from "@/lib/firstDiagnosisFlow";
+import {
+  collectAdaptiveEvidence,
+  serializeAdaptiveEvidenceCsv,
+} from "@/lib/adaptive/evidence";
 
 function getMeasurementQualityUi(level?: MeasurementQualityLevel) {
   switch (level) {
@@ -86,6 +90,35 @@ function DemoResultBadge() {
       시연용 결과
     </div>
   );
+}
+
+function pickExportStepItems(
+  historyEntry: TrainingHistoryEntry | null | undefined,
+  sessionData: any,
+  stepKey: "step2" | "step4" | "step5" | "step6",
+) {
+  const historyItems = historyEntry?.stepDetails?.[stepKey];
+  if (Array.isArray(historyItems) && historyItems.length > 0) return historyItems;
+  const sessionItems = sessionData?.[stepKey]?.items;
+  return Array.isArray(sessionItems) ? sessionItems : [];
+}
+
+function decodeDataUrlToBytes(dataUrl: string) {
+  const match = /^data:([^;,]+)?(;base64)?,([\s\S]*)$/.exec(dataUrl);
+  if (!match) return null;
+
+  const isBase64 = Boolean(match[2]);
+  const payload = match[3] || "";
+  if (!isBase64) {
+    return new TextEncoder().encode(decodeURIComponent(payload));
+  }
+
+  const binary = window.atob(payload);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 function ResultContent() {
@@ -523,8 +556,12 @@ function ResultContent() {
     const normalizedUrl = String(assetUrl || "").trim();
     if (!normalizedUrl) return null;
     try {
+      if (normalizedUrl.startsWith("data:")) {
+        const data = decodeDataUrlToBytes(normalizedUrl);
+        return data ? { name, data } : null;
+      }
+
       const requestUrl =
-        normalizedUrl.startsWith("data:") ||
         normalizedUrl.startsWith("blob:") ||
         normalizedUrl.startsWith("http://") ||
         normalizedUrl.startsWith("https://")
@@ -788,12 +825,13 @@ function ResultContent() {
 
     const sessionSnapshot = {
       step1: sessionData?.step1?.items ?? [],
-      step2: sessionData?.step2?.items ?? [],
+      step2: pickExportStepItems(currentHistoryEntry, sessionData, "step2"),
       step3: sessionData?.step3?.items ?? [],
-      step4: sessionData?.step4?.items ?? [],
-      step5: sessionData?.step5?.items ?? [],
-      step6: sessionData?.step6?.items ?? [],
+      step4: pickExportStepItems(currentHistoryEntry, sessionData, "step4"),
+      step5: pickExportStepItems(currentHistoryEntry, sessionData, "step5"),
+      step6: pickExportStepItems(currentHistoryEntry, sessionData, "step6"),
     };
+    const adaptiveEvidence = collectAdaptiveEvidence(currentHistoryEntry ?? null);
 
     const exportPayload = {
       exportedAt: new Date().toISOString(),
@@ -805,6 +843,7 @@ function ResultContent() {
       derivedKwab,
       summaryScores: stepDetails,
       details: sessionData,
+      adaptiveEvidence,
       counts: {
         step1: sessionData?.step1?.items?.length || 0,
         step2: sessionData?.step2?.items?.length || 0,
@@ -831,28 +870,40 @@ function ResultContent() {
           JSON.stringify(sessionSnapshot, null, 2),
         ),
       },
+      {
+        name: "adaptive-evidence.json",
+        data: new TextEncoder().encode(
+          JSON.stringify(adaptiveEvidence, null, 2),
+        ),
+      },
+      {
+        name: "adaptive-evidence.csv",
+        data: new TextEncoder().encode(
+          serializeAdaptiveEvidenceCsv(adaptiveEvidence),
+        ),
+      },
     ];
     files.push(...buildSttEvaluationCsvFiles(currentHistoryEntry ?? null));
       const mediaFiles = await Promise.all([
-        ...(sessionData?.step2?.items ?? []).map((item: any, index: number) =>
+        ...pickExportStepItems(currentHistoryEntry, sessionData, "step2").map((item: any, index: number) =>
           assetUrlToExportFile(
             `media/step2/audio-${index + 1}.webm`,
             String(item?.audioUrl ?? ""),
           ),
         ),
-        ...(sessionData?.step4?.items ?? []).map((item: any, index: number) =>
+        ...pickExportStepItems(currentHistoryEntry, sessionData, "step4").map((item: any, index: number) =>
           assetUrlToExportFile(
             `media/step4/audio-${index + 1}.webm`,
             String(item?.audioUrl ?? ""),
           ),
         ),
-        ...(sessionData?.step5?.items ?? []).map((item: any, index: number) =>
+        ...pickExportStepItems(currentHistoryEntry, sessionData, "step5").map((item: any, index: number) =>
           assetUrlToExportFile(
             `media/step5/audio-${index + 1}.webm`,
             String(item?.audioUrl ?? ""),
           ),
         ),
-        ...(sessionData?.step6?.items ?? []).map((item: any, index: number) =>
+        ...pickExportStepItems(currentHistoryEntry, sessionData, "step6").map((item: any, index: number) =>
           assetUrlToExportFile(
             `media/step6/image-${index + 1}.png`,
             String(item?.userImage ?? ""),

@@ -18,14 +18,18 @@ const isProd = process.env.NODE_ENV === "production";
 const cspDirectives = [
   "default-src 'self'",
   // Next.js 는 inline script (build hash) 가 필요. nonce 도입 전까지 'unsafe-inline'.
-  // MediaPipe / Tone.js 같은 cdn 자원은 self 번들로 가져오는 전제.
-  `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net`,
+  // WASM-STT ONNX 런타임은 로컬 .mjs 를 blob URL 로 감싼 뒤 dynamic import 한다.
+  `script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net`,
   `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
   `font-src 'self' https://fonts.gstatic.com data:`,
   `img-src 'self' data: blob: https:`,
   `media-src 'self' blob: data:`,
-  // /api/proxy/* 가 OpenAI / 음향분석 서비스로 나가는 통로.
-  `connect-src 'self' https://api.openai.com${isProd ? "" : " ws: http://localhost:* http://127.0.0.1:*"}`,
+  `worker-src 'self' blob:`,
+  // /api/proxy/* 가 OpenAI 로 나가는 통로. WASM-STT 모델/런타임은 public 정적 자산에서 self 로 로드한다.
+  // storage.googleapis.com: XR Preview(/select-page/xr/*) 의 MediaPipe HandLandmarker 모델
+  //   가중치 (hand_landmarker.task) 다운로드용. 정식 SaMD 빌드 전에 모델을
+  //   public/mediapipe/models/ 에 동봉하면 이 출처 제거 가능.
+  `connect-src 'self' https://api.openai.com https://storage.googleapis.com${isProd ? "" : " ws: http://localhost:* http://127.0.0.1:*"}`,
   `frame-ancestors 'none'`,
   `form-action 'self'`,
   `base-uri 'self'`,

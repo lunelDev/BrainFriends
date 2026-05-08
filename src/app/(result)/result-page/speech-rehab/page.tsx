@@ -31,6 +31,66 @@ import {
   speakKoreanText,
 } from "@/lib/client/speechSynthesis";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
+import {
+  collectAdaptiveEvidence,
+  serializeAdaptiveEvidenceCsv,
+} from "@/lib/adaptive/evidence";
+import { loadTransientStepStorage } from "@/lib/security/transientStepStorage";
+
+const REHAB_MEDIA_STORAGE_KEYS: Record<number, string> = {
+  2: "step2_recorded_audios",
+  4: "step4_recorded_audios",
+  5: "step5_recorded_data",
+};
+
+function decodeDataUrlToBytes(dataUrl: string) {
+  const match = /^data:([^;,]+)?(;base64)?,([\s\S]*)$/.exec(dataUrl);
+  if (!match) return null;
+
+  const isBase64 = Boolean(match[2]);
+  const payload = match[3] || "";
+  if (!isBase64) {
+    return new TextEncoder().encode(decodeURIComponent(payload));
+  }
+
+  const binary = window.atob(payload);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function resolveItemIndex(item: any, fallbackIndex: number) {
+  const rawIndex = Number(item?.index);
+  return Number.isFinite(rawIndex) && rawIndex >= 0
+    ? rawIndex
+    : fallbackIndex;
+}
+
+function mergeExportItems(primaryItems: any[], fallbackItems: any[]) {
+  const byIndex = new Map<number, any>();
+
+  primaryItems.forEach((item, index) => {
+    byIndex.set(resolveItemIndex(item, index), item);
+  });
+
+  fallbackItems.forEach((item, index) => {
+    const resolvedIndex = resolveItemIndex(item, index);
+    const existing = byIndex.get(resolvedIndex) ?? {};
+    byIndex.set(resolvedIndex, {
+      ...item,
+      ...existing,
+      audioUrl: existing.audioUrl || item?.audioUrl,
+      userImage: existing.userImage || item?.userImage,
+      cameraFrameImage: existing.cameraFrameImage || item?.cameraFrameImage,
+    });
+  });
+
+  return Array.from(byIndex.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map((entry) => entry[1]);
+}
 
 function getMeasurementQualityUi(level?: MeasurementQualityLevel) {
   switch (level) {
@@ -113,11 +173,12 @@ function ResultRehabPage() {
     const finalizeKey = `${patient.sessionId}:${place}:rehab:${safeStep}`;
     if (finalizedResultRef.current === finalizeKey) return;
     let cancelled = false;
+    let builtEntry: TrainingHistoryEntry | null = null;
 
     try {
       const sm = new SessionManager(patient as any, place);
       sm.finalizeSessionAndSaveHistory("rehab", safeStep);
-      const builtEntry = sm.buildHistoryEntry("rehab", safeStep);
+      builtEntry = sm.buildHistoryEntry("rehab", safeStep);
       setLiveHistoryEntry(builtEntry);
       finalizedResultRef.current = finalizeKey;
       setHistoryRows(
@@ -131,7 +192,7 @@ function ResultRehabPage() {
         setServerHistoryRows(entries);
         const rows = mergeHistoryRows(
           entries,
-          liveHistoryEntry ? [liveHistoryEntry] : [],
+          builtEntry ? [builtEntry] : [],
         );
         if (!cancelled) {
           setHistoryRows(rows);
@@ -141,14 +202,14 @@ function ResultRehabPage() {
         console.error("[result-rehab] load server history failed:", e);
         setServerHistoryRows([]);
         if (!cancelled) {
-          setHistoryRows(mergeHistoryRows([], liveHistoryEntry ? [liveHistoryEntry] : []));
+          setHistoryRows(mergeHistoryRows([], builtEntry ? [builtEntry] : []));
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [liveHistoryEntry, patient, place, safeStep]);
+  }, [patient, place, safeStep]);
 
   const stepRows = useMemo(() => {
     return historyRows.filter((row) => {
@@ -379,8 +440,12 @@ function ResultRehabPage() {
     const normalizedUrl = String(assetUrl || "").trim();
     if (!normalizedUrl) return null;
     try {
+      if (normalizedUrl.startsWith("data:")) {
+        const data = decodeDataUrlToBytes(normalizedUrl);
+        return data ? { name, data } : null;
+      }
+
       const requestUrl =
-        normalizedUrl.startsWith("data:") ||
         normalizedUrl.startsWith("blob:") ||
         normalizedUrl.startsWith("http://") ||
         normalizedUrl.startsWith("https://")
@@ -417,10 +482,16 @@ function ResultRehabPage() {
       return text.replace(/[<>:\"/\\\\|?*\\x00-\\x1F]/g, "_");
     };
 
-    const currentItems = Array.isArray(latestStepRow.stepDetails?.[detailKey])
+    const storedMediaKey = REHAB_MEDIA_STORAGE_KEYS[safeStep];
+    const transientItems = storedMediaKey
+      ? loadTransientStepStorage<any>(storedMediaKey)
+      : [];
+    const historyItems = Array.isArray(latestStepRow.stepDetails?.[detailKey])
       ? latestStepRow.stepDetails[detailKey]
       : [];
+    const currentItems = mergeExportItems(historyItems, transientItems);
     const historyForStep = stepRows.sort((a, b) => b.completedAt - a.completedAt);
+    const adaptiveEvidence = collectAdaptiveEvidence(latestStepRow);
     const exportPayload = {
       exportedAt: new Date().toISOString(),
       patient,
@@ -431,9 +502,15 @@ function ResultRehabPage() {
       currentScore,
       latestHistoryEntry: latestStepRow,
       history: historyForStep,
+      storageSnapshot: {
+        historyItems,
+        transientItems,
+        mergedItems: currentItems,
+      },
       detailComparisons,
       trendRows,
       facialReport,
+      adaptiveEvidence,
     };
 
     const files: ExportFile[] = [
@@ -444,6 +521,33 @@ function ResultRehabPage() {
       {
         name: "history.json",
         data: new TextEncoder().encode(JSON.stringify(historyForStep, null, 2)),
+      },
+      {
+        name: "storage-snapshot.json",
+        data: new TextEncoder().encode(
+          JSON.stringify(
+            {
+              step: safeStep,
+              historyItems,
+              transientItems,
+              mergedItems: currentItems,
+            },
+            null,
+            2,
+          ),
+        ),
+      },
+      {
+        name: "adaptive-evidence.json",
+        data: new TextEncoder().encode(
+          JSON.stringify(adaptiveEvidence, null, 2),
+        ),
+      },
+      {
+        name: "adaptive-evidence.csv",
+        data: new TextEncoder().encode(
+          serializeAdaptiveEvidenceCsv(adaptiveEvidence),
+        ),
       },
     ];
 
@@ -539,8 +643,8 @@ function ResultRehabPage() {
         }
       `}</style>
       <div className="print-container min-h-screen bg-slate-100 text-slate-900 overflow-x-hidden">
-      <header className="no-print h-16 px-4 sm:px-6 border-b border-sky-100 flex items-center justify-between bg-white sticky top-0 z-40">
-        <div className="max-w-[1076px] mx-auto w-full flex items-center justify-between min-w-0">
+      <header className="no-print h-14 sm:h-16 px-4 sm:px-6 border-b border-sky-100 flex items-center justify-between bg-white sticky top-0 z-40">
+        <div className="w-full max-w-[1076px] mx-auto flex items-center justify-between min-w-0">
           <div className="flex items-center gap-3">
             <img
               src="/images/logo/logo.png"
@@ -551,38 +655,18 @@ function ResultRehabPage() {
               <p className="text-xs font-black uppercase tracking-widest text-sky-500">
                 Report
               </p>
-              <h1 className="text-lg font-black">반복훈련 결과 리포트</h1>
+              <h1 className="text-base sm:text-lg md:text-xl font-black flex items-center gap-1.5">
+                언어재활 결과 리포트
+              </h1>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="px-3 py-2 rounded-xl border border-sky-200 bg-sky-50 text-[11px] sm:text-xs font-bold text-sky-700 inline-flex items-center gap-1.5">
-              <Database className="w-3.5 h-3.5 text-sky-500" />
-              {dbSaveState === "saving" && "DB Sync In Progress"}
-              {dbSaveState === "saved" && "DB Sync Complete"}
-              {dbSaveState === "local_only" && "DB Not Configured - Local backup kept"}
-              {dbSaveState === "failed" && "DB Sync Failed - Local backup kept"}
-              {dbSaveState === "idle" && "DB Sync Pending"}
-            </div>
-            {isServerExcluded ? (
-              <div className="flex flex-wrap gap-2">
-                {isDemoResult ? <DemoResultBadge /> : null}
-                <ServerExcludedBadge />
-              </div>
-            ) : null}
-            <div className={`px-3 py-2 rounded-xl border text-[11px] sm:text-xs font-bold inline-flex items-center ${qualityUi.className}`}>
-              측정 품질 · {qualityUi.label}
-            </div>
-            {vnvSummary ? (
-              <div className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-[11px] sm:text-xs font-bold text-slate-700">
-                V&V · 요구사항 {vnvSummary.requirementIds.length}건 / 시험 {vnvSummary.testCaseIds.length}건
-              </div>
-            ) : null}
+          <div className="flex items-center gap-2 justify-end">
             <button
               onClick={handleExportData}
               className="px-3 sm:px-4 py-2 bg-white text-slate-900 border border-sky-200 rounded-xl text-[11px] sm:text-xs font-bold shadow-sm hover:bg-sky-50 active:scale-95 transition-all inline-flex items-center gap-1.5"
             >
               <Database className="w-3.5 h-3.5 text-sky-500" />
-              데이터 백업
+              결과 ZIP 다운로드
             </button>
             <button
               onClick={() => window.print()}
@@ -596,7 +680,7 @@ function ResultRehabPage() {
               onClick={() => router.push("/select-page/speech-rehab")}
               aria-label="홈으로 이동"
               title="홈"
-              className="w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition-colors flex items-center justify-center"
+              className="w-9 h-9 rounded-xl border border-sky-200 bg-white text-sky-700 hover:bg-sky-50 transition-colors flex items-center justify-center"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -732,9 +816,7 @@ function ResultRehabPage() {
             }
             if (item.audioUrl) {
               playAudio(item.audioUrl, id);
-              return;
             }
-            playSpeechFallback(item.text, id);
           }}
         />
 

@@ -72,6 +72,11 @@ import { useWasmSttLoading } from "@/lib/speech/useWasmSttLoading";
 import WasmSttLoadingIndicator from "@/components/training/WasmSttLoadingIndicator";
 import { buildAdaptiveTrainingOrder } from "@/lib/adaptive/adaptiveTraining";
 import { STEP2_REPETITION_BANK } from "@/lib/adaptive/itemBank";
+import { playRecordingStartBeep } from "@/lib/audio/playRecordingStartBeep";
+import {
+  calculateStep2FinalScore,
+  mergeStep2ResultsByIndex,
+} from "@/lib/training/step2Scoring";
 
 export const dynamic = "force-dynamic";
 
@@ -223,12 +228,14 @@ function Step2Content() {
   const [isSttExpanded, setIsSttExpanded] = useState(false);
   const [reviewAudioUrl, setReviewAudioUrl] = useState<string | null>(null);
   const [analysisResults, setAnalysisResults] = useState<any[]>([]);
+  const analysisResultsRef = useRef<any[]>([]);
   const [showTracking, setShowTracking] = useState(true);
   const [isAacMode, setIsAacMode] = useState(false);
   const [isHomeExitModalOpen, setIsHomeExitModalOpen] = useState(false);
   const [isDesktopViewport, setIsDesktopViewport] = useState(false);
   const [showSidePanel, setShowSidePanel] = useState(false);
   const flowTokenRef = useRef(0);
+  const resumeAppliedRef = useRef<string | null>(null);
   const articulationStateRef = useRef(createInitialArticulationAnalyzerState());
   const liveArticulationRef = useRef({
     consonant: 0,
@@ -309,12 +316,16 @@ function Step2Content() {
       buildStepSignature(
         "step2",
         place,
-        orderedProtocol.map((item) => `${item.id ?? ""}|${item.text ?? ""}`),
+        baseOrderedProtocol.map((item) => `${item.id ?? ""}|${item.text ?? ""}`),
       ),
-    [place, orderedProtocol],
+    [baseOrderedProtocol, place],
   );
 
   const currentItem = orderedProtocol[currentIndex];
+
+  useEffect(() => {
+    analysisResultsRef.current = analysisResults;
+  }, [analysisResults]);
 
   useEffect(() => {
     articulationStateRef.current = createInitialArticulationAnalyzerState();
@@ -573,6 +584,7 @@ function Step2Content() {
       message: "녹음 진행 중",
     });
     try {
+      await playRecordingStartBeep();
       if (!analyzerRef.current) analyzerRef.current = new SpeechAnalyzer();
       await analyzerRef.current.startAnalysis((level) => {
         setAudioLevel(level);
@@ -672,7 +684,7 @@ function Step2Content() {
   ]);
 
   useEffect(() => {
-    setIsMounted(true);
+    if (resumeAppliedRef.current === stepSignature) return;
     try {
       if (!isResumeMetaMatched(STEP2_AUDIO_STORAGE_KEY, stepSignature)) {
         throw new Error("step2-signature-mismatch");
@@ -694,6 +706,8 @@ function Step2Content() {
           .map((entry) => entry[1]);
         const safeCount = Math.min(restored.length, orderedProtocol.length);
         if (safeCount < orderedProtocol.length) {
+          resumeAppliedRef.current = stepSignature;
+          analysisResultsRef.current = restored as any[];
           setAnalysisResults(restored as any[]);
           setCurrentIndex(
             Math.min(Math.max(0, safeCount), Math.max(0, orderedProtocol.length - 1)),
@@ -703,6 +717,10 @@ function Step2Content() {
     } catch {
       // ignore restore failure and start from first item
     }
+  }, [orderedProtocol.length, stepSignature]);
+
+  useEffect(() => {
+    setIsMounted(true);
     async function setupCamera() {
       try {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)
@@ -747,7 +765,9 @@ function Step2Content() {
       cancelSpeechPlayback();
       resetRuntimeStatus();
     };
-  }, [orderedProtocol.length, resetRuntimeStatus, stepSignature]);
+    // Mount-only camera/audio warmup. Re-running this can tear down active streams.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -812,31 +832,32 @@ function Step2Content() {
       setReplayCount(0);
     } else {
       try {
+        const completedResults = analysisResultsRef.current;
         const sm = new SessionManager(patientProfile as any, place);
         const avgSymmetry =
-          analysisResults.length > 0
-            ? analysisResults.reduce((a, b) => a + b.faceScore, 0) /
-              analysisResults.length
+          completedResults.length > 0
+            ? completedResults.reduce((a, b) => a + b.faceScore, 0) /
+              completedResults.length
             : 0;
         const avgFinalScore =
-          analysisResults.length > 0
-            ? analysisResults.reduce((a, b) => a + (b.finalScore ?? 0), 0) /
-              analysisResults.length
+          completedResults.length > 0
+            ? completedResults.reduce((a, b) => a + (b.finalScore ?? 0), 0) /
+              completedResults.length
             : 0;
         const avgConsonantAccuracy =
-          analysisResults.length > 0
-            ? analysisResults.reduce(
+          completedResults.length > 0
+            ? completedResults.reduce(
                 (a, b) => a + (b.consonantAccuracy || 0),
                 0,
-              ) / analysisResults.length
+              ) / completedResults.length
             : 0;
         const avgVowelAccuracy =
-          analysisResults.length > 0
-            ? analysisResults.reduce((a, b) => a + (b.vowelAccuracy || 0), 0) /
-              analysisResults.length
+          completedResults.length > 0
+            ? completedResults.reduce((a, b) => a + (b.vowelAccuracy || 0), 0) /
+              completedResults.length
             : 0;
         sm.saveStep2Result({
-          items: analysisResults.map((row) => ({
+          items: completedResults.map((row) => ({
             text: row.text,
             adaptiveItemKey: row.adaptiveItemKey,
             adaptiveItemId: row.adaptiveItemId,
@@ -845,8 +866,15 @@ function Step2Content() {
             itemDifficulty: row.itemDifficulty,
             itemDiscrimination: row.itemDiscrimination,
             selectionMethod: row.selectionMethod,
-            transcript: String(row.transcript || ""),
+            transcript: String(row.rawTranscript || row.transcript || ""),
+            rawTranscript: String(row.rawTranscript || row.transcript || ""),
+            audioUrl: typeof row.audioUrl === "string" ? row.audioUrl : undefined,
             isCorrect: Boolean(row.isCorrect),
+            finalScore: Number(row.finalScore ?? 0),
+            speechScore: Number(row.speechScore ?? row.pronunciationScore ?? 0),
+            faceScore: Number(row.faceScore ?? row.symmetryScore ?? 0),
+            phraseMatchScore: Number(row.phraseMatchScore ?? 0),
+            articulationScore: Number(row.articulationScore ?? 0),
             symmetryScore: Number(row.symmetryScore ?? row.faceScore ?? 0),
             pronunciationScore: Number(
               row.pronunciationScore ?? row.speechScore ?? 0,
@@ -894,10 +922,11 @@ function Step2Content() {
       } catch (error) {
       }
 
+      const completedResults = analysisResultsRef.current;
       const avgScore =
-        analysisResults.length > 0
-          ? analysisResults.reduce((a, b) => a + b.finalScore, 0) /
-            analysisResults.length
+        completedResults.length > 0
+          ? completedResults.reduce((a, b) => a + b.finalScore, 0) /
+            completedResults.length
           : 0;
       pushStep3OrRehabResult(Number(avgScore.toFixed(0)));
     }
@@ -979,7 +1008,13 @@ function Step2Content() {
         items: demoItems.map((item) => ({
           text: item.text,
           transcript: item.text,
+          rawTranscript: item.text,
           isCorrect: Boolean(item.isCorrect),
+          finalScore: item.finalScore,
+          speechScore: item.speechScore,
+          faceScore: item.faceScore,
+          phraseMatchScore: 100,
+          articulationScore: item.finalScore,
           symmetryScore: item.faceScore,
           pronunciationScore: item.speechScore,
           consonantAccuracy: item.consonantAccuracy,
@@ -1001,6 +1036,8 @@ function Step2Content() {
           Math.max(1, demoItems.length),
       );
 
+      analysisResultsRef.current = demoItems;
+      setAnalysisResults(demoItems);
       pushStep3OrRehabResult(step2Score);
     } catch (error) {
     }
@@ -1018,7 +1055,7 @@ function Step2Content() {
   ]);
 
   const handleToggleRecording = async () => {
-    if (!isRecording && (!canRecord || isPromptPlaying)) return;
+    if (!isRecording && isPromptPlaying) return;
 
     if (!isRecording) {
       await startRecording();
@@ -1128,9 +1165,13 @@ function Step2Content() {
         const vowelAccuracy = Number.isFinite(speechVowelAccuracy)
           ? Math.max(0, Math.min(100, speechVowelAccuracy))
           : blendArticulationAccuracy(visualVowelAccuracy);
-        const finalScore = Number(
-          ((consonantAccuracy + vowelAccuracy) / 2).toFixed(1),
-        );
+        const scoring = calculateStep2FinalScore({
+          targetText: currentItem.text,
+          transcript: result.transcript || "",
+          consonantAccuracy,
+          vowelAccuracy,
+        });
+        const finalScore = scoring.finalScore;
 
         updateSidebar({
           consonantAccuracy: consonantAccuracy / 100,
@@ -1151,8 +1192,11 @@ function Step2Content() {
           ...(adaptiveOrder.itemMetaByKey[currentItem.text] ?? {}),
           text: currentItem.text,
           transcript: displayTranscript,
+          rawTranscript: result.transcript || "",
           isCorrect: finalScore >= 60,
-          finalScore: Number(finalScore.toFixed(1)),
+          finalScore,
+          phraseMatchScore: scoring.phraseMatchScore,
+          articulationScore: scoring.articulationScore,
           speechScore,
           faceScore,
           symmetryScore: faceScore,
@@ -1178,6 +1222,7 @@ function Step2Content() {
           processingMs: result.processingMs,
           acoustic: acousticSnapshot,
         };
+        let persistedResultEntry = currentResultEntry;
         articulationAggregateRef.current = {
           consonantSum: 0,
           vowelSum: 0,
@@ -1220,25 +1265,13 @@ function Step2Content() {
                       : undefined,
                   timestamp: new Date().toLocaleTimeString(),
                 };
+                persistedResultEntry = nextEntry;
 
-                const byIndex = new Map<number, any>();
-                existing
-                  .slice(-orderedProtocol.length)
-                  .forEach((row: any, fallbackIndex: number) => {
-                    const resolvedIndex = Number.isFinite(Number(row?.index))
-                      ? Number(row.index)
-                      : fallbackIndex;
-                    if (resolvedIndex < 0 || resolvedIndex >= orderedProtocol.length)
-                      return;
-                    byIndex.set(resolvedIndex, row);
-                  });
-                byIndex.set(currentIndex, nextEntry);
-                let candidate = Array.from(byIndex.entries())
-                  .sort((a, b) => a[0] - b[0])
-                  .map((entry) => entry[1])
-                  .slice(
-                    -Math.min(STEP2_MAX_STORED_AUDIO_ITEMS, orderedProtocol.length),
-                  );
+                let candidate = mergeStep2ResultsByIndex(
+                  existing,
+                  nextEntry,
+                  Math.min(STEP2_MAX_STORED_AUDIO_ITEMS, orderedProtocol.length),
+                );
                 let saved = false;
                 let droppedByQuota = 0;
                 let strippedAudioCount = 0;
@@ -1280,6 +1313,10 @@ function Step2Content() {
                     candidate = [{ ...nextEntry, audioUrl: undefined }];
                   }
                 }
+                persistedResultEntry =
+                  candidate.find(
+                    (item) => Number(item?.index) === currentIndex,
+                  ) ?? nextEntry;
 
                 setReviewAudioUrl(URL.createObjectURL(audioBlob));
                 updateRuntimeStatus({
@@ -1343,23 +1380,16 @@ function Step2Content() {
           message: "분석 완료",
         });
         setTranscript(displayTranscript);
-        setResultScore(Number(finalScore.toFixed(1)));
+        setResultScore(finalScore);
         setResultConsonantAccuracy(Number(consonantAccuracy.toFixed(1)));
         setResultVowelAccuracy(Number(vowelAccuracy.toFixed(1)));
-        setAnalysisResults((prev) => {
-          const byIndex = new Map<number, any>();
-          prev.forEach((row: any, fallbackIndex: number) => {
-            const resolvedIndex = Number.isFinite(Number(row?.index))
-              ? Number(row.index)
-              : fallbackIndex;
-            if (resolvedIndex < 0 || resolvedIndex >= orderedProtocol.length) return;
-            byIndex.set(resolvedIndex, row);
-          });
-          byIndex.set(currentIndex, currentResultEntry);
-          return Array.from(byIndex.entries())
-            .sort((a, b) => a[0] - b[0])
-            .map((entry) => entry[1]);
-        });
+        const nextAnalysisResults = mergeStep2ResultsByIndex(
+          analysisResultsRef.current,
+          persistedResultEntry,
+          orderedProtocol.length,
+        );
+        analysisResultsRef.current = nextAnalysisResults;
+        setAnalysisResults(nextAnalysisResults);
       } catch (err) {
         setStatusText("분석 중 오류가 발생했습니다.");
         updateRuntimeStatus({
@@ -1394,8 +1424,11 @@ function Step2Content() {
         ...(adaptiveOrder.itemMetaByKey[currentItem.text] ?? {}),
         text: currentItem.text,
         transcript: payload.sentence,
+        rawTranscript: payload.sentence,
         isCorrect: finalScore >= 60,
         finalScore,
+        phraseMatchScore: finalScore,
+        articulationScore: 0,
         speechScore: 0,
         faceScore: 0,
         symmetryScore: 0,
@@ -1410,19 +1443,11 @@ function Step2Content() {
       };
 
       const existing = loadTransientStepStorage<any>(STEP2_AUDIO_STORAGE_KEY);
-      const byIndex = new Map<number, any>();
-      existing.slice(-orderedProtocol.length).forEach((row: any, fallbackIndex: number) => {
-        const resolvedIndex = Number.isFinite(Number(row?.index))
-          ? Number(row.index)
-          : fallbackIndex;
-        if (resolvedIndex < 0 || resolvedIndex >= orderedProtocol.length) return;
-        byIndex.set(resolvedIndex, row);
-      });
-      byIndex.set(currentIndex, currentResultEntry);
-      const next = Array.from(byIndex.entries())
-        .sort((a, b) => a[0] - b[0])
-        .map((entry) => entry[1])
-        .slice(-Math.min(STEP2_MAX_STORED_AUDIO_ITEMS, orderedProtocol.length));
+      const next = mergeStep2ResultsByIndex(
+        existing,
+        currentResultEntry,
+        Math.min(STEP2_MAX_STORED_AUDIO_ITEMS, orderedProtocol.length),
+      );
       saveTransientStepStorage(STEP2_AUDIO_STORAGE_KEY, next);
       saveResumeMeta(STEP2_AUDIO_STORAGE_KEY, stepSignature, next.length);
       void persistAacIntentBestEffort(payload);
@@ -1433,20 +1458,15 @@ function Step2Content() {
       setResultVowelAccuracy(0);
       setReviewAudioUrl(null);
       setStatusText("AAC 심볼 입력이 저장되었습니다.");
-      setAnalysisResults((prev) => {
-        const byIndex = new Map<number, any>();
-        prev.forEach((row: any, fallbackIndex: number) => {
-          const resolvedIndex = Number.isFinite(Number(row?.index))
-            ? Number(row.index)
-            : fallbackIndex;
-          if (resolvedIndex < 0 || resolvedIndex >= orderedProtocol.length) return;
-          byIndex.set(resolvedIndex, row);
-        });
-        byIndex.set(currentIndex, currentResultEntry);
-        return Array.from(byIndex.entries())
-          .sort((a, b) => a[0] - b[0])
-          .map((entry) => entry[1]);
-      });
+      setIsAacMode(false);
+      setCanRecord(false);
+      const nextAnalysisResults = mergeStep2ResultsByIndex(
+        analysisResultsRef.current,
+        currentResultEntry,
+        orderedProtocol.length,
+      );
+      analysisResultsRef.current = nextAnalysisResults;
+      setAnalysisResults(nextAnalysisResults);
       updateRuntimeStatus({
         recording: false,
         saving: false,
@@ -1769,8 +1789,11 @@ function Step2Content() {
                     <button
                       type="button"
                       onClick={() => {
+                        flowTokenRef.current += 1;
+                        setIsPromptPlaying(false);
                         setIsAacMode(true);
                         setCanRecord(false);
+                        setGuideText("");
                         setStatusText("심볼을 선택해 문장을 만들어 주세요.");
                       }}
                       className={`rounded-full border px-4 py-2 text-xs font-black ${
@@ -1827,13 +1850,13 @@ function Step2Content() {
                       onClick={handleToggleRecording}
                       disabled={
                         !isRecording &&
-                        (isAnalyzing || isPromptPlaying || !canRecord)
+                        (isAnalyzing || isPromptPlaying || isSaving)
                       }
                       className={`group relative z-10 w-20 h-20 lg:w-24 lg:h-24 rounded-full bg-[#0B1A3A] shadow-2xl shadow-slate-300/70 flex items-center justify-center border-4 border-white transition-all active:scale-95 ${
                         !isRecording && !isAnalyzing ? "hover:scale-105" : ""
                       } ${
                         !isRecording &&
-                        (isAnalyzing || isPromptPlaying || !canRecord)
+                        (isAnalyzing || isPromptPlaying || isSaving)
                           ? "opacity-70 cursor-not-allowed"
                           : ""
                       }`}

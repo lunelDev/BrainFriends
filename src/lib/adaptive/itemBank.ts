@@ -36,13 +36,44 @@ export const STEP4_SENTENCE_BANK: readonly IrtItem[] = [
   { id: "step4-가족-만남", a: 1.1, b: 1.5, metadata: { step: 4, kind: "sentence-hard" } },
 ] as const;
 
+export const STEP5_READING_BANK: readonly IrtItem[] = [
+  { id: "step5-home-1", a: 1.0, b: -0.4, metadata: { step: 5, place: "home", kind: "reading-medium" } },
+  { id: "step5-home-2", a: 1.0, b: -0.1, metadata: { step: 5, place: "home", kind: "reading-medium" } },
+  { id: "step5-home-3", a: 1.1, b: 0.2, metadata: { step: 5, place: "home", kind: "reading-medium" } },
+  { id: "step5-hospital-1", a: 1.0, b: -0.1, metadata: { step: 5, place: "hospital", kind: "reading-medium" } },
+  { id: "step5-hospital-2", a: 1.1, b: 0.4, metadata: { step: 5, place: "hospital", kind: "reading-hard" } },
+  { id: "step5-hospital-3", a: 1.0, b: 0.1, metadata: { step: 5, place: "hospital", kind: "reading-medium" } },
+  { id: "step5-cafe-1", a: 1.0, b: -0.2, metadata: { step: 5, place: "cafe", kind: "reading-medium" } },
+  { id: "step5-cafe-2", a: 1.0, b: 0.1, metadata: { step: 5, place: "cafe", kind: "reading-medium" } },
+  { id: "step5-cafe-3", a: 1.0, b: -0.1, metadata: { step: 5, place: "cafe", kind: "reading-medium" } },
+  { id: "step5-bank-1", a: 1.0, b: 0.1, metadata: { step: 5, place: "bank", kind: "reading-medium" } },
+  { id: "step5-bank-2", a: 1.1, b: 0.3, metadata: { step: 5, place: "bank", kind: "reading-hard" } },
+  { id: "step5-bank-3", a: 1.0, b: -0.1, metadata: { step: 5, place: "bank", kind: "reading-medium" } },
+  { id: "step5-park-1", a: 1.0, b: 0.1, metadata: { step: 5, place: "park", kind: "reading-medium" } },
+  { id: "step5-park-2", a: 1.1, b: 0.4, metadata: { step: 5, place: "park", kind: "reading-hard" } },
+  { id: "step5-park-3", a: 1.1, b: 0.5, metadata: { step: 5, place: "park", kind: "reading-hard" } },
+  { id: "step5-mart-1", a: 1.0, b: -0.2, metadata: { step: 5, place: "mart", kind: "reading-medium" } },
+  { id: "step5-mart-2", a: 1.1, b: 0.3, metadata: { step: 5, place: "mart", kind: "reading-hard" } },
+  { id: "step5-mart-3", a: 1.0, b: -0.1, metadata: { step: 5, place: "mart", kind: "reading-medium" } },
+] as const;
+
+export const SING_ADAPTIVE_BANK: readonly IrtItem[] = [
+  { id: "sing-나비야", a: 1.0, b: -1.2, metadata: { step: "sing", kind: "song-easy" } },
+  { id: "sing-아리랑", a: 1.0, b: -0.2, metadata: { step: "sing", kind: "song-medium" } },
+  { id: "sing-군밤타령", a: 1.0, b: 0.1, metadata: { step: "sing", kind: "song-medium" } },
+  { id: "sing-둥글게-둥글게", a: 1.1, b: 0.8, metadata: { step: "sing", kind: "song-hard" } },
+  { id: "sing-도라지-타령", a: 1.1, b: 1.0, metadata: { step: "sing", kind: "song-hard" } },
+  { id: "sing-밀양-아리랑", a: 1.1, b: 1.2, metadata: { step: "sing", kind: "song-hard" } },
+] as const;
+
 export const ALL_BANKS = {
   1: STEP1_WORD_BANK,
   2: STEP2_REPETITION_BANK,
   4: STEP4_SENTENCE_BANK,
+  5: STEP5_READING_BANK,
 } as const;
 
 /** 결정성 — 동일 step 입력 → 동일 bank 반환. */
-export function getItemBankForStep(step: 1 | 2 | 4): readonly IrtItem[] {
+export function getItemBankForStep(step: 1 | 2 | 4 | 5): readonly IrtItem[] {
   return ALL_BANKS[step];
 }

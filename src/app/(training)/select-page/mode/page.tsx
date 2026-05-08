@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TherapistAdminChromeBar } from "@/app/therapist/_components/TherapistAdminChromeBar";
-import { Box, ChevronRight, Sparkles, Trophy } from "lucide-react";
+import { ChevronRight, Sparkles, Trophy } from "lucide-react";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import {
   SessionManager,
@@ -357,12 +357,17 @@ export default function ModeSelectPage() {
             >
               내 재활 관리
             </button>
+            {/*
+              XR 샘플 진입 버튼.
+              - 정식 SaMD 스코프 외 R&D 프리뷰. /select-page/xr 가 컨셉 페이지이며,
+                실제 immersive 세션은 컨셉 페이지 안에서 feature-detect 후 시도.
+              - 보호 라우팅은 proxy.ts 의 /select-page 매칭으로 이미 적용된다.
+            */}
             <button
-              onClick={() => router.push("/webxr")}
-              className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-black text-indigo-700 transition hover:bg-indigo-100"
+              onClick={() => router.push("/select-page/xr")}
+              className="rounded-full border border-violet-300 bg-gradient-to-r from-violet-50 to-indigo-50 px-4 py-2 text-sm font-black text-violet-700 transition hover:from-violet-100 hover:to-indigo-100"
             >
-              <Box className="h-4 w-4" />
-              XR 공간
+              XR 체험 <span className="ml-1 rounded-full bg-violet-600 px-1.5 py-0.5 text-[9px] tracking-wider text-white">PREVIEW</span>
             </button>
             <button
               onClick={logout}

@@ -1,22 +1,66 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Music } from "lucide-react";
 import SelectionHeroBanner from "@/components/training/SelectionHeroBanner";
 import SelectionImageCard from "@/components/training/SelectionImageCard";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 import { SONG_KEYS, SONGS } from "@/features/sing-training/data/songs";
+import { buildAdaptiveTrainingOrder } from "@/lib/adaptive/adaptiveTraining";
+import { SING_ADAPTIVE_BANK } from "@/lib/adaptive/itemBank";
+
+const SING_RESULT_SESSION_KEY = "bf_sing_result_transient";
+
+type SingAdaptiveHistory = {
+  song: string;
+  score: number;
+} | null;
 
 export default function SelectSingPage() {
   const router = useRouter();
   const { patient, ageGroup } = useTrainingSession();
   const [isMounted, setIsMounted] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [adaptiveHistory, setAdaptiveHistory] = useState<SingAdaptiveHistory>(null);
 
   useEffect(() => {
     setIsMounted(true);
+    try {
+      const raw = window.sessionStorage.getItem(SING_RESULT_SESSION_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.song !== "string") return;
+      const score = Number(parsed?.score);
+      if (!Number.isFinite(score)) return;
+      setAdaptiveHistory({ song: parsed.song, score });
+    } catch {
+      setAdaptiveHistory(null);
+    }
   }, []);
+
+  const adaptiveSongOrder = useMemo(
+    () =>
+      buildAdaptiveTrainingOrder({
+        step: "sing",
+        items: SONG_KEYS,
+        responses:
+          adaptiveHistory && SONG_KEYS.includes(adaptiveHistory.song as any)
+            ? [
+                {
+                  itemKey: adaptiveHistory.song,
+                  correct: adaptiveHistory.score >= 70,
+                },
+              ]
+            : [],
+        getItemKey: (songKey) => songKey,
+        getItemText: (songKey) =>
+          `${songKey} ${SONGS[songKey].level} ${SONGS[songKey].subtitle}`,
+        calibratedBank: SING_ADAPTIVE_BANK,
+      }),
+    [adaptiveHistory],
+  );
+  const orderedSongKeys = adaptiveSongOrder.orderedItems;
 
   const logout = async () => {
     setIsLoggingOut(true);
@@ -93,8 +137,9 @@ export default function SelectSingPage() {
         />
 
         <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
-          {SONG_KEYS.map((songKey) => {
+          {orderedSongKeys.map((songKey) => {
             const song = SONGS[songKey];
+            const adaptiveMeta = adaptiveSongOrder.itemMetaByKey[songKey];
 
             return (
               <SelectionImageCard
@@ -120,6 +165,12 @@ export default function SelectSingPage() {
                     <Music className="h-3 w-3" />
                     {song.level}
                     <span className="text-slate-900/75">SONG</span>
+                    {adaptiveMeta?.selectionMethod === "irt_mfi" &&
+                    adaptiveSongOrder.nextItemKey === songKey ? (
+                      <span className="rounded-full bg-white/55 px-1.5 py-0.5 text-[9px] text-slate-900">
+                        추천
+                      </span>
+                    ) : null}
                   </span>
                 }
               />

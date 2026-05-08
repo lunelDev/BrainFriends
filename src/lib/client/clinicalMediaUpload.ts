@@ -15,6 +15,30 @@ export type UploadClinicalMediaParams = {
 };
 
 export async function dataUrlToBlob(dataUrl: string) {
+  const normalized = String(dataUrl || "").trim();
+  if (!normalized.startsWith("data:")) {
+    throw new Error("invalid_data_url");
+  }
+  const commaIndex = normalized.indexOf(",");
+  if (commaIndex < 0) {
+    throw new Error("invalid_data_url");
+  }
+  const header = normalized.slice(0, commaIndex);
+  const body = normalized.slice(commaIndex + 1);
+  const contentType = header.match(/^data:([^;,]+)/)?.[1] || "application/octet-stream";
+  const isBase64 = /;base64(?:;|$)/i.test(header);
+  if (!isBase64) {
+    return new Blob([decodeURIComponent(body)], { type: contentType });
+  }
+  const binary = atob(body);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: contentType });
+}
+
+export async function dataUrlToBlobViaFetch(dataUrl: string) {
   const response = await fetch(dataUrl);
   return response.blob();
 }

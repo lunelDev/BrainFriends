@@ -10,16 +10,17 @@
 
 정확한 현재 표현은 다음과 같다.
 
-> 안면·시선 분석은 브라우저 내 MediaPipe/WASM 기반 온디바이스 처리를 적용한다. 음성 STT는 사용 목적별 정책에 따라 서버 송신을 차단하거나, 주간 K-WAB·임상 평가 등 제한된 useCase에서 서버 프록시를 통해 외부 STT 서비스로 전송될 수 있다.
+> 안면·시선 분석은 브라우저 내 MediaPipe/WASM 기반 온디바이스 처리를 적용한다. 음성 STT는 제품 기본값으로 브레인프렌즈 서버의 보안 프록시를 통해 처리한다. 브라우저가 외부 STT API로 직접 전송하지는 않지만, 서버 프록시가 외부 STT 서비스를 호출하는 경우 녹음 음성이 제한적으로 외부 처리될 수 있다.
 
 현재 STT 정책은 다음과 같다.
 
 | useCase | 현재 정책 | 원본 음성 외부 전송 | 비고 |
 | --- | --- | --- | --- |
-| `daily_training` | WASM 엔진 우선. 현재 WASM 미연결이면 서버 송신 차단 | 기본값: 없음 | `STT_TRAINING_SERVER_FALLBACK=true`일 때만 서버 fallback |
-| `game_training` | WASM 엔진 우선. 현재 WASM 미연결이면 서버 송신 차단 | 기본값: 없음 | Sentence Magic 등 게임 훈련 |
-| `weekly_kwab` | 서버 STT 허용 | 있음 | 평가 목적. useCase 추적 필요 |
-| `clinical_evaluation` | 서버 STT 허용 | 있음 | 임상 평가 목적. useCase 추적 필요 |
+| `daily_training` | 서버 보안 프록시 STT 기본 | 있음 | 훈련용. 원본 음성 영구 저장 금지, metadata 기록 |
+| `game_training` | 서버 보안 프록시 STT 기본 | 있음 | Sentence Magic 등 게임 훈련 |
+| `weekly_kwab` | 서버 보안 프록시 STT 허용 | 있음 | 평가 목적. useCase 추적 필요 |
+| `clinical_evaluation` | 서버 보안 프록시 STT 허용 | 있음 | 임상 평가 목적. useCase 추적 필요 |
+| `wasm_experiment` | 실험/오프라인 후보 | 없음 | 성능·호환성 미달 시 제품 기본 기능으로 주장하지 않음 |
 
 ## 2. 데이터 흐름 요약
 
@@ -45,7 +46,7 @@
 | STT useCase 정책 | `src/lib/speech/sttPolicy.ts` |
 | STT runtime 상태 분리 | `src/lib/speech/sttRuntime.ts` |
 | STT client preflight | `src/lib/speech/sttClientPreflight.ts` |
-| WASM STT adapter 골격 | `src/lib/speech/wasmSttAdapter.ts` |
+| WASM STT adapter | `src/lib/speech/wasmSttAdapter.ts` (실험/오프라인 후보) |
 | STT prompt 생성 및 prompt hash | `src/lib/speech/sttPrompt.ts` |
 | STT 실패·빈 전사 review-required 분류 | `src/lib/speech/sttReview.ts` |
 | 클라이언트 분석기 | `src/lib/speech/SpeechAnalyzer.ts` |
@@ -59,12 +60,11 @@
 
 | 조건 | 설명 |
 | --- | --- |
-| useCase가 `weekly_kwab` 또는 `clinical_evaluation` | 평가 목적 STT |
-| useCase가 `daily_training` 또는 `game_training`이고 `STT_TRAINING_SERVER_FALLBACK=true` | 임시 fallback. 기본값은 차단 |
+| useCase가 `daily_training`, `game_training`, `weekly_kwab`, `clinical_evaluation` 중 하나 | 제품 기본 STT |
 | `OPENAI_API_KEY` 존재 | 서버 프록시가 외부 STT 호출 가능 |
 | audio/file form field 존재 | 음성 파일이 없으면 실패 처리 |
 
-그 외에는 `server_stt_blocked:*` 상태로 차단하고 `reviewRequired=true`를 반환한다.
+그 외에는 `server_stt_blocked:*` 상태로 차단하고 `reviewRequired=true`를 반환한다. STT 결과는 자동 확정 근거가 아니라 치료사 검토용 보조 전사로만 사용한다.
 
 ### 3.3 외부 STT 전송 항목
 
@@ -98,7 +98,7 @@
 | gaze 누적 지표 | 적용 | 브라우저 세션 누적 |
 | AAC 문장 preview | 적용 | 브라우저에서 규칙 기반 preview |
 | AAC commit 검증 | 서버 재계산 | 서버에서 같은 sequence로 sentence 재생성 |
-| STT | 부분 적용 | 훈련 useCase WASM adapter wiring 완료. 실측 RTF/WER 및 브라우저 호환성 검증 필요 |
+| STT | 제품 기본값 미적용 | WASM STT adapter는 실험/오프라인 후보로만 유지. 제품 기본값은 서버 보안 프록시 |
 
 ## 5. 저장 위치
 
@@ -141,15 +141,15 @@ STT 또는 AI 관련 결과에는 다음 메타데이터를 남기는 것을 기
 
 ### 7.1 사용 가능
 
-브레인프렌즈는 안면·시선 분석을 브라우저 내 온디바이스로 처리하며, 음성 STT는 훈련·평가 useCase별 정책에 따라 서버 송신 여부를 제한하고 추적한다.
+브레인프렌즈는 안면·시선 분석을 브라우저 내 온디바이스로 처리하며, 음성 STT는 서버 보안 프록시를 통해 처리한다. 서버는 녹음 음성을 영구 저장하지 않고, 전사 결과·품질 지표·검토 필요 여부를 기록한다.
 
-훈련 useCase(`daily_training`, `game_training`)는 WASM STT가 없고 명시 fallback도 꺼져 있으면 클라이언트에서 `/api/proxy/stt` 업로드 전에 차단한다. 서버 route는 외부 STT 호출 전 한 번 더 정책을 확인하는 방어선으로 유지한다.
+브라우저는 외부 STT API로 직접 전송하지 않는다. 서버 route는 외부 STT 호출 전 useCase, API key, 입력 파일, 언어 정책을 확인하는 방어선으로 유지한다.
 
 `NEXT_PUBLIC_DEV_MODE=true`는 실제 WASM STT가 아니라 `mock_stt` 개발 모드다. 허가·심사 문서와 성능평가 표에서는 mock 결과를 STT 성능 근거로 사용하지 않는다.
 
 ### 7.2 조건부 사용
 
-일상 훈련 STT는 WASM 온디바이스 엔진을 우선하도록 정책화되어 있으며, WASM 미가용 상태에서는 서버 송신을 기본 차단한다.
+WASM STT는 오프라인/저비용 후보로 실험할 수 있다. 다만 현재 성능·브라우저 호환성·모델 로딩 안정성이 제품 기본값 수준이 아니므로 허가자료의 기본 STT 기능으로 주장하지 않는다.
 
 ### 7.3 사용 금지
 
@@ -165,8 +165,8 @@ STT 또는 AI 관련 결과에는 다음 메타데이터를 남기는 것을 기
 
 | 우선순위 | 작업 | 이유 |
 | --- | --- | --- |
-| P0-Code | WASM STT 실측 RTF/WER 및 브라우저 호환성 검증 | 제품제안서의 온디바이스 STT 클레임 방어 |
 | P0-Reg | STT 외부 서비스 위탁/제3자 처리 고지 문구 확정 | 개인정보·보안 심사 대응 |
+| P0-Code | 서버 STT 결과 metadata와 녹음 파일 저장/ZIP export 검증 | 임상/성능 증적 확보 |
 | P1 | STT WER/CER 검증셋 구축 | 성능 수치 방어 |
 | P1 | 결과 리포트에 STT metadata 표시 또는 export 포함 | 변경관리 증적 |
 | P1 | SBOM/취약점 점검 결과와 외부 서비스 목록 연결 | 사이버보안 증적 |
@@ -177,11 +177,15 @@ STT 또는 AI 관련 결과에는 다음 메타데이터를 남기는 것을 기
 | --- | --- | --- |
 | Gaze 모듈 | 데이터 레이어, 누적기, history 저장, 치료사 화면 표시, dev 시각화, V&V 구현 | Phase 1 완료. 9-point calibration은 후속 |
 | AAC 모듈 | standalone 보드, 주요 훈련 화면 통합, API, 규칙형 intent, V&V 구현 | Phase 1 완료. 사용 빈도 정렬/치료사 log 표시는 후속 |
-| STT 정책 | mock/wasm/server/blocked runtime 분리, client preflight 서버 업로드 차단, 서버 차단, reviewRequired, metadata V&V 구현 | 정책·증적 완료. WASM adapter 골격 있음, 실제 엔진 미연결 |
+| STT 정책 | mock/server/wasm-experiment runtime 분리, 훈련·평가 기본값 서버 STT, reviewRequired, metadata V&V 구현 | 정책·증적 완료. WASM-STT는 실험/오프라인 후보로 격하 |
 | 보호자 리포트 | 생성, 만료, 폐기, audit, V&V 구현 | Phase 1 완료 |
 | 이상반응 | 저장/조회 DB 보장, 중증 미확인 분류, V&V 구현 | Phase 1 완료 |
 | 접근통제 | 환자 리포트 접근 정책, V&V 구현 | Phase 1 완료 |
 | 저장 실패 | fallback/재시도/수동 검토 V&V 구현 | Phase 1 완료 |
 | Traceability | RM/SR/TC/파일 연결 문서 작성 | v0.1 완료 |
 
-P0는 “규제 리스크를 줄이는 Phase 1 증적” 기준으로는 대부분 완료다. 다만 “제품제안서 클레임을 100% 구현” 기준으로는 WASM-STT 실측 RTF/WER, AAC 사용 빈도 기반 UX, Gaze calibration UI가 아직 남아 있다. 현재 코드는 훈련 useCase의 WASM adapter wiring을 포함하고, WASM 미지원 환경에서는 훈련 음성 서버 업로드를 client preflight 로 차단한다.
+P0는 “규제 리스크를 줄이는 Phase 1 증적” 기준으로는 대부분 완료다. 다만 “제품제안서 클레임을 100% 구현” 기준으로는 WASM-STT 실측 RTF/WER, AAC 사용 빈도 기반 UX, Gaze calibration UI가 아직 남아 있다. 현재 제품 기본값은 훈련·평가 STT 모두 보안 프록시 기반 서버 전사이며, WASM-STT는 실험/오프라인 후보로만 유지한다.
+
+## 10. 갱신 이력
+
+- 2026-05-07: NIDS 상담노트 및 실제 테스트 결과 반영. 상단 STT 정책 표를 "WASM 우선"에서 "서버 보안 프록시 기본, WASM은 실험/오프라인 후보"로 정정.

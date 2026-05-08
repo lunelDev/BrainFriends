@@ -17,6 +17,7 @@ export type SttPolicyInput = {
   devMode?: boolean;
   wasmAvailable: boolean;
   allowTrainingServerFallback: boolean;
+  allowWasmExperiment?: boolean;
 };
 
 const TRAINING_USE_CASES = new Set<SttUseCase>([
@@ -25,6 +26,8 @@ const TRAINING_USE_CASES = new Set<SttUseCase>([
 ]);
 
 const SERVER_ALLOWED_USE_CASES = new Set<SttUseCase>([
+  "daily_training",
+  "game_training",
   "weekly_kwab",
   "clinical_evaluation",
 ]);
@@ -62,11 +65,15 @@ export function resolveSttPolicy(input: SttPolicyInput): SttPolicyDecision {
     };
   }
 
-  if (input.wasmAvailable) {
+  if (
+    input.allowWasmExperiment &&
+    input.wasmAvailable &&
+    isTrainingSttUseCase(input.useCase)
+  ) {
     return {
       engine: "wasm_whisper",
       rawAudioLeavesDevice: false,
-      reason: "wasm_available",
+      reason: "wasm_experiment_enabled",
     };
   }
 
@@ -74,10 +81,14 @@ export function resolveSttPolicy(input: SttPolicyInput): SttPolicyDecision {
     return {
       engine: "server_whisper",
       rawAudioLeavesDevice: true,
-      reason: "server_allowed_for_evaluation",
+      reason: isTrainingSttUseCase(input.useCase)
+        ? "server_default_for_training"
+        : "server_allowed_for_evaluation",
     };
   }
 
+  // Backward-compatible no-op path: training server fallback used to gate server STT.
+  // Training use cases are now server-default, so this branch is intentionally unreachable.
   if (isTrainingSttUseCase(input.useCase) && input.allowTrainingServerFallback) {
     return {
       engine: "server_whisper",

@@ -115,7 +115,14 @@ export interface Step2Result {
   items: Array<{
     text: string;
     transcript?: string;
+    rawTranscript?: string;
+    audioUrl?: string;
     isCorrect?: boolean;
+    finalScore?: number;
+    speechScore?: number;
+    faceScore?: number;
+    phraseMatchScore?: number;
+    articulationScore?: number;
     symmetryScore: number; // 0-100
     pronunciationScore: number; // 0-100
     consonantAccuracy?: number; // 0-100
@@ -169,6 +176,7 @@ export interface Step4Result {
     situation: string;
     prompt: string;
     transcript?: string;
+    audioUrl?: string;
     isCorrect?: boolean;
     contentComponentScore?: number; // 0~100
     fluencyComponentScore?: number; // 0~100
@@ -329,6 +337,9 @@ export interface SingHistoryResult {
   versionSnapshot?: VersionSnapshot;
   song: string;
   score: number;
+  scoringVersion?: string;
+  scoreReason?: string;
+  expectedLyrics?: string;
   finalJitter: string;
   finalSi: string;
   facialResponseDelta?: string;
@@ -752,7 +763,14 @@ export class SessionManager {
             items: (step.items ?? []).map((item) => ({
               text: item.text,
               transcript: item.transcript,
+              rawTranscript: item.rawTranscript,
+              audioUrl: item.audioUrl,
               isCorrect: item.isCorrect,
+              finalScore: item.finalScore,
+              speechScore: item.speechScore,
+              faceScore: item.faceScore,
+              phraseMatchScore: item.phraseMatchScore,
+              articulationScore: item.articulationScore,
               symmetryScore: item.symmetryScore,
               pronunciationScore: item.pronunciationScore,
               consonantAccuracy: item.consonantAccuracy,
@@ -788,6 +806,7 @@ export class SessionManager {
               situation: item.situation,
               prompt: item.prompt,
               transcript: item.transcript,
+              audioUrl: item.audioUrl,
               isCorrect: item.isCorrect,
               contentComponentScore: item.contentComponentScore,
               fluencyComponentScore: item.fluencyComponentScore,

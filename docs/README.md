@@ -1,80 +1,39 @@
-# 문서 안내
+# BrainFriends Docs
 
-문서가 많아서 개별 파일의 목적을 빠르게 보고 싶으면 먼저 `document-purpose-index.md`를 보면 됩니다.
+문서 기준은 `docs/regulatory/permit-readiness-internal-standard.md` 하나를 먼저 본다.
 
-- `document-purpose-index.md`: 각 문서가 무엇을 보기 위한 문서인지 한 줄로 정리한 전체 인덱스
+## 현재 기준 문서
 
-## 먼저 보면 좋은 순서
+| 문서 | 용도 |
+| --- | --- |
+| `regulatory/permit-readiness-internal-standard.md` | 허가 준비 내부 기준서. 현재 제품 포지션, 부족 항목, 개발 우선순위를 한곳에서 확인 |
+| `regulatory/regulatory-master-map.md` | 분류·등급 → 제24~26조 → GMP/QMS → 개발 증빙 흐름 |
+| `regulatory/regulatory-work-log.md` | 원문 검토와 문서 정리 작업 이력 |
+| `regulatory/README.md` | 규제/허가 문서 인덱스 |
+| `development-progress.md` | 날짜별 개발 진행 상황과 검증·후속 작업 기록 |
 
-1. `document-purpose-index.md`
-2. `regulatory/`
-3. `remediation/`
-4. `clinical/`
-5. `database/`
-6. `10-operations/`
-7. `11-game-mode/`
-8. `12-game-specs/`
-9. `13-reference/`
+## 남긴 폴더
 
-## 폴더 설명
+| 폴더 | 유지 이유 |
+| --- | --- |
+| `regulatory/` | 현재 허가·심사·품질·AI·보안 기준 문서 |
+| `clinical/` | 향후 임상/IRB/문헌 근거 초안 |
+| `10-operations/` | 운영, 백업, 감사로그, 개인정보 관련 메모 |
+| `manuals/` | 환자/치료사/보호자 매뉴얼 초안 |
+| `database/` | DB 스키마와 개발 SQL |
+| `security/` | SBOM/SOUP/보안 감사 산출물 |
+| `11-game-mode/`, `12-game-specs/` | 게임형 훈련 기획·구현 참고 |
+| `13-reference/` | 조음·발음 참고 이미지 |
+| `decisions/` | 과거 주요 기술·제품 의사결정 기록 |
 
-### remediation
+## 삭제한 폴더 기준
 
-다음 내용을 담고 있는 공인성적서 대응 문서 모음입니다.
-- SW V&V
-- 사이버보안
-- AI 성능평가
-- 날짜별 검증 실행 로그
+다음 성격의 문서는 현재 기준과 중복되거나 충돌 가능성이 있어 정리했다.
 
-인증, 제출, 내부 검토 준비가 목적이면 이 폴더부터 보면 됩니다.
+- 예전 시험기관/KTL 문의 패키지
+- 예전 remediation 제출 패키지
+- 상담 준비용 문서
+- WASM-STT 전용 공인시험 문서
+- 프로젝트 허가 기준과 직접 관련 없는 루트 DOCX
 
-### regulatory
-
-디지털의료제품 허가·심사 관점의 최신 PM 기준 문서 모음입니다.
-- 허가·심사 갭 매트릭스
-- 클레임 잠금표
-- 사용목적·금기사항
-- 위험관리 파일
-
-허가 범위와 개발 우선순위를 결정하려면 이 폴더부터 보면 됩니다.
-
-### clinical
-
-- IRB 데이터 수집 계획
-- DTx RCT 프로토콜 골격
-- 문헌근거
-- 책임연구자 후보와 연락 전략
-
-### database
-
-- 개발용 SQL 및 스키마 관련 자료
-
-### 10-operations
-
-- 감사 로그 구조
-- 백업 / 삭제 운영 매뉴얼
-- 개인정보 / 민감정보 분리 메모
-
-### 11-game-mode
-
-- 게임 모드 개요
-- 현재 상태
-- 구현 명세
-- 스테이지 데이터
-- payload 기준 자료
-
-### 12-game-specs
-
-- 풍선 성장 게임
-- 메모리 게임
-- 문장 조합 게임
-- 테트리스 게임
-
-### 13-reference
-
-- 발음 / 조음 참고 이미지
-
-## 참고
-
-- 현재 공인성적서 대응 작업은 `remediation/README.md`부터 보는 것이 가장 좋습니다.
-- `remediation/test-runs/`는 자동 생성되는 검증 증적 폴더입니다.
+새 문서를 만들 때는 먼저 `regulatory/permit-readiness-internal-standard.md`에 반영할 내용인지 확인한다.

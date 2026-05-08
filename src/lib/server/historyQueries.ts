@@ -389,6 +389,18 @@ export async function listHistoryForAuthenticatedUser(
       singResult: {
         song: String(row.song_key),
         score: Number(row.score ?? 0),
+        scoringVersion:
+          row.version_snapshot?.measurement_metadata?.scoring_version == null
+            ? undefined
+            : String(row.version_snapshot.measurement_metadata.scoring_version),
+        scoreReason:
+          row.version_snapshot?.measurement_metadata?.score_reason == null
+            ? undefined
+            : String(row.version_snapshot.measurement_metadata.score_reason),
+        expectedLyrics:
+          row.version_snapshot?.measurement_metadata?.expected_lyrics == null
+            ? undefined
+            : String(row.version_snapshot.measurement_metadata.expected_lyrics),
         finalJitter: row.jitter == null ? "-" : String(row.jitter),
         finalSi: row.facial_symmetry == null ? "-" : String(row.facial_symmetry),
         facialResponseDelta:

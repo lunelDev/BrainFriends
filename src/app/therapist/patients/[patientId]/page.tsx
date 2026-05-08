@@ -24,6 +24,11 @@ import type {
   TrainingHistoryEntry,
 } from "@/lib/kwab/SessionManager";
 import type { GazeAccumulatorReport } from "@/lib/training/gazeAccumulator";
+import {
+  collectAdaptiveEvidence,
+  serializeAdaptiveEvidenceCsv,
+  summarizeAdaptiveEvidence,
+} from "@/lib/adaptive/evidence";
 import { persistTrainingHistoryToDatabase } from "@/lib/client/clinicalResultsApi";
 import { useTherapistConsoleGuard } from "@/hooks/useTherapistConsoleGuard";
 import {
@@ -144,6 +149,11 @@ function getEntryGazeSummary(
 function formatRatioPercent(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "-";
   return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
+}
+
+function formatTheta(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return value.toFixed(2);
 }
 
 function calcAgeFromBirthDate(birthDate: string | null): number {
@@ -512,6 +522,10 @@ export default function TherapistPatientDetailPage() {
     () => getEntryGazeSummary(summary.latest),
     [summary.latest],
   );
+  const latestAdaptiveSummary = useMemo(
+    () => summarizeAdaptiveEvidence(summary.latest),
+    [summary.latest],
+  );
 
   const latestStepCards = useMemo(() => {
     const latest = summary.latest;
@@ -567,10 +581,13 @@ export default function TherapistPatientDetailPage() {
   };
 
   const downloadEntryJson = (entry: TrainingHistoryEntry) => {
+    const adaptiveEvidence = collectAdaptiveEvidence(entry);
     const payload = {
       exportedAt: new Date().toISOString(),
       patient,
       entry,
+      adaptiveEvidence,
+      adaptiveEvidenceCsv: serializeAdaptiveEvidenceCsv(adaptiveEvidence),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
@@ -1010,7 +1027,7 @@ export default function TherapistPatientDetailPage() {
             <SummaryCard label="로그인 ID" value={patient.loginId ?? "-"} />
             <SummaryCard label="생년월일" value={patient.birthDate ?? "-"} />
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <StatusCard
               title="최근 보조점수"
               value={`${Number(summary.latest?.aq ?? 0).toFixed(1)}점`}
@@ -1033,6 +1050,19 @@ export default function TherapistPatientDetailPage() {
                 latestGazeSummary
                   ? `이탈 ${formatRatioPercent(latestGazeSummary.offTaskRatio)} · 홍채 ${formatRatioPercent(latestGazeSummary.irisDetectionRatio)}`
                   : "세션 gazeSummary 없음"
+              }
+            />
+            <StatusCard
+              title="적응형 난이도"
+              value={
+                latestAdaptiveSummary
+                  ? `θ ${formatTheta(latestAdaptiveSummary.latestTheta)}`
+                  : "기록 없음"
+              }
+              note={
+                latestAdaptiveSummary
+                  ? `최근 난이도 ${formatTheta(latestAdaptiveSummary.latestDifficulty)} · 권장 ${formatTheta(latestAdaptiveSummary.recommendedDifficulty)}`
+                  : "IRT evidence 없음"
               }
             />
           </div>
@@ -1286,6 +1316,41 @@ export default function TherapistPatientDetailPage() {
                   </p>
                 </div>
               ) : null}
+
+              {latestAdaptiveSummary ? (
+                <div className="mt-5 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                      적응형 난이도 (치료사 검토용)
+                    </p>
+                    <p className="text-[11px] font-bold text-slate-500">
+                      evidence {latestAdaptiveSummary.count}건
+                    </p>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+                    <MiniMetric
+                      label="능력 추정 θ"
+                      value={formatTheta(latestAdaptiveSummary.latestTheta)}
+                    />
+                    <MiniMetric
+                      label="불확실성 SD"
+                      value={formatTheta(latestAdaptiveSummary.latestSd)}
+                    />
+                    <MiniMetric
+                      label="최근 난이도"
+                      value={formatTheta(latestAdaptiveSummary.latestDifficulty)}
+                    />
+                    <MiniMetric
+                      label="권장 난이도"
+                      value={formatTheta(latestAdaptiveSummary.recommendedDifficulty)}
+                    />
+                  </div>
+                  <p className="mt-2 text-[11px] font-medium leading-relaxed text-slate-500">
+                    IRT/MFI 문항 선택 로그에서 산출한 보조 지표입니다. 진단·처방
+                    결정을 자동화하지 않으며, 다음 문항/세션 구성 검토에만 사용합니다.
+                  </p>
+                </div>
+              ) : null}
             </>
           ) : null}
 
@@ -1305,6 +1370,11 @@ export default function TherapistPatientDetailPage() {
                       {getEntryGazeSummary(entry) ? (
                         <Badge tone="emerald">
                           Gaze {formatRatioPercent(getEntryGazeSummary(entry)?.attentionRatio)}
+                        </Badge>
+                      ) : null}
+                      {summarizeAdaptiveEvidence(entry) ? (
+                        <Badge tone="violet">
+                          IRT θ {formatTheta(summarizeAdaptiveEvidence(entry)?.latestTheta)}
                         </Badge>
                       ) : null}
                     </div>

@@ -68,6 +68,7 @@ import { useWasmSttLoading } from "@/lib/speech/useWasmSttLoading";
 import WasmSttLoadingIndicator from "@/components/training/WasmSttLoadingIndicator";
 import { buildAdaptiveTrainingOrder } from "@/lib/adaptive/adaptiveTraining";
 import { STEP4_SENTENCE_BANK } from "@/lib/adaptive/itemBank";
+import { playRecordingStartBeep } from "@/lib/audio/playRecordingStartBeep";
 
 export const dynamic = "force-dynamic";
 
@@ -758,6 +759,7 @@ function Step4Content() {
       };
       if (!analyzerRef.current) analyzerRef.current = new SpeechAnalyzer();
       recordingStartedAtRef.current = Date.now();
+      await playRecordingStartBeep();
       await analyzerRef.current.startAnalysis((level) => setAudioLevel(level));
       updateRuntimeStatus({
         recording: true,
@@ -1135,9 +1137,15 @@ function Step4Content() {
             ? Number(row.index)
             : fallbackIndex;
           if (resolvedIndex < 0 || resolvedIndex >= scenarios.length) return;
-          if (!byIndex.has(resolvedIndex)) {
-            byIndex.set(resolvedIndex, row as Step4EvalResult);
-          }
+          const existing = byIndex.get(resolvedIndex);
+          byIndex.set(resolvedIndex, {
+            ...(existing ?? {}),
+            ...row,
+            audioUrl:
+              typeof row?.audioUrl === "string" && row.audioUrl.length > 0
+                ? row.audioUrl
+                : existing?.audioUrl,
+          } as Step4EvalResult);
         });
       }
     } catch {
@@ -1182,6 +1190,7 @@ function Step4Content() {
             itemDiscrimination: r.itemDiscrimination,
             selectionMethod: r.selectionMethod,
             transcript: r.transcript,
+            audioUrl: typeof r.audioUrl === "string" ? r.audioUrl : undefined,
             isCorrect: Boolean(r.isCorrect ?? r.kwabScore >= 5),
             speechDuration: r.speechDuration,
             audioDurationMs: r.audioDurationMs,

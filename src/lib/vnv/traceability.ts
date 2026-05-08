@@ -41,7 +41,7 @@ export const TRACEABILITY_MATRIX: TraceabilityRecord[] = [
   { requirementId: "SR-STT-009", moduleName: "src/lib/speech/sttPolicy.ts", functionName: "resolveSttPolicy", testCaseId: "TC-STT-001" },
   { requirementId: "SR-STT-009", moduleName: "src/lib/speech/sttClientPreflight.ts", functionName: "resolveClientSttPreflight", testCaseId: "TC-STT-002" },
   { requirementId: "SR-STT-009", moduleName: "src/lib/speech/sttRuntime.ts", functionName: "resolveSttRuntime", testCaseId: "TC-STT-003" },
-  { requirementId: "SR-STT-009", moduleName: "src/lib/speech/wasmSttAdapter.ts", functionName: "isWasmSttAvailable / transcribeWithWasmStt / WASM_STT_ENGINE_VERSION (transformers.js@4.2.0)", testCaseId: "TC-STT-WASM-001" },
+  { requirementId: "SR-STT-009", moduleName: "src/lib/speech/wasmSttAdapter.ts", functionName: "isWasmSttAvailable / transcribeWithWasmStt / local fp32 model assets / WASM_STT_ENGINE_VERSION (transformers.js@4.2.0)", testCaseId: "TC-STT-WASM-001" },
   { requirementId: "SR-GUARDIAN-010", moduleName: "src/lib/guardian/weeklyReportSummary.ts", functionName: "buildWeeklyReportSummary", testCaseId: "TC-GUARDIAN-001" },
   { requirementId: "SR-AE-011", moduleName: "src/lib/adverse-events/adverseEventReview.ts", functionName: "buildAdverseEventReviewSummary", testCaseId: "TC-RISK-003" },
   { requirementId: "SR-RISK-012", moduleName: "src/lib/server/riskClassification.ts", functionName: "classifyHazard / scoreToRiskClass / summarizeHazards", testCaseId: "TC-RISK-012-001" },

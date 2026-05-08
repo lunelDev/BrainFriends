@@ -12,6 +12,9 @@ export type PersistedSingResult = {
   song: string;
   userName: string;
   score: number;
+  scoringVersion?: string;
+  scoreReason?: string;
+  expectedLyrics?: string;
   finalJitter: string;
   finalSi: string;
   facialResponseDelta?: string;

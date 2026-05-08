@@ -2065,7 +2065,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "ko-KR";
-    recognition.onresult = (event) => {
+    recognition.onresult = (event: SpeechRecognitionEventLike) => {
       let latestTranscript = "";
       for (let i = event.results.length - 1; i >= 0; i -= 1) {
         const candidate = String(event.results[i]?.[0]?.transcript ?? "").trim();
@@ -2078,7 +2078,7 @@ export default function TetrisGame({ onBack }: { onBack?: () => void }) {
       setSpeechError("");
       processResult(latestTranscript);
     };
-    recognition.onerror = (event) => {
+    recognition.onerror = (event: { error?: string }) => {
       const reason = String(event?.error ?? "").trim();
       if (reason === "aborted" || reason === "no-speech") return;
       console.error("[Tetris Browser STT] error", reason);

@@ -1,0 +1,69 @@
+# Regulatory Work Log
+
+목적: 식약처/NIDS 원문 검토, 내부 판단, 문서 반영, 다음 개발 작업을 날짜별로 남긴다. 이후 회사 공유, 식약처 상담, 개발 우선순위 회의 때 이 문서를 먼저 확인한다.
+
+## 2026-05-08: 디지털의료제품 고시 제2026-4/5/6호 반영
+
+### 확인한 원문
+
+| 원문 | 확인 목적 | 반영 문서 |
+| --- | --- | --- |
+| `디지털의료제품 분류 및 등급 지정 등에 관한 규정(식품의약품안전처고시 제2026-4호)` | 독립형 디지털의료기기소프트웨어, 인프라, 제품군, 등급 확정 시점 확인 | `source-digital-medical-product-notice-2026-requirements.md` |
+| `디지털의료제품법에 따른 기관 지정 등에 관한 규정(식품의약품안전처고시 제2026-5호)` | 성능검사/규제지원/인증업무 수탁기관 지정 절차 확인 | `source-digital-medical-product-notice-2026-requirements.md` |
+| `디지털의료제품 허가·인증·신고·심사 및 평가 등에 관한 규정(식품의약품안전처고시 제2026-6호)` | 제24조, 제25조, 제26조 허가·심사 첨부서류 기준 확인 | `source-digital-medical-product-notice-2026-requirements.md`, `article-24-dossier-index.md` |
+
+### 잠근 판단
+
+| 항목 | 결정 |
+| --- | --- |
+| 제품 포지션 | 2등급 가능성 기준의 독립형 디지털의료기기소프트웨어(SaMD)로 준비 |
+| 최종 등급 | 식약처 품목분류/사전검토/허가·인증 심사 전까지 확정 표현 금지 |
+| AI/STT/안면/시선/AAC/K-WAB/노래훈련 역할 | 치료사 검토용 보조지표 |
+| 임상효과 문구 | 확증 임상 또는 식약처 인정 전까지 치료효과 입증 문구 금지 |
+| 제25조 전략 | 2등급 SW 분석성능 검증으로 임상평가 자료 일부 갈음 가능성 검토. 자동 면제 아님 |
+
+### 새로 만든 문서
+
+| 문서 | 내용 |
+| --- | --- |
+| `source-digital-medical-product-notice-2026-requirements.md` | 제2026-4/5/6호 원문 기준 요구사항 추출, 제24~26조 해석, 2등급 SaMD 개발 우선순위 |
+| `article-24-dossier-index.md` | 제24조 첨부서류 8종 기준으로 내부 산출물, 코드 증적, 부족 항목, 다음 작업 정리 |
+| `permit-readiness-internal-standard.md` | 허가 관련 핵심 내용을 링크 없이 한 MD 안에 통합한 내부 개발·허가 기준서 |
+
+### 갱신한 문서
+
+| 문서 | 갱신 내용 |
+| --- | --- |
+| `regulatory-master-map.md` | 전체 흐름을 `분류·등급 → 제24~26조 첨부서류 → GMP/QMS → 개발 증빙 → 보안/AI/임상`으로 수정 |
+| `class-2-samd-readiness-matrix.md` | 제24조 제출자료, 제25조 갈음 전략, 제26조 세부 요건을 2등급 SaMD 준비 매트릭스에 추가 |
+| `regulatory-source-audit.md` | 2026년 고시 3개를 원문 확인 자료로 추가 |
+| `README.md` | 새 핵심 문서 2개를 인덱스에 추가 |
+| `regulatory-master-map.md` | 허가 관련 1차 확인 문서를 `permit-readiness-internal-standard.md`로 지정 |
+
+### 현재 부족한 것
+
+| 부족 항목 | 이유 |
+| --- | --- |
+| 제24조 첨부서류 실제 패키지 | 인덱스는 만들었지만 제출용 본문은 아직 아님 |
+| 제25조 갈음 인정 근거 | locked test set, SLP gold label, 분석성능 결과표가 필요 |
+| 제26조 anomaly/retest/impact | SW 변경 후 재시험·영향평가 기록이 아직 약함 |
+| 치료사 검토 증적 | 원음 재생, target/transcript 비교, reviewRequired 처리 로그 필요 |
+| 사용적합성 실제 결과 | 프로토콜은 있으나 formative/summative 수행 결과가 필요 |
+| 외부 시험기관/사전검토 | 공식 회신과 기관 성적서가 아직 없음 |
+
+### 다음 개발 우선순위
+
+| 순서 | 작업 | 산출물 |
+| --- | --- | --- |
+| 1 | 결과 ZIP/저장 구조를 제25조 분석성능 검증 자료로 고정 | 원음, target, transcript, scoreReason, reviewRequired, app/model/doc version |
+| 2 | release manifest에 anomaly/retest/impact 추가 | SW 변경 이력, 재시험 결과, 영향평가 |
+| 3 | 치료사 검토 화면 강화 | 원음 재생, 정오답 검토, 말 명료도 입력, 검토 완료 로그 |
+| 4 | locked test set + SLP gold label 구조 고정 | WER/CER/RTF/PCC 분석성능 검증셋 |
+| 5 | 보안 증빙 보강 | 권한표, 감사로그 접근통제, 백업/복구, 보존정책 |
+
+## 운영 원칙
+
+- 원문을 읽은 작업은 반드시 이 로그에 남긴다.
+- “문서 반영”과 “증적 확보”를 분리해서 적는다.
+- 식약처 인정이 필요한 항목은 완료로 표시하지 않는다.
+- 개발 작업이 허가자료의 어느 조항을 막는지 같이 기록한다.

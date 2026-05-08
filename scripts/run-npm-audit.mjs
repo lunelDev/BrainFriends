@@ -30,14 +30,20 @@ const blockedSeverities = new Set(
       : ["critical", "high", "moderate"],
 );
 
-const result = spawnSync("npm", ["audit", "--json", "--omit=dev"], {
+const auditCommand =
+  process.platform === "win32" ? process.env.ComSpec || "cmd.exe" : "npm";
+const auditArgs =
+  process.platform === "win32"
+    ? ["/d", "/s", "/c", "npm", "audit", "--json", "--omit=dev"]
+    : ["audit", "--json", "--omit=dev"];
+const result = spawnSync(auditCommand, auditArgs, {
   cwd: projectRoot,
   encoding: "utf8",
   maxBuffer: 50 * 1024 * 1024,
 });
 
 if (!result.stdout) {
-  console.error("[audit] npm audit 실행 실패:", result.stderr);
+  console.error("[audit] npm audit 실행 실패:", result.error?.message || result.stderr);
   process.exit(2);
 }
 

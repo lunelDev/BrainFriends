@@ -12,9 +12,15 @@ import { STT_WASM_LANGUAGE } from "@/lib/speech/sttLanguage";
 
 /** Stable identifier — release manifest 의 model 자산으로 추적된다. */
 export const WASM_STT_MODEL_ID = "Xenova/whisper-tiny" as const;
+export const WASM_STT_MODEL_DTYPE = "fp32" as const;
+export const WASM_STT_LOCAL_MODEL_BASE_PATH = "/models/wasm-stt/" as const;
+export const WASM_STT_LOCAL_ONNX_WASM_PATH =
+  "/vendor/onnxruntime/ort-wasm-simd-threaded.asyncify.wasm" as const;
+export const WASM_STT_LOCAL_ONNX_MJS_PATH =
+  "/vendor/onnxruntime/ort-wasm-simd-threaded.asyncify.mjs" as const;
 export const WASM_STT_PACKAGE_VERSION = "4.2.0" as const;
 export const WASM_STT_ENGINE_VERSION =
-  `transformers.js@${WASM_STT_PACKAGE_VERSION}:${WASM_STT_MODEL_ID}:v0.1` as const;
+  `transformers.js@${WASM_STT_PACKAGE_VERSION}:${WASM_STT_MODEL_ID}:${WASM_STT_MODEL_DTYPE}:local-assets:v0.2` as const;
 
 /** 입력 오디오 샘플레이트 — Whisper 모델 요구. */
 export const WASM_STT_SAMPLE_RATE = 16000 as const;
@@ -40,8 +46,46 @@ type RawTranscriptionOutput =
   | null
   | undefined;
 
+type TransformersModule = {
+  env: {
+    allowRemoteModels: boolean;
+    allowLocalModels: boolean;
+    localModelPath: string;
+    useBrowserCache: boolean;
+    useWasmCache: boolean;
+    backends: {
+      onnx?: {
+        wasm?: {
+          wasmPaths?: string | { wasm: string; mjs: string };
+          proxy?: boolean;
+        };
+      };
+    };
+  };
+  pipeline: (
+    task: string,
+    model: string,
+    options?: Record<string, unknown>,
+  ) => Promise<unknown>;
+};
+
 let pipelineInstance: unknown | null = null;
 let pipelinePromise: Promise<unknown> | null = null;
+
+function configureLocalTransformersRuntime(mod: TransformersModule): void {
+  mod.env.allowRemoteModels = false;
+  mod.env.allowLocalModels = true;
+  mod.env.localModelPath = WASM_STT_LOCAL_MODEL_BASE_PATH;
+  mod.env.useBrowserCache = true;
+  mod.env.useWasmCache = true;
+  mod.env.backends.onnx ??= {};
+  mod.env.backends.onnx.wasm ??= {};
+  mod.env.backends.onnx.wasm.proxy = false;
+  mod.env.backends.onnx.wasm.wasmPaths = {
+    wasm: WASM_STT_LOCAL_ONNX_WASM_PATH,
+    mjs: WASM_STT_LOCAL_ONNX_MJS_PATH,
+  };
+}
 
 /**
  * 브라우저 + WASM 지원 환경에서만 true. SSR / Node V&V / 비호환 브라우저 → false.
@@ -62,7 +106,7 @@ export function isWasmSttAvailable(): boolean {
 
 /**
  * Lazy 로 transformers.js pipeline 을 생성한다. 동일 세션 내에서는 단일 인스턴스 캐싱.
- * 모델 ~78MB 다운로드는 첫 호출 시 1회. transformers.js 가 IndexedDB 에 자동 캐싱.
+ * 로컬 모델 자산은 첫 호출 시 브라우저 런타임으로 적재된다. transformers.js 가 IndexedDB 에 자동 캐싱.
  */
 async function ensurePipeline(): Promise<unknown> {
   if (pipelineInstance) return pipelineInstance;
@@ -70,17 +114,16 @@ async function ensurePipeline(): Promise<unknown> {
 
   pipelinePromise = (async () => {
     // Dynamic import — server bundle / V&V 환경에서 모듈 전체가 평가되지 않게 한다.
-    const mod = (await import("@huggingface/transformers")) as unknown as {
-      pipeline: (
-        task: string,
-        model: string,
-        options?: Record<string, unknown>,
-      ) => Promise<unknown>;
-    };
+    const mod = (await import("@huggingface/transformers")) as unknown as TransformersModule;
+    configureLocalTransformersRuntime(mod);
     const transcriber = await mod.pipeline(
       "automatic-speech-recognition",
       WASM_STT_MODEL_ID,
-      { dtype: "fp32" },
+      {
+        device: "wasm",
+        dtype: WASM_STT_MODEL_DTYPE,
+        local_files_only: true,
+      },
     );
     pipelineInstance = transcriber;
     return transcriber;

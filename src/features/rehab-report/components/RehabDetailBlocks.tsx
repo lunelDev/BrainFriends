@@ -293,7 +293,10 @@ export function RehabDetailBlocks({
                     )}
                   </div>
                 )}
-                {[2, 4, 5].includes(safeStep) && enableAudioPlayback && onToggleAudioPlayback && (
+                {[2, 4, 5].includes(safeStep) &&
+                  enableAudioPlayback &&
+                  onToggleAudioPlayback &&
+                  item.audioUrl && (
                   <button
                     type="button"
                     onClick={() => onToggleAudioPlayback(item)}

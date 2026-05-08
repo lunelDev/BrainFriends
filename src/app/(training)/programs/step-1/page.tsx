@@ -5,6 +5,7 @@ import React, {
   useEffect,
   useMemo,
   useCallback,
+  useRef,
   Suspense,
 } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -112,6 +113,7 @@ function Step1Content() {
   const [questionStartTime, setQuestionStartTime] = useState<number>(0);
   const [questionResults, setQuestionResults] = useState<any[]>([]);
   const [isHomeExitModalOpen, setIsHomeExitModalOpen] = useState(false);
+  const resumeAppliedRef = useRef<string | null>(null);
 
   const pushRehabResult = useCallback(
     (step1Score: number) => {
@@ -169,24 +171,25 @@ function Step1Content() {
       buildStepSignature(
         "step1",
         placeParam,
-        trainingData.map((item) => `${item.question}|${item.answer ? "1" : "0"}`),
+        baseTrainingData.map((item) => `${item.question}|${item.answer ? "1" : "0"}`),
       ),
-    [placeParam, trainingData],
+    [baseTrainingData, placeParam],
   );
 
   const currentItem = trainingData[currentIndex];
 
   useEffect(() => {
-    if (typeof window === "undefined" || trainingData.length === 0) return;
+    if (typeof window === "undefined" || baseTrainingData.length === 0) return;
+    if (resumeAppliedRef.current === stepSignature) return;
     try {
       if (!isResumeMetaMatched(STEP1_STORAGE_KEY, stepSignature)) return;
       const parsed = loadTransientStepStorage<any>(STEP1_STORAGE_KEY);
       if (!Array.isArray(parsed) || parsed.length === 0) return;
-      if (parsed.length >= trainingData.length) return;
+      if (parsed.length >= baseTrainingData.length) return;
 
       const normalized = parsed
         .map((row: any, idx: number) => {
-          const fallback = trainingData[idx];
+          const fallback = baseTrainingData[idx];
           const questionText =
             typeof row?.question === "string"
               ? row.question
@@ -213,15 +216,16 @@ function Step1Content() {
         })
         .filter((row: any) => row.question);
 
-      if (normalized.length === 0 || normalized.length >= trainingData.length) return;
+      if (normalized.length === 0 || normalized.length >= baseTrainingData.length) return;
 
       const resumedScore = normalized.filter((row: any) => row.isCorrect).length;
+      resumeAppliedRef.current = stepSignature;
       setQuestionResults(normalized);
       setScore(resumedScore);
-      setCurrentIndex(Math.min(normalized.length, trainingData.length - 1));
+      setCurrentIndex(Math.min(normalized.length, baseTrainingData.length - 1));
     } catch (error) {
     }
-  }, [stepSignature, trainingData]);
+  }, [baseTrainingData, stepSignature]);
 
   const handleGoHome = () => {
     setIsHomeExitModalOpen(true);
