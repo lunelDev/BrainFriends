@@ -347,8 +347,15 @@ export interface SingHistoryResult {
   finalConsonant?: string;
   finalVowel?: string;
   lyricAccuracy?: string;
+  vocalParticipation?: string;
+  lyricTiming?: string;
+  voiceFaceSync?: string;
   transcript?: string;
   reviewAudioUrl?: string;
+  reviewAudioMediaId?: string | null;
+  reviewAudioObjectKey?: string | null;
+  reviewAudioUploadState?: "uploaded" | "failed" | "not_recorded" | "pending_result_sync";
+  reviewAudioUploadError?: string | null;
   measurementReason?: string | null;
   reviewKeyFrames?: Array<{
     dataUrl: string;

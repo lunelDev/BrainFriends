@@ -76,7 +76,7 @@ function formatMode(entry: TrainingHistoryEntry) {
   if (entry.trainingMode === "rehab") {
     return `언어 재활${entry.rehabStep ? ` · Step ${entry.rehabStep}` : ""}`;
   }
-  if (entry.trainingMode === "sing") return "브레인 노래방";
+  if (entry.trainingMode === "sing") return "노래 훈련";
   return "자가점검";
 }
 

@@ -337,9 +337,9 @@ function ResultRehabPage() {
             ? "즉각적인 의사소통에는 약간의 망설임이 관찰됩니다."
             : speedMs >= 1800
               ? "응답은 가능하나 일부 문항에서 짧은 망설임이 관찰됩니다."
-              : "즉각적인 의사소통이 안정적으로 유지됩니다.";
+              : "응답 지연이 짧게 측정되었습니다.";
       return {
-        summary: `단순 질문(예/아니오)에 대한 이해 점수(${accuracyText})와 판단 속도(${speedSecText})를 기준으로 분석했습니다.`,
+        summary: `단순 질문(예/아니오)에 대한 이해 점수(${accuracyText})와 판단 속도(${speedSecText})를 기준으로 보조 지표를 산출했습니다.`,
         strength: `이해 점수 ${accuracyText}, 즉각 반응 점수 ${instantText}`,
         need: speedComment,
       };
@@ -363,9 +363,9 @@ function ResultRehabPage() {
             ? "발화 시작 전 준비 시간이 길어 문장 시작에서 망설임이 관찰됩니다."
             : reaction >= 1800
               ? "문장 시작 속도는 보통 수준이며 일부 문항에서 지연이 관찰됩니다."
-              : "문장 시작 속도가 안정적이며 즉시 산출이 가능합니다.";
+              : "문장 시작 지연이 짧게 측정되었습니다.";
       return {
-        summary: `문장 복창에서 자음 점수(${consonantText})와 모음 점수(${vowelText}), 발화 시작 속도(${reactionText})를 기준으로 분석했습니다.`,
+        summary: `문장 복창에서 자음 점수(${consonantText})와 모음 점수(${vowelText}), 발화 시작 속도(${reactionText})를 기준으로 보조 지표를 산출했습니다.`,
         strength: `자음/모음 산출 점수는 현재 수준을 유지하고 있습니다.`,
         need: speedComment,
       };
@@ -381,7 +381,7 @@ function ResultRehabPage() {
         ? `${topMetric.label} ${topMetric.current.toFixed(1)}${topMetric.unit}`
         : "세부 지표 데이터가 충분하지 않습니다.";
     return {
-      summary: `${REHAB_STEP_LABELS[safeStep]} 수행 결과를 이전 동일 훈련과 비교해 분석했습니다.`,
+      summary: `${REHAB_STEP_LABELS[safeStep]} 수행 결과를 이전 동일 훈련과 비교해 보조 지표로 정리했습니다.`,
       strength: `개선 항목 ${improvedCount}개 · 대표 지표 ${topMetricText}`,
       need: trendText,
     };
@@ -859,7 +859,7 @@ function ResultRehabPage() {
                 </span>
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-200 text-slate-600 shadow-sm">
                   <i className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                  위험도{" "}
+                  비대칭 참고{" "}
                   <b className="text-slate-900">{facialReport.riskLabel}</b>
                 </span>
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-200 text-slate-600 shadow-sm">

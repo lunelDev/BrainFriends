@@ -51,10 +51,10 @@ import {
 function isMeasuredSingReportEntry(entry: TrainingHistoryEntry | null) {
   if (!entry?.singResult) return false;
   return (
-    entry.singResult.finalConsonant !== "-" ||
-    entry.singResult.finalVowel !== "-" ||
-    entry.singResult.lyricAccuracy !== "-" ||
-    entry.singResult.finalSi !== "-"
+    Boolean(entry.singResult.vocalParticipation && entry.singResult.vocalParticipation !== "--") ||
+    Boolean(entry.singResult.lyricTiming && entry.singResult.lyricTiming !== "--") ||
+    entry.singResult.versionSnapshot?.measurement_metadata?.vocal_participation != null ||
+    entry.singResult.versionSnapshot?.measurement_metadata?.lyric_timing != null
   );
 }
 
@@ -170,10 +170,10 @@ function getSelfNextAction(params: {
     return "카메라와 마이크 상태를 다시 확인한 뒤 같은 훈련을 한 번 더 진행해 보세요.";
   }
   if (scoreDelta !== null && scoreDelta > 0) {
-    return "지금 흐름이 좋습니다. 다음 자가점검 전에 언어 재활 훈련을 이어서 진행해 보세요.";
+    return "직전 기록 대비 보조점수가 상승했습니다. 다음 자가점검 전까지 같은 훈련을 이어서 진행해 보세요.";
   }
   if (improvedMetrics >= 4) {
-    return "상세 항목은 안정적으로 유지되고 있습니다. 오늘 결과를 저장하고 다음 목표를 설정해 보세요.";
+    return "여러 세부 항목에서 이전과 유사한 수준의 보조 지표가 산출되었습니다. 오늘 결과를 저장하고 다음 목표를 설정해 보세요.";
   }
   return "반응 속도와 발음 정확도를 중심으로 같은 단계 훈련을 한 번 더 반복해 보세요.";
 }
@@ -710,11 +710,11 @@ export function ReportContent({
       strongestText: `${strongest.label} ${formatSelfMetricDisplay(strongest.key, strongest.score)}`,
       weakestText: `${weakest.label} ${formatSelfMetricDisplay(weakest.key, weakest.score)}`,
       encourageText: "하루 15분 · 주 5회 생활 연습",
-      summary: `일상 대화의 바탕이 잘 유지되고 있으며, 전반적으로 의사소통을 이어갈 수 있는 힘이 확인됩니다. 특히 ${strongest.label}은 안정적으로 나타났고, ${weakest.label}은 생활 속 반복 연습을 통해 더 편안해질 수 있습니다.`,
-      strength: `${strongest.label}(${formatSelfMetricDisplay(strongest.key, strongest.score)})이 특히 안정적으로 확인되었습니다. 치료사 검토 시 강점 영역으로 참고할 수 있습니다.`,
-      need: `${weakest.label}(${formatSelfMetricDisplay(weakest.key, weakest.score)})은 조금 더 연습이 필요한 부분입니다. 이 부분이 좋아지면 가족과 대화할 때 떠오른 생각을 더 또렷하게 전하고, 외출이나 전화 상황에서도 원하는 말을 더 편안하게 표현하는 데 도움이 됩니다.`,
+      summary: `이번 자가점검에서는 ${strongest.label} 항목이 상대적으로 높게 산출되었고, ${weakest.label} 항목은 치료사 검토 시 추가로 확인할 수 있는 영역입니다.`,
+      strength: `${strongest.label}(${formatSelfMetricDisplay(strongest.key, strongest.score)})은 이번 과제 내 상대적 강점으로 참고할 수 있습니다.`,
+      need: `${weakest.label}(${formatSelfMetricDisplay(weakest.key, weakest.score)})은 반복 과제와 실제 녹음 확인을 함께 보며 치료사가 검토할 수 있는 영역입니다.`,
       recommendation:
-        "오늘은 집에서 15분만 가볍게 연습해 보세요. 사진이나 생활 물건을 보며 이름 말하기 5분, 짧은 문장 따라 말하기 5분, 소리 내어 읽기 5분을 주 5회 꾸준히 이어가면 일상 대화가 한층 자연스러워집니다.",
+        "오늘은 집에서 15분 정도 사진이나 생활 물건 이름 말하기, 짧은 문장 따라 말하기, 소리 내어 읽기를 나누어 진행해 보세요. 이 권장 사항은 치료사 상담 전 참고용 훈련 안내입니다.",
     };
   }, [selfProfileRows]);
 
@@ -952,7 +952,7 @@ export function ReportContent({
             ? "즉각적인 의사소통에는 약간의 망설임이 관찰됩니다."
             : speedMs >= 1800
               ? "응답은 가능하나 일부 문항에서 짧은 망설임이 관찰됩니다."
-              : "즉각적인 의사소통이 안정적으로 유지됩니다.";
+              : "응답 지연이 짧게 측정되었습니다.";
       return {
         summary: `단순 질문(예/아니오)에 대한 이해 점수(${accuracyText})와 판단 속도(${speedSecText})를 기준으로 분석했습니다.`,
         strength: `이해 점수 ${accuracyText}, 즉각 반응 점수 ${instantText}`,
@@ -978,9 +978,9 @@ export function ReportContent({
             ? "발화 시작 전 준비 시간이 길어 문장 시작에서 망설임이 관찰됩니다."
             : reaction >= 1800
               ? "문장 시작 속도는 보통 수준이며 일부 문항에서 지연이 관찰됩니다."
-              : "문장 시작 속도가 안정적이며 즉시 산출이 가능합니다.";
+              : "문장 시작 지연이 짧게 측정되었습니다.";
       return {
-        summary: `문장 복창에서 자음 점수(${consonantText})와 모음 점수(${vowelText}), 발화 시작 속도(${reactionText})를 기준으로 분석했습니다.`,
+        summary: `문장 복창에서 자음 점수(${consonantText})와 모음 점수(${vowelText}), 발화 시작 속도(${reactionText})를 기준으로 보조 지표를 산출했습니다.`,
         strength: `자음/모음 산출 점수는 현재 수준을 유지하고 있습니다.`,
         need: speedComment,
       };
@@ -1237,10 +1237,10 @@ export function ReportContent({
             <div className={`space-y-4 ${embedded ? "" : "max-h-[calc(100vh-7rem)] overflow-y-auto pr-2 pb-24"}`}>
               <section className="rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white p-5 shadow-sm h-[140px] flex flex-col justify-center">
                 <p className="text-xs font-black opacity-90">
-                  {selected.patientName || "사용자"} 님의 브레인 노래방 리포트
+                  {selected.patientName || "사용자"} 님의 노래 훈련 리포트
                 </p>
                 <h2 className="text-2xl sm:text-3xl font-black mt-1">
-                  뇌 활력 점수 {Number(selected.singResult?.score ?? selected.aq ?? 0).toFixed(1)}점
+                  노래 훈련 보조점수 {Number(selected.singResult?.score ?? selected.aq ?? 0).toFixed(1)}점
                 </h2>
                 <p className="text-xs sm:text-sm opacity-90 mt-2">
                   검사일시: {new Date(selected.completedAt).toLocaleString("ko-KR")}
@@ -1255,26 +1255,26 @@ export function ReportContent({
                   </p>
                 </div>
                 <div className="rounded-xl border border-emerald-200 bg-white px-4 py-3 shadow-sm">
-                  <p className="text-sm font-black text-slate-500">자음 정확도</p>
+                  <p className="text-sm font-black text-slate-500">발화 참여율</p>
                   <p className="mt-1 text-2xl font-black text-slate-900">
-                    {selected.singResult?.finalConsonant && selected.singResult.finalConsonant !== "--"
-                      ? `${selected.singResult.finalConsonant}점`
+                    {selected.singResult?.vocalParticipation && selected.singResult.vocalParticipation !== "--"
+                      ? `${selected.singResult.vocalParticipation}점`
                       : "미측정"}
                   </p>
                 </div>
                 <div className="rounded-xl border border-emerald-200 bg-white px-4 py-3 shadow-sm">
-                  <p className="text-sm font-black text-slate-500">모음 정확도</p>
+                  <p className="text-sm font-black text-slate-500">타이밍 맞춤률</p>
                   <p className="mt-1 text-2xl font-black text-slate-900">
-                    {selected.singResult?.finalVowel && selected.singResult.finalVowel !== "--"
-                      ? `${selected.singResult.finalVowel}점`
+                    {selected.singResult?.lyricTiming && selected.singResult.lyricTiming !== "--"
+                      ? `${selected.singResult.lyricTiming}점`
                       : "미측정"}
                   </p>
                 </div>
                 <div className="rounded-xl border border-emerald-200 bg-white px-4 py-3 shadow-sm">
-                  <p className="text-sm font-black text-slate-500">가사 일치도</p>
+                  <p className="text-sm font-black text-slate-500">안면-음성 동시성</p>
                   <p className="mt-1 text-2xl font-black text-slate-900">
-                    {selected.singResult?.lyricAccuracy && selected.singResult.lyricAccuracy !== "--"
-                      ? `${selected.singResult.lyricAccuracy}점`
+                    {selected.singResult?.voiceFaceSync && selected.singResult.voiceFaceSync !== "--"
+                      ? `${selected.singResult.voiceFaceSync}점`
                       : "미측정"}
                   </p>
                 </div>
@@ -1308,15 +1308,15 @@ export function ReportContent({
                   <span className="w-9 h-9 rounded-xl bg-white border border-emerald-200 flex items-center justify-center">
                     <Sparkles className="w-4 h-4 text-emerald-600" />
                   </span>
-                  <h3 className="text-lg font-black text-slate-900">전문 AI 분석</h3>
+                  <h3 className="text-lg font-black text-slate-900">노래 기반 발화 수행 요약</h3>
                 </div>
                 <p className="mt-4 text-base font-bold text-slate-900">
                   {isDemoSkipEntry(selected)
                     ? "관리자 skip으로 생성된 시연용 결과입니다. 결과 화면 시연만 가능하며 서버 원장 반영 대상은 아닙니다."
-                    : selected.singResult?.comment || "노래 리듬과 발화 흐름을 기반으로 분석한 결과입니다."}
+                    : selected.singResult?.comment || "노래 리듬과 발화 흐름을 기반으로 산출한 보조 지표입니다."}
                 </p>
                 <p className="mt-3 text-sm font-medium leading-relaxed text-slate-600">
-                  성대 안정도와 반응 지연 시간을 중심으로 보고, 안면 변화값은 직전 세션 baseline 대비 참고 지표로만 해석합니다.
+                  발화 참여율, 타이밍 맞춤률, 반응 지연 시간, 발성 안정도, 안면-음성 동시성을 함께 보고, 자동 전사는 참고 지표로만 해석합니다.
                 </p>
               </section>
 
@@ -1332,27 +1332,21 @@ export function ReportContent({
                     Speech Metrics
                   </p>
                   <p className="mt-2 text-base font-semibold text-slate-700">
-                    자음 {selected.singResult?.finalConsonant && selected.singResult.finalConsonant !== "--" ? `${selected.singResult.finalConsonant}점` : "미측정"} ·
-                    {" "}모음 {selected.singResult?.finalVowel && selected.singResult.finalVowel !== "--" ? `${selected.singResult.finalVowel}점` : "미측정"} ·
-                    {" "}가사 일치도 {selected.singResult?.lyricAccuracy && selected.singResult.lyricAccuracy !== "--" ? `${selected.singResult.lyricAccuracy}점` : "미측정"} ·
+                    참여율 {selected.singResult?.vocalParticipation && selected.singResult.vocalParticipation !== "--" ? `${selected.singResult.vocalParticipation}점` : "미측정"} ·
+                    {" "}타이밍 {selected.singResult?.lyricTiming && selected.singResult.lyricTiming !== "--" ? `${selected.singResult.lyricTiming}점` : "미측정"} ·
+                    {" "}동시성 {selected.singResult?.voiceFaceSync && selected.singResult.voiceFaceSync !== "--" ? `${selected.singResult.voiceFaceSync}점` : "미측정"} ·
                     {" "}반응속도 {selected.singResult?.rtLatency && selected.singResult.rtLatency !== "-- ms" ? selected.singResult.rtLatency : "미측정"}
                   </p>
                   <p className="mt-2 text-sm text-slate-500">
-                    {selected.singResult?.finalConsonant &&
-                    selected.singResult.finalConsonant !== "--" &&
-                    selected.singResult?.finalVowel &&
-                    selected.singResult.finalVowel !== "--" &&
-                    selected.singResult?.lyricAccuracy &&
-                    selected.singResult.lyricAccuracy !== "--" &&
-                    selected.singResult?.transcript?.trim()
-                      ? `인식 가사: "${selected.singResult.transcript}"`
+                    {selected.singResult?.transcript?.trim()
+                      ? `자동 전사 참고: "${selected.singResult.transcript}"`
                       : "..."}
                   </p>
                 </div>
                 <div className="mt-4 rounded-[24px] border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
-                  <p className="text-sm font-black">노래방의 핵심 평가는 발화 점수입니다.</p>
+                  <p className="text-sm font-black">노래 훈련 결과는 발화 수행 보조 지표를 중심으로 확인합니다.</p>
                   <p className="mt-2 text-base font-medium text-emerald-800">
-                    안면 변화값은 직전 세션 baseline 대비 참고 지표로만 해석합니다.
+                    자동 전사와 녹음 원자료를 함께 확인해야 하며, 점수만으로 진단·치료 결정을 내리지 않습니다.
                   </p>
                 </div>
               </section>
@@ -1405,7 +1399,7 @@ export function ReportContent({
                           >
                             <img
                               src={frame.dataUrl}
-                              alt={`노래방 key frame ${index + 1}`}
+                              alt={`노래 훈련 key frame ${index + 1}`}
                               className="h-32 w-full object-cover"
                             />
                             <div className="border-t border-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">
@@ -1603,7 +1597,7 @@ export function ReportContent({
                         : `${rehabFacialReport.lipClosureDelta > 0 ? "+" : ""}${rehabFacialReport.lipClosureDelta.toFixed(1)}%p`}
                     </span>
                     <span>
-                      위험도{" "}
+                      비대칭 참고{" "}
                       {rehabFacialReport.riskDelta === null
                         ? `${rehabFacialReport.riskLabel}`
                         : `${rehabFacialReport.riskLabel} (${rehabFacialReport.riskDelta > 0 ? "+" : ""}${rehabFacialReport.riskDelta.toFixed(1)}%p)`}
@@ -1745,7 +1739,7 @@ export function ReportContent({
                       </p>
                     </div>
                     <div className="rounded-2xl bg-emerald-50 px-4 py-4">
-                      <p className="text-xs font-black text-emerald-700">안정 지표</p>
+                      <p className="text-xs font-black text-emerald-700">유지 항목</p>
                       <p className="mt-2 text-3xl font-black text-slate-900">
                         {estimatedKpiSummary.passCount}개
                       </p>

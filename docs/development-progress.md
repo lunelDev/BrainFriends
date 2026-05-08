@@ -1,10 +1,11 @@
 # 브레인톡톡 / 브레인프렌즈 / GOLDEN — 일자별 주간 리포트
 
-기간: **2026-02-25 ~ 2026-05-07**
-작성: 2026-05-07
+기간: **2026-02-25 ~ 2026-05-08**
+작성: 2026-05-08
 
 각 일자별 핵심 작업과 검증·후속을 이미지 형식(파일 경로/모듈 + 신규/수정 + 검증 + 후속)에 맞춰 압축 정리했습니다.
 
+- 2026-05-08: AAC 보조 채널(/select-page/aac) 추가 + AAC 퀵 스트립/TTS + XR 라이브러리 리디자인 + 노래 훈련 점수 v3(참여율/타이밍/안정도/동시성) 반영
 - 2026-05-07: 반복훈련 step1/4/5 안정화 + 노래훈련 증적 ZIP 내보내기 + XR 프리뷰 라우트(/select-page/xr) + 인허가 소스 감사표/인덱스 정리
 - 2026-05-06: Report 리팩터링(/report→/mypage) + Step2 점수/복원 안정화 + WASM STT 로컬 자산화(실험 플래그) + IRT evidence export
 
@@ -437,7 +438,27 @@
   - docs/regulatory/README.md / regulatory-source-audit.md 등 신규 — 제공 원문(가이드라인/NIDS) → 내부 문서 반영/증적 상태를 추적하는 감사표 + 최소 인덱스 추가, 중복/충돌 문서 일부 정리(삭제 포함)
 - 검증: 기능 동작/빌드/테스트 실행 결과는 미기록(후속으로 최소 `npm run test:vnv` 재실행 필요)
 
-## 누적 후속 과제 (2026-05-07 기준)
+## 2026-05-08: AAC 보조 채널 + XR 라이브러리 리디자인 + 노래 훈련 점수 v3 반영
+
+- AAC 보조 채널 라우트 추가(처방 게이트 우회)
+  - src/app/(training)/select-page/aac/page.tsx 신규 — AACBoard 기반 의사 표현 화면 + `/api/aac/intent` POST 전송/상태 표시
+  - src/app/(training)/select-page/mode/page.tsx 수정 — `/select-page/aac` 진입 버튼 추가(AAC 보조 배지)
+- AACBoard 임상 우선 UX 보강
+  - src/components/aac/AACBoard.tsx 수정 — 상단 “필수 표현” 퀵 스트립(긴급/감정/통증/인사) + 심볼/문장 즉시 TTS(SpeechSynthesis, ko-KR) + 음소거/문장 듣기 버튼
+  - src/constants/aacData.ts 수정 — quick 카테고리/심볼 정의(AAC_QUICK_GROUPS/…SYMBOLS) + `findAacSymbolById()` 에 quick id 지원
+  - src/lib/aac/intentTemplate.ts 수정 — quick 단독 클릭(예: “도와주세요”, “머리가 아파요”)은 라벨을 완성 문장으로 그대로 출력
+- XR 프리뷰 페이지 리디자인(R&D 컨텐츠 라이브러리)
+  - src/app/(training)/select-page/xr/page.tsx 수정 — 4 시나리오 카드(마트/카페/병원/공원) + `/select-page/xr/vr-tour?scenario=<key>` 딥링크, three.js 미니 파노라마(hero) 톤 순환 UI 구성
+- 노래 훈련 점수/리포트 지표 재정의(전사 정확도 중심 → 수행 기반 보조 지표)
+  - src/app/(training)/programs/sing-training/page.tsx 수정 — `sing-score-v3-performance-weighted`로 점수 버전 변경, 참여율/타이밍/안면-음성 동시성 등 새 지표 추가 및 가중치 재조정
+  - src/app/(result)/result-page/sing-training/page.tsx + src/app/(training)/report/ReportContent.tsx 수정 — 결과/리포트에 참여율·타이밍·동시성 중심으로 표시 문구/카드 갱신, 리뷰 오디오 접근 URL 처리 보강(objectKey → `/api/media/access` 폴백)
+  - docs/regulatory/claim-lock.md 수정 — 노래 훈련 클레임 잠금 문구를 v3 수행 기반 지표로 정정(STT 전사는 참고값으로 제한)
+- 기타 UI 용어 정리
+  - src/app/(training)/mypage/page.tsx 수정 — “브레인 노래방” → “노래 훈련”, 안면 지표 라벨 “비대칭 위험” → “비대칭 참고”
+  - src/app/therapist/* 일부 수정 — 위험도/정상 표기 용어를 “주의도/일반”으로 정리(대시보드/리다이렉트 문구)
+- 검증: `npx tsc --noEmit` 통과
+
+## 누적 후속 과제 (2026-05-08 기준)
 
 - SaMD 시험기관 사전 문의 / 품목·등급 확정 / 필요 성적서 종류 확정
 - GMP·사용적합성 외부 준비

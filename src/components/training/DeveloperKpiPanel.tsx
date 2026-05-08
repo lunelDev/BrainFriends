@@ -61,7 +61,7 @@ export function DeveloperKpiPanel() {
                         ? "오류"
                         : runtimeStatus.recording
                           ? "녹음 중"
-                          : "정상")}
+                          : "기준")}
                 </span>
               </div>
             </div>

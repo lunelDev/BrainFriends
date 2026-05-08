@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { PlaceType } from "@/constants/trainingData";
-import { calculateKWABScores, getAQNormalComparison } from "@/lib/kwab/KWABScoring";
+import { calculateKWABScores } from "@/lib/kwab/KWABScoring";
 import {
   SessionManager,
   MeasurementQualityLevel,
@@ -12,7 +12,6 @@ import {
 import { DerivedKwab, ExportFile } from "@/features/result/types";
 import { createZipBlob } from "@/features/result/utils/zipExport";
 import {
-  aqSeverityLabel,
   buildFacialReport,
   buildStepDetails,
   deriveSpontaneousSpeechFromStep4,
@@ -289,23 +288,16 @@ function ResultContent() {
     const weakest = domains.reduce((a, b) => (a.percent <= b.percent ? a : b));
 
     return {
-      summary: `일상 대화의 바탕이 잘 유지되고 있으며, 전반적으로 의사소통을 이어갈 수 있는 힘이 확인됩니다. 특히 ${strongest.name}은 안정적으로 나타났고, ${weakest.name}은 생활 속 반복 연습을 통해 더 편안해질 수 있습니다.`,
-      strength: `${strongest.name}(${strongest.metric})이 특히 안정적으로 확인되었습니다. 치료사 검토 시 강점 영역으로 참고할 수 있습니다.`,
-      need: `${weakest.name}(${weakest.metric})은 조금 더 연습이 필요한 부분입니다. 이 부분이 좋아지면 가족과 대화할 때 떠오른 생각을 더 또렷하게 전하고, 외출이나 전화 상황에서도 원하는 말을 더 편안하게 표현하는 데 도움이 됩니다.`,
+      summary: `이번 자가점검에서는 ${strongest.name} 항목이 상대적으로 높게 산출되었고, ${weakest.name} 항목은 치료사 검토 시 추가로 확인할 수 있는 영역입니다.`,
+      strength: `${strongest.name}(${strongest.metric})은 이번 과제 내 상대적 강점으로 참고할 수 있습니다.`,
+      need: `${weakest.name}(${weakest.metric})은 반복 과제와 실제 녹음 확인을 함께 보며 치료사가 검토할 수 있는 영역입니다.`,
       recommendation:
-        "오늘은 집에서 15분만 가볍게 연습해 보세요. 사진이나 생활 물건을 보며 이름 말하기 5분, 짧은 문장 따라 말하기 5분, 소리 내어 읽기 5분을 주 5회 꾸준히 이어가면 일상 대화가 한층 자연스러워집니다. 지금처럼 차분하게 이어가시면 분명 더 좋아질 수 있습니다.",
+        "오늘은 집에서 15분 정도 사진이나 생활 물건 이름 말하기, 짧은 문장 따라 말하기, 소리 내어 읽기를 나누어 진행해 보세요. 이 권장 사항은 치료사 상담 전 참고용 훈련 안내입니다.",
       strongestText: `${strongest.name} ${strongest.metric}`,
       weakestText: `${weakest.name} ${weakest.metric}`,
       encourageText: "하루 15분 · 주 5회 생활 연습",
     };
   }, [derivedKwab, stepDetails]);
-
-  const normalComparison = useMemo(() => {
-    if (!derivedKwab) return null;
-    const age = Number((patientProfile as any)?.age ?? 65);
-    const educationYears = Number((patientProfile as any)?.educationYears ?? 6);
-    return getAQNormalComparison(derivedKwab.aq, age, educationYears);
-  }, [derivedKwab, patientProfile]);
 
   const historySourceRows = useMemo(() => {
     if (!patientForHistory) return [] as TrainingHistoryEntry[];
@@ -353,11 +345,9 @@ function ResultContent() {
     return "강점은 유지하고 낮은 영역 중심으로 다음 훈련을 이어가세요.";
   }, [qualityUi.label]);
   const selfAssessmentStatusText = useMemo(() => {
-    const aq = Number(derivedKwab?.aq ?? 0);
-    const severity = aqSeverityLabel(aq);
-    if (!normalComparison) return `${severity} · 기준 비교 전`;
-    return `${severity} · 정상군 대비 ${normalComparison.diff >= 0 ? "+" : ""}${normalComparison.diff.toFixed(1)}`;
-  }, [derivedKwab?.aq, normalComparison]);
+    if (!derivedKwab) return "보조 지표 산출 전";
+    return "치료사 검토용 보조 지표";
+  }, [derivedKwab]);
 
   const previousHistory = useMemo(() => {
     if (!patientForHistory) return [];
@@ -1193,19 +1183,17 @@ function ResultContent() {
                   </p>
                 </div>
                 <div className="rounded-2xl border border-orange-200 bg-white p-3 md:p-4 min-h-[48px] shadow-sm">
-                  <p className="text-sm font-black text-slate-500">참고 분류</p>
+                  <p className="text-sm font-black text-slate-500">검토 상태</p>
                   <p className="text-lg sm:text-xl font-black text-slate-900 mt-1 leading-snug">
-                    {aqSeverityLabel(Number(derivedKwab?.aq || 0))}
+                    치료사 참고
                   </p>
                 </div>
                 <div className="rounded-2xl border border-orange-200 bg-white p-3 md:p-4 min-h-[48px] shadow-sm">
                   <p className="text-sm font-black text-slate-500">
-                    정상군 대비
+                    해석 기준
                   </p>
                   <p className="text-lg sm:text-xl font-black text-slate-900 mt-1 leading-snug">
-                    {normalComparison
-                      ? `${normalComparison.diff >= 0 ? "+" : ""}${normalComparison.diff.toFixed(1)}`
-                      : "-"}
+                    보조 지표
                   </p>
                 </div>
               </section>

@@ -196,7 +196,7 @@ export default function SelectPage() {
         <SelectionHeroBanner
           badge="Self Assessment"
           title="생활 공간을 기준으로 정기 자가점검을 시작해 보세요."
-          description="집, 병원, 카페, 은행, 공원, 마트처럼 익숙한 환경을 기준으로 언어 이해와 표현 능력을 점검할 수 있습니다. 이전 진행 기록이 있으면 이어서 진단도 가능합니다."
+          description="집, 병원, 카페, 은행, 공원, 마트처럼 익숙한 환경을 기준으로 언어 이해와 표현 수행을 점검할 수 있습니다. 이전 진행 기록이 있으면 이어서 점검할 수 있습니다."
           accentClassName="border-orange-100 from-orange-500 via-amber-500 to-slate-900"
           icon={<MapPin className="w-3.5 h-3.5" />}
         />

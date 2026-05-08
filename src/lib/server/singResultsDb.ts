@@ -22,6 +22,9 @@ export type PersistedSingResult = {
   finalConsonant?: string;
   finalVowel?: string;
   lyricAccuracy?: string;
+  vocalParticipation?: string;
+  lyricTiming?: string;
+  voiceFaceSync?: string;
   transcript?: string;
   metricSource?: "measured" | "demo";
   comment: string;

@@ -22,7 +22,7 @@
 //   - SpeechRecognition: src/components/lingo/DialectRepeatGame.tsx
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
   ArrowLeft,
@@ -360,10 +360,18 @@ type RecognitionState =
 
 export default function VrTourPage() {
   const router = useRouter();
+  const params = useSearchParams();
   const { patient, isLoading } = useTrainingSession();
 
-  // 시나리오 선택
-  const [scenarioKey, setScenarioKey] = useState<ScenarioKey>("mart");
+  // 시나리오 선택 — ?scenario= URL 파라미터에서 초기값 (XR 랜딩 카드 deep link 지원).
+  const initialScenario = useMemo<ScenarioKey>(() => {
+    const raw = params.get("scenario");
+    if (raw === "mart" || raw === "cafe" || raw === "hospital" || raw === "park") {
+      return raw;
+    }
+    return "mart";
+  }, [params]);
+  const [scenarioKey, setScenarioKey] = useState<ScenarioKey>(initialScenario);
   const scenario = useMemo(
     () => SCENARIOS.find((s) => s.key === scenarioKey) ?? SCENARIOS[0],
     [scenarioKey],

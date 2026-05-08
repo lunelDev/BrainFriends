@@ -129,7 +129,7 @@ export default function SelectSingPage() {
 
       <main className="flex-1 max-w-[1440px] mx-auto w-full px-4 sm:px-6 pt-6 sm:pt-8 lg:pt-10 pb-10 sm:pb-12 lg:pb-14 flex flex-col justify-center">
         <SelectionHeroBanner
-          badge="Brain Karaoke"
+          badge="Sing Training"
           title="좋아하는 곡으로 리듬과 발화 반응 훈련을 시작해 보세요."
           description="곡별 난이도에 맞춰 30초 가창 훈련을 진행합니다. 음성과 얼굴 반응을 함께 분석해 보다 몰입감 있게 노래 훈련을 이어갈 수 있습니다."
           accentClassName="border-emerald-100 from-emerald-600 via-teal-500 to-slate-900"

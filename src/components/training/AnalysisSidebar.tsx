@@ -355,7 +355,7 @@ export const AnalysisSidebar = ({
         ? `${side} 비대칭 경고`
         : state === "caution"
           ? "주의 관찰"
-          : "정상 범위";
+          : "기준 범위";
 
     setAsymmetryVisual({
       label,

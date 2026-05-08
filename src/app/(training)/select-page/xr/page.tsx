@@ -2,17 +2,23 @@
 
 // /(training)/select-page/xr/page.tsx
 //
-// XR 체험 컨셉/랜딩 페이지 (R&D Preview).
+// XR 컨텐츠 라이브러리 (R&D Preview) — 다시 디자인.
 //
-// 목적:
-//   - SaMD 정식 스코프 외 사전 탐색용 환경. 클리니컬 데이터로는 사용하지 않는다.
-//   - WebXR(HMD/VR 헤드셋) 의존성 없음. 카메라(getUserMedia) 기반 모바일 AR 스타일.
-//   - 컨셉 시각화는 HTML/CSS 3D transform, 모델 뷰어는 sample/model-viewer 에서 three.js CDN 로드.
+// 흐름:
+//   - Hero: three.js 미니 파노라마 sphere 가 4 시나리오 톤을 자동 순환하며
+//     "음성 진행 VR 투어" 를 메인으로 광고.
+//   - 시나리오 4종(마트/카페/병원/공원) 큰 카드 — 각 카드 클릭 시
+//     /select-page/xr/vr-tour?scenario=<key> 로 deep link.
+//   - 추가 데모: 3D 모델 뷰어 / 어휘 헌트(Pokemon-Go 스타일).
+//   - 기술 기둥(시선/AAC/발화) 요약.
+//   - R&D Preview 면책.
 //
-// 보호:
-//   - /select-page 하위라 src/proxy.ts 가 자동으로 세션 체크를 한다.
+// 정책:
+//   - SaMD 정식 스코프 외 사전 탐색 환경. 임상 데이터 미수집.
+//   - WebXR(HMD/VR 헤드셋) 의존성 없음 — 카메라 + 음성 기반.
+//   - 보호 라우트 — /select-page 하위라 src/proxy.ts 가 세션 체크.
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronRight,
@@ -24,117 +30,339 @@ import {
   Wand2,
   ShieldAlert,
   Volume2,
+  Mic,
+  ShoppingCart,
+  Coffee,
+  Stethoscope,
+  Trees,
+  ArrowRight,
 } from "lucide-react";
 import { useTrainingSession } from "@/hooks/useTrainingSession";
 
-// 카메라 가용성만 체크한다. WebXR(HMD/VR 헤드셋) 의존 제거.
-// 우리 컨셉은 모바일 AR(=카메라 패스스루) 이라 immersive-vr/ar 세션은 필요 없음.
-type CameraSupportState =
-  | { status: "checking" }
-  | { status: "available"; deviceCount: number }
-  | { status: "insecure-context"; reason: string }
-  | { status: "no-mediadevices"; reason: string }
-  | { status: "no-camera"; reason: string };
+declare global {
+  interface Window {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    THREE?: any;
+  }
+}
 
-const SAMPLE_SCENES = [
+// ─────────────────────────────────────────────────────────────────────
+// 시나리오 카드 데이터 — vr-tour 의 SCENARIOS 와 키 일치.
+// ─────────────────────────────────────────────────────────────────────
+
+type ScenarioKey = "mart" | "cafe" | "hospital" | "park";
+
+const SCENARIO_CARDS: {
+  key: ScenarioKey;
+  title: string;
+  desc: string;
+  duration: string;
+  steps: number;
+  icon: React.ReactNode;
+  /** Tailwind gradient — 카드 배경 */
+  accent: string;
+  /** three.js sphere 외피 톤 — palette[0]:상단, [1]:중간, [2]:하단 */
+  palette: [string, string, string];
+  sample: string[];
+}[] = [
   {
-    key: "park-walk",
-    title: "공원 산책 시나리오",
-    desc: "벤치, 나무, 사람 등 사물 어휘를 360° 환경에서 호명 훈련.",
-    accent: "from-emerald-400/80 to-emerald-700/70",
-    icon: <Cuboid className="h-5 w-5" />,
+    key: "mart",
+    title: "대형 마트 계산대",
+    desc: "점원에게 원하는 상품을 음성으로 주문하는 일상 시뮬레이션.",
     duration: "3~5분",
-    target: "사물 인식 / 호명",
+    steps: 2,
+    icon: <ShoppingCart className="h-5 w-5" />,
+    accent: "from-sky-500/40 via-indigo-600/30 to-slate-900/70",
+    palette: ["#1d2e5a", "#3a4a82", "#0a0f24"],
+    sample: ["생수 주세요", "우유 주세요", "카드로 할게요"],
   },
   {
-    key: "cafe-order",
-    title: "카페 주문 시뮬레이션",
-    desc: "메뉴 아이콘을 응시(gaze)로 선택하고 발화로 주문을 완성.",
-    accent: "from-amber-400/80 to-orange-600/70",
-    icon: <Headphones className="h-5 w-5" />,
+    key: "cafe",
+    title: "카페 주문",
+    desc: "메뉴를 말해 주문을 완성하는 카운터 대화.",
     duration: "2~4분",
-    target: "AAC + 발화",
+    steps: 2,
+    icon: <Coffee className="h-5 w-5" />,
+    accent: "from-amber-500/40 via-orange-600/30 to-slate-900/70",
+    palette: ["#3d2218", "#7a4a2e", "#120a08"],
+    sample: ["아메리카노 주세요", "라떼 주세요", "스몰로 주세요"],
   },
   {
-    key: "aac-floating",
-    title: "AAC 부유 보드",
-    desc: "공간 속에 떠있는 픽토그램을 잡아 의도 문장을 조립한다.",
-    accent: "from-violet-400/80 to-indigo-700/70",
-    icon: <Wand2 className="h-5 w-5" />,
+    key: "hospital",
+    title: "병원 접수",
+    desc: "증상·이름을 말해 진료 접수를 완료하는 시나리오.",
+    duration: "3~4분",
+    steps: 2,
+    icon: <Stethoscope className="h-5 w-5" />,
+    accent: "from-cyan-500/40 via-teal-600/30 to-slate-900/70",
+    palette: ["#173644", "#2c5a6e", "#06121a"],
+    sample: ["머리가 아파요", "어지러워요", "이름 말하기"],
+  },
+  {
+    key: "park",
+    title: "공원 산책",
+    desc: "주변에 보이는 사물을 호명하는 자유 발화 훈련.",
     duration: "2~3분",
-    target: "의도 문장 조립",
+    steps: 1,
+    icon: <Trees className="h-5 w-5" />,
+    accent: "from-emerald-500/40 via-green-600/30 to-slate-900/70",
+    palette: ["#1d3a25", "#3a6b48", "#06120a"],
+    sample: ["나무", "벤치", "강아지", "꽃"],
+  },
+];
+
+const PILLARS = [
+  {
+    icon: <Mic className="h-5 w-5" />,
+    label: "음성 인식",
+    desc: "브라우저 webkitSpeechRecognition 한국어 모드. 외부 호출/비용 없음.",
   },
   {
-    key: "gaze-mirror",
-    title: "안면 미러 룸",
-    desc: "거울 속 자신과 마주 보며 시선·표정 안정화 체크.",
-    accent: "from-sky-400/80 to-indigo-600/70",
     icon: <Eye className="h-5 w-5" />,
-    duration: "1~2분",
-    target: "시선 / 표정",
+    label: "안면 트래킹",
+    desc: "MediaPipe FaceLandmarker — 응시·주의집중 점수를 실시간 표시.",
   },
-] as const;
+  {
+    icon: <Sparkles className="h-5 w-5" />,
+    label: "자모 정확도",
+    desc: "한글 초성·중성·종성 기반 발화 정확도 산출 (Levenshtein).",
+  },
+];
 
-export default function XrShowcasePage() {
+// ─────────────────────────────────────────────────────────────────────
+// Hero 미니 파노라마 sphere — 4 시나리오 톤 순환
+// ─────────────────────────────────────────────────────────────────────
+
+function loadScriptOnce(src: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (typeof document === "undefined") {
+      reject(new Error("document undefined"));
+      return;
+    }
+    const existing = document.querySelector<HTMLScriptElement>(
+      `script[data-xr-cdn="${src}"]`,
+    );
+    if (existing) {
+      if (existing.dataset.loaded === "true") return resolve();
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("load fail")), {
+        once: true,
+      });
+      return;
+    }
+    const s = document.createElement("script");
+    s.src = src;
+    s.async = true;
+    s.dataset.xrCdn = src;
+    s.addEventListener("load", () => {
+      s.dataset.loaded = "true";
+      resolve();
+    });
+    s.addEventListener("error", () => reject(new Error("load fail")));
+    document.head.appendChild(s);
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makePaletteTexture(THREE: any, palette: [string, string, string]) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1024;
+  canvas.height = 512;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const grad = ctx.createLinearGradient(0, 0, 0, 512);
+  grad.addColorStop(0, palette[0]);
+  grad.addColorStop(0.55, palette[1]);
+  grad.addColorStop(1, palette[2]);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 1024, 512);
+
+  // 별
+  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  for (let i = 0; i < 60; i += 1) {
+    const x = Math.random() * 1024;
+    const y = Math.random() * 220;
+    const r = Math.random() * 1.2 + 0.3;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // 지평선
+  ctx.strokeStyle = "rgba(167, 139, 250, 0.45)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, 280);
+  ctx.lineTo(1024, 280);
+  ctx.stroke();
+  // 글로우
+  const glow = ctx.createRadialGradient(512, 110, 0, 512, 110, 220);
+  glow.addColorStop(0, "rgba(167, 139, 250, 0.45)");
+  glow.addColorStop(1, "rgba(167, 139, 250, 0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, 1024, 512);
+
+  return new THREE.CanvasTexture(canvas);
+}
+
+function HeroPanorama({
+  activeIdx,
+  onActiveIdxChange,
+}: {
+  activeIdx: number;
+  onActiveIdxChange: (idx: number) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const activeIdxRef = useRef(activeIdx);
+  useEffect(() => {
+    activeIdxRef.current = activeIdx;
+  }, [activeIdx]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let raf = 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let renderer: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let panoMat: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const textures: any[] = [];
+    let cycleTimer: number | null = null;
+    let resizeListener: (() => void) | null = null;
+
+    const init = async () => {
+      try {
+        await loadScriptOnce(
+          "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js",
+        );
+        if (cancelled) return;
+        const THREE = window.THREE;
+        if (!THREE) return;
+        const container = containerRef.current;
+        if (!container) return;
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, w / h, 0.1, 1000);
+        camera.position.set(0, 0, 0.01);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(w, h);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        container.appendChild(renderer.domElement);
+
+        // sphere — 안에서 보이도록 normals 뒤집기
+        const geo = new THREE.SphereGeometry(80, 48, 32);
+        geo.scale(-1, 1, 1);
+        panoMat = new THREE.MeshBasicMaterial({ side: THREE.FrontSide });
+        const mesh = new THREE.Mesh(geo, panoMat);
+        scene.add(mesh);
+
+        // 시나리오별 텍스처 미리 생성
+        for (const card of SCENARIO_CARDS) {
+          const t = makePaletteTexture(THREE, card.palette);
+          if (t) {
+            t.encoding = THREE.sRGBEncoding ?? t.encoding;
+            textures.push(t);
+          } else {
+            textures.push(null);
+          }
+        }
+        if (textures[activeIdxRef.current]) {
+          panoMat.map = textures[activeIdxRef.current];
+          panoMat.needsUpdate = true;
+        }
+
+        // 8초마다 다음 시나리오로 부드럽게 전환
+        cycleTimer = window.setInterval(() => {
+          if (cancelled) return;
+          const next = (activeIdxRef.current + 1) % SCENARIO_CARDS.length;
+          activeIdxRef.current = next;
+          onActiveIdxChange(next);
+          if (textures[next] && panoMat) {
+            panoMat.map = textures[next];
+            panoMat.needsUpdate = true;
+          }
+        }, 4500);
+
+        let theta = 0;
+        const animate = () => {
+          if (cancelled) return;
+          theta += 0.0015;
+          camera.rotation.y = theta;
+          renderer.render(scene, camera);
+          raf = requestAnimationFrame(animate);
+        };
+        animate();
+
+        const onResize = () => {
+          if (!container || !renderer) return;
+          const newW = container.clientWidth;
+          const newH = container.clientHeight;
+          if (newW <= 0 || newH <= 0) return;
+          camera.aspect = newW / newH;
+          camera.updateProjectionMatrix();
+          renderer.setSize(newW, newH);
+        };
+        resizeListener = onResize;
+        window.addEventListener("resize", onResize);
+      } catch {
+        /* CDN 차단 등 — hero 가 없어도 페이지는 동작 */
+      }
+    };
+
+    void init();
+
+    return () => {
+      cancelled = true;
+      if (raf) cancelAnimationFrame(raf);
+      if (cycleTimer !== null) window.clearInterval(cycleTimer);
+      if (resizeListener) window.removeEventListener("resize", resizeListener);
+      for (const t of textures) {
+        try {
+          t?.dispose?.();
+        } catch {
+          /* noop */
+        }
+      }
+      if (renderer) {
+        try {
+          renderer.dispose();
+        } catch {
+          /* noop */
+        }
+        if (renderer.domElement?.parentNode) {
+          renderer.domElement.parentNode.removeChild(renderer.domElement);
+        }
+      }
+    };
+    // 마운트 1회만 — onActiveIdxChange 변경에 반응 안 해도 됨.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div ref={containerRef} className="absolute inset-0" aria-hidden="true" />
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 메인 페이지
+// ─────────────────────────────────────────────────────────────────────
+
+export default function XrLibraryPage() {
   const router = useRouter();
   const { patient, isLoading } = useTrainingSession();
-  const [support, setSupport] = useState<CameraSupportState>({ status: "checking" });
+  const [activeHeroIdx, setActiveHeroIdx] = useState(0);
 
   useEffect(() => {
     if (!isLoading && !patient) router.replace("/");
   }, [isLoading, patient, router]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const check = async () => {
-      if (typeof window === "undefined") return;
-      // getUserMedia 는 secure context (https / localhost) 필요.
-      if (!window.isSecureContext) {
-        setSupport({
-          status: "insecure-context",
-          reason: "카메라는 HTTPS 또는 localhost 에서만 사용할 수 있습니다.",
-        });
-        return;
-      }
-      if (
-        typeof navigator === "undefined" ||
-        !navigator.mediaDevices ||
-        !navigator.mediaDevices.enumerateDevices
-      ) {
-        setSupport({
-          status: "no-mediadevices",
-          reason: "이 브라우저는 카메라 API 를 지원하지 않습니다.",
-        });
-        return;
-      }
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        if (cancelled) return;
-        const cams = devices.filter((d) => d.kind === "videoinput");
-        if (cams.length === 0) {
-          setSupport({
-            status: "no-camera",
-            reason: "연결된 카메라가 없습니다. 권한을 한 번 허용하면 정확한 개수가 표시됩니다.",
-          });
-          return;
-        }
-        setSupport({ status: "available", deviceCount: cams.length });
-      } catch (err) {
-        setSupport({
-          status: "no-camera",
-          reason: `카메라 조회 실패: ${(err as Error).message}`,
-        });
-      }
-    };
-    void check();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const heroCard = SCENARIO_CARDS[activeHeroIdx];
 
   return (
-    <div className="flex min-h-screen flex-col overflow-x-hidden bg-[radial-gradient(circle_at_20%_-20%,#a78bfa20,transparent_55%),radial-gradient(circle_at_85%_15%,#60a5fa20,transparent_55%),linear-gradient(180deg,#0b1022_0%,#11163a_60%,#0b1022_100%)] text-white">
-      <header className="sticky top-0 z-20 border-b border-white/10 bg-[#0b1022]/80 backdrop-blur">
+    <div className="flex min-h-screen flex-col overflow-x-hidden bg-[radial-gradient(circle_at_15%_-10%,#a78bfa20,transparent_55%),radial-gradient(circle_at_90%_15%,#60a5fa20,transparent_55%),linear-gradient(180deg,#06091c_0%,#0c1130_55%,#06091c_100%)] text-white">
+      <header className="sticky top-0 z-20 border-b border-white/10 bg-[#06091c]/85 backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow-lg shadow-violet-500/30">
@@ -142,13 +370,13 @@ export default function XrShowcasePage() {
             </div>
             <div className="min-w-0">
               <p className="text-[11px] font-black uppercase tracking-[0.32em] text-violet-300">
-                XR Preview · R&amp;D
+                XR Content Library · R&amp;D
               </p>
               <h1 className="mt-1 text-xl font-black tracking-tight sm:text-2xl">
-                BrainFriends XR 체험 환경
+                BrainFriends XR
               </h1>
               <p className="mt-1 text-sm font-medium text-violet-200/80">
-                {patient?.name ?? "사용자"}님 · 사전 탐색 모드 (임상 데이터 미수집)
+                {patient?.name ?? "사용자"}님 · 사전 탐색 환경 (임상 데이터 미수집)
               </p>
             </div>
           </div>
@@ -159,131 +387,171 @@ export default function XrShowcasePage() {
             >
               사용자 홈으로
             </button>
-            <button
-              onClick={() => router.push("/select-page/xr/model-viewer")}
-              className="rounded-full border border-cyan-300/40 bg-cyan-400/10 px-4 py-2 text-sm font-black text-cyan-100 transition hover:bg-cyan-400/20"
-            >
-              <Cuboid className="mr-1 inline h-4 w-4" /> 3D 모델 뷰어
-            </button>
-            <button
-              onClick={() => router.push("/select-page/xr/vr-tour")}
-              className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-4 py-2 text-sm font-black text-emerald-100 transition hover:bg-emerald-400/20"
-            >
-              <Volume2 className="mr-1 inline h-4 w-4" /> 음성 진행 VR 투어
-            </button>
-            <button
-              onClick={() => router.push("/select-page/xr/sample")}
-              className="rounded-full bg-gradient-to-r from-violet-500 to-indigo-500 px-4 py-2 text-sm font-black text-white shadow-lg shadow-violet-500/30 transition hover:from-violet-400 hover:to-indigo-400"
-            >
-              어휘 헌트 시작
-              <ChevronRight className="ml-1 inline h-4 w-4" />
-            </button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-8 sm:px-6 sm:py-12">
-        {/* HERO with 3D parallax cube */}
-        <section className="relative grid gap-8 rounded-[40px] border border-white/10 bg-[linear-gradient(135deg,#1a1f4a_0%,#0e1230_100%)] p-6 shadow-[0_30px_80px_-30px_rgba(124,58,237,0.5)] sm:p-10 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="flex flex-col justify-center gap-5">
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-10 px-4 py-8 sm:px-6 sm:py-12">
+        {/* ───────────────────────────────────────── HERO ───────────────────────────────────────── */}
+        <section className="relative grid gap-8 overflow-hidden rounded-[40px] border border-white/10 bg-[linear-gradient(135deg,#1a1f4a_0%,#0e1230_100%)] p-6 shadow-[0_30px_80px_-30px_rgba(124,58,237,0.5)] sm:p-10 lg:grid-cols-[1.05fr_0.95fr]">
+          {/* 좌: 카피 */}
+          <div className="relative z-10 flex flex-col justify-center gap-5">
             <span className="inline-flex w-fit items-center gap-2 rounded-full border border-violet-400/30 bg-violet-500/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.2em] text-violet-200">
-              <Sparkles className="h-3.5 w-3.5" /> Concept Preview
+              <Sparkles className="h-3.5 w-3.5" /> Featured · 음성 진행 VR 투어
             </span>
             <h2 className="text-3xl font-black leading-tight tracking-tight sm:text-4xl">
-              실제 공간을 닮은 환경에서<br />
+              360° 가상 공간에서<br />
               <span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-sky-300 bg-clip-text text-transparent">
-                언어를 다시 꺼내봅니다.
+                목소리로 세상과 연결되다.
               </span>
             </h2>
             <p className="max-w-xl text-sm font-medium leading-7 text-violet-100/85 sm:text-base">
-              스마트폰/PC 카메라로 주변 공간을 비추면 어휘 크리처가 그 위에 떠서
-              호명·응시 훈련을 유도합니다 (포켓몬 GO 스타일). VR 헤드셋 없이도
-              동작합니다. 초기 프리뷰 단계라 임상 결과로는 사용되지 않으며, 정식
-              도입 전 사용성·안전성 검토를 위한 R&amp;D 환경입니다.
+              마트·카페·병원·공원 — 일상 공간 속 NPC 와 음성으로 대화하며
+              자연스럽게 발화 훈련을 합니다. 자음·모음 정확도와 안면 반응이
+              실시간으로 표시되며, 카메라·음성은 브라우저 안에서만 사용됩니다.
             </p>
-            <SupportBadge support={support} />
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={() => router.push("/select-page/xr/vr-tour")}
+                className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-500 to-indigo-500 px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-violet-500/30 transition hover:from-violet-400 hover:to-indigo-400"
+              >
+                <Volume2 className="h-4 w-4" /> 음성 투어 시작
+                <ArrowRight className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => router.push("/select-page/xr/model-viewer")}
+                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-black text-white transition hover:bg-white/10"
+              >
+                <Cuboid className="h-4 w-4" /> 3D 모델 뷰어
+              </button>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] font-black uppercase tracking-[0.18em] text-violet-200/70">
+              <span className="inline-flex items-center gap-1.5">
+                <Mic className="h-3.5 w-3.5" /> Web Speech API
+              </span>
+              <span className="text-white/30">·</span>
+              <span className="inline-flex items-center gap-1.5">
+                <Eye className="h-3.5 w-3.5" /> MediaPipe Face
+              </span>
+              <span className="text-white/30">·</span>
+              <span className="inline-flex items-center gap-1.5">
+                <Cuboid className="h-3.5 w-3.5" /> three.js Sphere
+              </span>
+            </div>
           </div>
 
-          {/* 순수 CSS 3D 큐브 — three.js 없이 컨셉 시각화 */}
-          <div className="relative flex items-center justify-center">
-            <div className="xr-stage">
-              <div className="xr-cube">
-                <span className="xr-face xr-front">공원</span>
-                <span className="xr-face xr-back">병원</span>
-                <span className="xr-face xr-right">카페</span>
-                <span className="xr-face xr-left">은행</span>
-                <span className="xr-face xr-top">마트</span>
-                <span className="xr-face xr-bottom">우리집</span>
+          {/* 우: 미니 파노라마 + 현재 시나리오 라벨 */}
+          <div className="relative h-[260px] w-full overflow-hidden rounded-3xl border border-white/10 bg-black/40 shadow-inner sm:h-[320px]">
+            <HeroPanorama
+              activeIdx={activeHeroIdx}
+              onActiveIdxChange={setActiveHeroIdx}
+            />
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_55%,rgba(6,9,28,0.85)_95%)]" />
+            <div className="pointer-events-none absolute left-4 top-4 rounded-full border border-white/15 bg-black/55 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-violet-200 backdrop-blur">
+              360° Preview
+            </div>
+            <div className="pointer-events-none absolute bottom-4 left-4 flex items-center gap-2">
+              <span className="rounded-full bg-black/60 p-2 text-violet-100">
+                {heroCard.icon}
+              </span>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-violet-300">
+                  지금 보는 시나리오
+                </p>
+                <p className="text-sm font-black text-white">{heroCard.title}</p>
               </div>
             </div>
-            <div className="pointer-events-none absolute inset-0 rounded-3xl bg-[radial-gradient(circle_at_center,transparent_55%,#0b1022_85%)]" />
+            <div className="absolute bottom-4 right-4 flex items-center gap-1.5">
+              {SCENARIO_CARDS.map((c, i) => (
+                <span
+                  key={c.key}
+                  className={`h-1.5 rounded-full transition-all ${
+                    i === activeHeroIdx ? "w-5 bg-violet-300" : "w-1.5 bg-white/30"
+                  }`}
+                />
+              ))}
+            </div>
           </div>
         </section>
 
-        {/* Pillars */}
-        <section className="mt-10 grid gap-4 sm:grid-cols-3">
-          <PillarCard
-            icon={<Eye className="h-5 w-5" />}
-            label="시선 응시"
-            desc="MediaPipe 홍채 좌표 기반 응시 안정도를 그대로 가져와, 공간 속 객체 선택에 사용."
-          />
-          <PillarCard
-            icon={<Wand2 className="h-5 w-5" />}
-            label="AAC 픽토그램"
-            desc="6 장소 × 의도 어휘 시드를 공간 패널로 띄워 손/응시로 의도 문장 조립."
-          />
-          <PillarCard
-            icon={<Headphones className="h-5 w-5" />}
-            label="발화 + 청각"
-            desc="장면별 사운드 큐 + WASM Whisper-tiny 발화 인식이 같은 채널에서 동작."
-          />
-        </section>
-
-        {/* Sample scenes */}
-        <section className="mt-10">
-          <div className="flex items-end justify-between">
+        {/* 시나리오 4종 카드 */}
+        <section>
+          <div className="flex items-end justify-between gap-3">
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.24em] text-violet-300">
-                Sample Scenes
+                Scenarios
               </p>
               <h3 className="mt-2 text-xl font-black tracking-tight sm:text-2xl">
-                샘플 시나리오 4종
+                일상 시나리오 4종
               </h3>
               <p className="mt-1 text-sm font-medium text-violet-200/80">
-                각 카드를 누르면 카메라 기반 캐치 데모가 열립니다.
+                음성 투어를 원하는 장면에서 바로 시작할 수 있어요.
               </p>
             </div>
           </div>
-          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {SAMPLE_SCENES.map((scene) => (
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {SCENARIO_CARDS.map((card) => (
               <button
-                key={scene.key}
+                key={card.key}
                 type="button"
                 onClick={() =>
-                  router.push(`/select-page/xr/sample?scene=${scene.key}`)
+                  router.push(`/select-page/xr/vr-tour?scenario=${card.key}`)
                 }
-                className="group flex flex-col gap-3 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] p-5 text-left transition hover:-translate-y-0.5 hover:bg-white/[0.07] hover:shadow-[0_18px_40px_-18px_rgba(124,58,237,0.6)]"
+                className="group relative flex flex-col gap-3 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] p-5 text-left transition hover:-translate-y-0.5 hover:bg-white/[0.07] hover:shadow-[0_18px_40px_-18px_rgba(124,58,237,0.6)]"
               >
                 <div
-                  className={`flex h-32 items-end rounded-2xl bg-gradient-to-br ${scene.accent} p-4`}
+                  className={`relative flex h-32 items-end overflow-hidden rounded-2xl bg-gradient-to-br ${card.accent} p-4`}
                 >
-                  <span className="rounded-full bg-black/30 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-white">
-                    {scene.target}
-                  </span>
+                  <div className="pointer-events-none absolute inset-0 opacity-50">
+                    {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
+                      <span
+                        key={i}
+                        className="absolute h-1 w-1 rounded-full bg-white/70"
+                        style={{
+                          left: `${(i * 137) % 100}%`,
+                          top: `${(i * 61) % 60}%`,
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <div className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-black/35 text-white backdrop-blur">
+                    {card.icon}
+                  </div>
+                  <div className="relative ml-auto flex items-center gap-2">
+                    <span className="rounded-full bg-black/35 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-white backdrop-blur">
+                      {card.steps}단계
+                    </span>
+                    <span className="rounded-full bg-black/35 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-white backdrop-blur">
+                      {card.duration}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 text-violet-100">
-                  {scene.icon}
-                  <h4 className="text-base font-black tracking-tight">
-                    {scene.title}
+                <div>
+                  <h4 className="text-base font-black tracking-tight text-white">
+                    {card.title}
                   </h4>
+                  <p className="mt-1 text-xs font-medium leading-5 text-violet-200/85">
+                    {card.desc}
+                  </p>
                 </div>
-                <p className="text-xs font-medium leading-5 text-violet-200/80">
-                  {scene.desc}
-                </p>
-                <div className="mt-auto flex items-center justify-between text-[11px] font-black text-violet-300">
-                  <span>예상 {scene.duration}</span>
+                <div className="mt-auto flex flex-wrap gap-1.5">
+                  {card.sample.map((s) => (
+                    <span
+                      key={s}
+                      className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-black text-violet-100/85"
+                    >
+                      <Mic className="h-2.5 w-2.5" />
+                      {s}
+                    </span>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between border-t border-white/5 pt-3 text-[11px] font-black text-violet-300">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Volume2 className="h-3 w-3" /> 음성 진행
+                  </span>
                   <span className="inline-flex items-center gap-1 transition group-hover:translate-x-1">
-                    데모 보기 <ChevronRight className="h-3.5 w-3.5" />
+                    바로 시작 <ChevronRight className="h-3.5 w-3.5" />
                   </span>
                 </div>
               </button>
@@ -291,146 +559,135 @@ export default function XrShowcasePage() {
           </div>
         </section>
 
-        {/* Disclaimer */}
-        <section className="mt-10 rounded-3xl border border-amber-300/30 bg-amber-400/5 p-5 text-amber-100">
+        {/* 추가 데모 */}
+        <section>
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.24em] text-violet-300">
+              More Demos
+            </p>
+            <h3 className="mt-2 text-xl font-black tracking-tight sm:text-2xl">
+              추가 XR 데모
+            </h3>
+            <p className="mt-1 text-sm font-medium text-violet-200/80">
+              음성 투어 외에 시각/손 추적 기반 데모도 함께 살펴볼 수 있어요.
+            </p>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <button
+              onClick={() => router.push("/select-page/xr/model-viewer")}
+              className="group flex flex-col gap-3 overflow-hidden rounded-3xl border border-cyan-300/20 bg-gradient-to-br from-cyan-500/10 via-sky-500/5 to-transparent p-5 text-left transition hover:-translate-y-0.5 hover:bg-cyan-500/15"
+            >
+              <div className="flex items-center gap-3">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500/20 text-cyan-200">
+                  <Cuboid className="h-5 w-5" />
+                </span>
+                <div>
+                  <h4 className="text-base font-black tracking-tight text-white">
+                    3D 모델 뷰어
+                  </h4>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-300">
+                    360 panorama · OBJ
+                  </p>
+                </div>
+              </div>
+              <p className="text-sm font-medium leading-6 text-violet-200/85">
+                360° 파노라마 sphere 안에 떠있는 3D 모델을 마우스 드래그로
+                자유롭게 둘러봅니다. 파노라마 이미지를 직접 넣어 가상 전시에
+                활용할 수 있어요.
+              </p>
+              <span className="mt-auto inline-flex items-center gap-1 text-[12px] font-black text-cyan-200">
+                열기 <ChevronRight className="h-3.5 w-3.5" />
+              </span>
+            </button>
+
+            <button
+              onClick={() => router.push("/select-page/xr/sample")}
+              className="group flex flex-col gap-3 overflow-hidden rounded-3xl border border-violet-300/20 bg-gradient-to-br from-violet-500/15 via-indigo-500/5 to-transparent p-5 text-left transition hover:-translate-y-0.5 hover:bg-violet-500/20"
+            >
+              <div className="flex items-center gap-3">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-500/25 text-violet-200">
+                  <Wand2 className="h-5 w-5" />
+                </span>
+                <div>
+                  <h4 className="text-base font-black tracking-tight text-white">
+                    어휘 헌트 (Pokemon GO 스타일)
+                  </h4>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-violet-300">
+                    AR Camera · Hand Track
+                  </p>
+                </div>
+              </div>
+              <p className="text-sm font-medium leading-6 text-violet-200/85">
+                카메라 화면 위에 어휘 크리처가 등장하면 검지 손가락으로 짚어
+                잡습니다 (MediaPipe 손 추적, 0.6초 hover-dwell). 사물 호명
+                훈련용 캐치 게임.
+              </p>
+              <span className="mt-auto inline-flex items-center gap-1 text-[12px] font-black text-violet-200">
+                열기 <ChevronRight className="h-3.5 w-3.5" />
+              </span>
+            </button>
+          </div>
+        </section>
+
+        {/* 기술 기둥 */}
+        <section>
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.24em] text-violet-300">
+              Pillars
+            </p>
+            <h3 className="mt-2 text-xl font-black tracking-tight sm:text-2xl">
+              기술 구성
+            </h3>
+          </div>
+          <div className="mt-6 grid gap-4 sm:grid-cols-3">
+            {PILLARS.map((p) => (
+              <div
+                key={p.label}
+                className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500/40 to-indigo-500/40 text-violet-100">
+                  {p.icon}
+                </div>
+                <p className="mt-4 text-[11px] font-black uppercase tracking-[0.22em] text-violet-300">
+                  {p.label}
+                </p>
+                <p className="mt-2 text-sm font-medium leading-6 text-violet-100/85">
+                  {p.desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* 면책 */}
+        <section className="rounded-3xl border border-amber-300/30 bg-amber-400/5 p-5 text-amber-100">
           <div className="flex items-start gap-3">
             <ShieldAlert className="mt-0.5 h-5 w-5 text-amber-300" />
             <div className="text-sm leading-6">
               <p className="font-black text-amber-200">XR Preview 안내</p>
               <p className="mt-1">
-                이 환경은 정식 SaMD 품목 범위 외 R&amp;D 프리뷰입니다. 측정값은
-                기록되지 않으며, 임상 의사결정에 사용하지 마십시오. 어지러움을
-                느끼면 즉시 중단하시고, 1회 5분 이상 연속 사용을 권장하지 않습니다.
+                정식 SaMD 품목 범위 외 R&amp;D 프리뷰 환경입니다. 측정값은
+                임상 데이터로 저장되지 않으며, 임상 의사결정에 사용하지
+                마십시오. 카메라·음성은 브라우저 안에서만 사용되며 외부로
+                전송되지 않습니다. 어지러움이 느껴지면 즉시 중단하시고, 1회
+                5분 이상 연속 사용을 권장하지 않습니다.
               </p>
             </div>
           </div>
         </section>
       </main>
 
-      {/* CSS for 3D cube */}
-      <style jsx>{`
-        .xr-stage {
-          width: 240px;
-          height: 240px;
-          perspective: 900px;
-        }
-        .xr-cube {
-          position: relative;
-          width: 100%;
-          height: 100%;
-          transform-style: preserve-3d;
-          animation: xr-spin 18s linear infinite;
-        }
-        .xr-face {
-          position: absolute;
-          inset: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 1.25rem;
-          font-weight: 900;
-          letter-spacing: 0.06em;
-          color: #fff;
-          background: linear-gradient(
-            135deg,
-            rgba(167, 139, 250, 0.55),
-            rgba(96, 165, 250, 0.35)
-          );
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          border-radius: 18px;
-          backdrop-filter: blur(6px);
-          box-shadow: 0 12px 30px -10px rgba(124, 58, 237, 0.55);
-        }
-        .xr-front {
-          transform: translateZ(120px);
-        }
-        .xr-back {
-          transform: rotateY(180deg) translateZ(120px);
-        }
-        .xr-right {
-          transform: rotateY(90deg) translateZ(120px);
-        }
-        .xr-left {
-          transform: rotateY(-90deg) translateZ(120px);
-        }
-        .xr-top {
-          transform: rotateX(90deg) translateZ(120px);
-        }
-        .xr-bottom {
-          transform: rotateX(-90deg) translateZ(120px);
-        }
-        @keyframes xr-spin {
-          0% {
-            transform: rotateX(-15deg) rotateY(0deg);
-          }
-          100% {
-            transform: rotateX(-15deg) rotateY(360deg);
-          }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .xr-cube {
-            animation: none;
-            transform: rotateX(-15deg) rotateY(25deg);
-          }
-        }
-      `}</style>
-    </div>
-  );
-}
+      <noscript>
+        <p className="p-4 text-center text-sm font-bold text-violet-100">
+          XR 라이브러리 사용을 위해 자바스크립트를 활성화해주세요.
+        </p>
+      </noscript>
 
-function SupportBadge({ support }: { support: CameraSupportState }) {
-  if (support.status === "checking") {
-    return (
-      <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-black text-violet-100">
-        <span className="h-2 w-2 animate-pulse rounded-full bg-violet-300" />
-        카메라 확인 중...
+      {/* 트리쉐이킹 방지 — Headphones 는 향후 사운드 기능에서 재사용 예정 */}
+      <span className="hidden">
+        <Headphones aria-hidden="true" />
       </span>
-    );
-  }
-  if (support.status === "available") {
-    return (
-      <span className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-300/40 bg-emerald-400/10 px-3 py-1.5 text-xs font-black text-emerald-200">
-        <span className="h-2 w-2 rounded-full bg-emerald-300" />
-        카메라 사용 가능 · {support.deviceCount}개 감지됨
-      </span>
-    );
-  }
-  if (support.status === "insecure-context") {
-    return (
-      <span className="inline-flex w-fit items-center gap-2 rounded-full border border-amber-300/40 bg-amber-400/10 px-3 py-1.5 text-xs font-black text-amber-200">
-        <span className="h-2 w-2 rounded-full bg-amber-300" />
-        {support.reason}
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex w-fit items-center gap-2 rounded-full border border-amber-300/40 bg-amber-400/10 px-3 py-1.5 text-xs font-black text-amber-200">
-      <span className="h-2 w-2 rounded-full bg-amber-300" />
-      {support.reason}
-    </span>
-  );
-}
-
-function PillarCard({
-  icon,
-  label,
-  desc,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  desc: string;
-}) {
-  return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
-      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500/40 to-indigo-500/40 text-violet-100">
-        {icon}
-      </div>
-      <p className="mt-4 text-[11px] font-black uppercase tracking-[0.22em] text-violet-300">
-        {label}
-      </p>
-      <p className="mt-2 text-sm font-medium leading-6 text-violet-100/85">
-        {desc}
-      </p>
     </div>
   );
 }

@@ -59,7 +59,7 @@ export default function MonitoringDock({
             </div>
 
             <div className="px-4 pb-5 text-[11px] text-neutral-500">
-              * 본 화면의 결과는 진단이 아닌 판단 보조용이며, 의료진/전문가의
+              * 본 화면의 결과는 자동 판정이 아닌 판단 보조용이며, 의료진/전문가의
               임상 판단을 대체하지 않습니다.
             </div>
           </div>

@@ -112,7 +112,7 @@ function getPatientRisk(patient: {
   const days = Math.floor((Date.now() - ts) / 86_400_000);
   if (days >= 30) return { level: "critical", label: `${days}일 미접속` };
   if (days >= 7) return { level: "warning", label: `${days}일 미접속` };
-  return { level: "normal", label: "정상" };
+  return { level: "normal", label: "일반" };
 }
 
 // follow-up 상태 라벨/스타일 헬퍼.
@@ -202,7 +202,7 @@ export default async function TherapistOverviewPage() {
     ? Math.round((savedCount / validationSampleEntries.length) * 1000) / 10
     : 0;
   const latestUsers = patients.slice(0, 5);
-  // 환자 리스트 자체는 TherapistPatientListPanel(client) 가 위험도 정렬·검색을 담당.
+  // 환자 리스트 자체는 TherapistPatientListPanel(client) 가 주의도 정렬·검색을 담당.
   // 여기서는 KPI 표시용 카운트만 derive 한다.
   const needsAttentionCount = patients.filter(
     (p) => getPatientRisk(p).level !== "normal",
@@ -375,7 +375,7 @@ export default async function TherapistOverviewPage() {
       </article>
 
       {/*
-        내 환자 목록 — 검색 + 위험도 정렬을 한 패널로 통합.
+        내 환자 목록 — 검색 + 주의도 정렬을 한 패널로 통합.
         과거에는 Quick Search 카드 + 전체 사용자 목록 페이지(/therapist/patients) + 상위 5명 패널이 분리돼 있었으나
         치료사 동선상 한 화면에 모으는 게 자연스러워 단일 패널로 흡수.
       */}

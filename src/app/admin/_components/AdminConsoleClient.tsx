@@ -1002,7 +1002,7 @@ export function AdminConsoleClient({
                       <li>여러 세션의 θ / SD / 문항 난이도 / MFI 선택 근거를 취합</li>
                       <li>문항별 노출 수·정답률·평균 난이도 요약표 생성</li>
                       <li>세션별 θ 변화와 추천 근거를 치료사 검토용으로 분리</li>
-                      <li>진단·처방 자동 결정이 아닌 보조 지표 경계 포함</li>
+                      <li>자동 판정·처방 결정이 아닌 보조 지표 경계 포함</li>
                     </ul>
                     <div className="mt-5 flex flex-wrap gap-2">
                       <a

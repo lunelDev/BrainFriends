@@ -426,7 +426,7 @@ export default function TherapistResultsPage() {
           검토 포인트
         </p>
         <ul className="mt-4 space-y-3 text-sm font-medium leading-6 text-slate-700">
-          <li>임상 해석이나 보고에는 측정 완료 결과를 우선 사용합니다.</li>
+          <li>치료사 검토와 보고에는 측정 완료 결과를 우선 확인합니다.</li>
           <li>내보내기 전에는 V&amp;V가 연결된 결과인지 먼저 확인합니다.</li>
           <li>본 화면은 본인이 담당 중인 환자의 결과만 표시합니다. 전체 사용자 조회·시험 증적·저장 실패 점검은 관리자 콘솔(/admin)에서 사용합니다.</li>
         </ul>

@@ -101,6 +101,16 @@ export function buildAacIntentSentence(
         };
       }
     }
+
+    // quick 카테고리 단독 클릭 → label 자체가 완성된 호소문이라 그대로 사용한다.
+    // (예: "머리가 아파요", "도와주세요", "감사합니다") 1인칭 자연 발화 형태 보존.
+    if (intents[0].id.startsWith("quick/") && nouns.length === 0) {
+      const label = intents[0].label;
+      return {
+        sentence: label.endsWith(".") ? label : `${label}.`,
+        decomposition: { subject, nouns, intents, unknownIds },
+      };
+    }
   }
 
   // 2) intent 가 있는 경우: subject + (noun list +) intent list

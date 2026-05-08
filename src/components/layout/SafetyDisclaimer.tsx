@@ -5,7 +5,7 @@ export default function SafetyDisclaimer() {
     <div className="rounded-2xl border bg-white p-4 text-sm text-neutral-700 shadow-sm">
       <p className="font-semibold">안전 안내 (SaMD)</p>
       <p className="mt-2 leading-relaxed">
-        본 서비스는 자동 진단이 아닌 판단 보조용이며, 의료진/전문가의 임상적
+        본 서비스는 자동 판정이 아닌 판단 보조용이며, 의료진/전문가의 임상적
         판단을 대체하지 않습니다. 사용 결과는 참고 자료로 활용되어야 하며, 이상
         징후가 있는 경우 전문가 상담이 필요합니다.
       </p>

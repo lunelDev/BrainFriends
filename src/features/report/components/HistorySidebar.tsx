@@ -226,8 +226,8 @@ export function HistorySidebar({
       </div>
 
       {/* 좁은 임베드 환경(/mypage 사이드 260px 기준) 에서도 한 줄로 들어가도록
-          text-xs + whitespace-nowrap 로 고정. "브레인 노래방" 은 6자 + 공백이라
-          가장 먼저 깨졌음. */}
+          text-xs + whitespace-nowrap 로 고정. "노래 훈련" 라벨이 다른 모드보다
+          길어 가장 먼저 깨졌음. */}
       <div className="mb-3 grid grid-cols-3 gap-1.5">
         <button
           type="button"
@@ -238,7 +238,7 @@ export function HistorySidebar({
               : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
           }`}
         >
-          자가진단
+          자가점검
         </button>
         <button
           type="button"
@@ -260,7 +260,7 @@ export function HistorySidebar({
               : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
           }`}
         >
-          노래방
+          노래훈련
         </button>
       </div>
 
@@ -308,8 +308,8 @@ export function HistorySidebar({
           {modeFilter === "rehab"
             ? "저장된 언어재활 리포트가 없습니다."
             : modeFilter === "sing"
-              ? "저장된 브레인 노래방 리포트가 없습니다."
-              : "저장된 자가진단 리포트가 없습니다."}
+              ? "저장된 노래 훈련 리포트가 없습니다."
+              : "저장된 자가점검 리포트가 없습니다."}
         </div>
       ) : (
         <div className="space-y-2 max-h-[70vh] overflow-auto pr-1">
@@ -389,15 +389,15 @@ export function HistorySidebar({
                       {row.trainingMode === "rehab"
                         ? "언어재활"
                         : row.trainingMode === "sing"
-                          ? "브레인 노래방"
-                          : "자가진단"}
+                          ? "노래 훈련"
+                          : "자가점검"}
                     </span>
                     <p className="text-[11px] font-bold text-slate-600">
                       {row.trainingMode === "rehab"
                         ? `장소: ${getPlaceLabel(row.place)} · 훈련: ${getRehabItemLabel(row)} · 점수: ${getRehabRowScore(row).toFixed(1)}점`
                         : row.trainingMode === "sing"
-                          ? `곡: ${row.singResult?.song ?? "-"} · 뇌 활력 점수: ${Number(row.singResult?.score ?? row.aq ?? 0).toFixed(1)}점`
-                        : `장소: ${getPlaceLabel(row.place)} · 평가점수: ${Number(row.aq || 0).toFixed(1)}점`}
+                          ? `곡: ${row.singResult?.song ?? "-"} · 노래 훈련 보조점수: ${Number(row.singResult?.score ?? row.aq ?? 0).toFixed(1)}점`
+                        : `장소: ${getPlaceLabel(row.place)} · 보조점수: ${Number(row.aq || 0).toFixed(1)}점`}
                     </p>
                   </div>
                 </div>

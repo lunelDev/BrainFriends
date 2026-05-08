@@ -66,7 +66,7 @@ function getPatientRisk(patient: TherapistPatientRow): PatientRisk {
   const days = Math.floor((Date.now() - ts) / 86_400_000);
   if (days >= 30) return { level: "critical", label: `${days}일 미접속` };
   if (days >= 7) return { level: "warning", label: `${days}일 미접속` };
-  return { level: "normal", label: "정상" };
+  return { level: "normal", label: "일반" };
 }
 
 const RISK_RANK: Record<PatientRiskLevel, number> = {
@@ -141,7 +141,7 @@ export function TherapistPatientListPanel({
             내 환자 목록
           </p>
           <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950">
-            환자 검색 · 위험도 정렬
+            환자 검색 · 주의도 정렬
           </h2>
           <p className="mt-2 text-sm font-medium leading-6 text-slate-500">
             장기 미접속·활동 없음 환자가 위로 정렬됩니다. 행을 누르면 환자 상세로 이동합니다.

@@ -72,6 +72,9 @@ type SingResultEnvelope = {
   finalConsonant?: string;
   finalVowel?: string;
   lyricAccuracy?: string;
+  vocalParticipation?: string;
+  lyricTiming?: string;
+  voiceFaceSync?: string;
   transcript?: string;
   metricSource?: "measured" | "demo";
   measurementReason?: string | null;
@@ -113,16 +116,19 @@ type BaselineFaceMetrics = {
 
 const SING_RESULT_SESSION_KEY = "bf_sing_result_transient";
 const SING_LAST_SONG_SESSION_KEY = "bf_sing_song_transient";
-const SING_SCORING_VERSION = "sing-score-v2-transcript-required";
+const SING_SCORING_VERSION = "sing-score-v3-performance-weighted";
 
 const LYRIC_LEAD_OFFSET_SEC = 0.28;
-const AUDIO_LEVEL_ONSET_THRESHOLD = 0.02;
-const MIN_VOICED_RMS = 0.015;
+const AUDIO_LEVEL_ONSET_THRESHOLD = 0.006;
+const MIN_VOICED_RMS = 0.006;
+const SING_VOICE_CONFIDENCE_FLOOR = 0.0035;
+const SING_VOICE_CONFIDENCE_CEIL = 0.018;
 const MIN_MEASURED_PITCH_SAMPLES = 8;
 const MIN_MEASURED_FACE_SAMPLES = 3;
 const MIN_SING_TRANSCRIPT_CHARS = 2;
 const MAX_SING_KEY_FRAMES = 3;
 const KEY_FRAME_CAPTURE_INTERVAL_MS = 5000;
+const SING_MEASUREMENT_INTERVAL_MS = 200;
 const CALIBRATION_MIN_TRACKING_QUALITY = 30;
 const CALIBRATION_MIN_FACE_WIDTH = 0.1;
 const CALIBRATION_MAX_CENTER_OFFSET = 0.18;
@@ -165,6 +171,16 @@ function computeRms(samples: ArrayLike<number>) {
   return Math.sqrt(sum / samples.length);
 }
 
+function computeVoiceConfidenceFromRms(rms: number) {
+  return clamp(
+    ((rms - SING_VOICE_CONFIDENCE_FLOOR) /
+      Math.max(SING_VOICE_CONFIDENCE_CEIL - SING_VOICE_CONFIDENCE_FLOOR, 0.001)) *
+      100,
+    0,
+    100,
+  );
+}
+
 function estimatePitchHz(samples: ArrayLike<number>, sampleRate: number) {
   const size = samples.length;
   if (!size || sampleRate <= 0) return null;
@@ -196,6 +212,9 @@ function buildMeasuredComment(params: {
   facialSymmetry: number | null;
   facialResponseChange: number | null;
   latencyMs: number | null;
+  vocalParticipation: number;
+  lyricTiming: number;
+  voiceFaceSync: number | null;
   consonantAccuracy: number;
   vowelAccuracy: number;
   lyricAccuracy: number;
@@ -210,7 +229,11 @@ function buildMeasuredComment(params: {
     params.facialSymmetry == null
       ? "안면 반응 보조 기준값은 확보되지 않았습니다"
       : `안면 반응 보조 기준값은 ${params.facialSymmetry.toFixed(1)}점이었습니다`;
-  return `가창 분석 결과 자음 정확도는 ${params.consonantAccuracy.toFixed(1)}점, 모음 정확도는 ${params.vowelAccuracy.toFixed(1)}점, 가사 일치도는 ${params.lyricAccuracy.toFixed(1)}점으로 분석되었습니다. ${faceText}이며 ${supportText}. 발성 흔들림은 ${params.jitterPct.toFixed(2)}% 수준입니다. ${latencyText}. 안면 변화값은 총점에 반영하지 않고 참고 지표로만 해석합니다.`;
+  const syncText =
+    params.voiceFaceSync == null
+      ? "안면-음성 동시성은 확보되지 않았습니다"
+      : `안면-음성 동시성은 ${params.voiceFaceSync.toFixed(1)}점`;
+  return `노래 과제 수행 기록에서 발화 참여율은 ${params.vocalParticipation.toFixed(1)}점, 가사 타이밍 맞춤률은 ${params.lyricTiming.toFixed(1)}점으로 산출되었습니다. ${syncText}이며 ${faceText}, ${supportText}. 발성 흔들림은 ${params.jitterPct.toFixed(2)}% 수준입니다. ${latencyText}. STT 기반 자음·모음·전사 결과는 자동 전사 참고값으로만 해석합니다.`;
 }
 
 function normalizeLyricsForAnalysis(text: string) {
@@ -247,22 +270,22 @@ function describeSingMeasurementReason(params: {
   }
 
   if (params.pronunciationErrorReason === "missing_audio_blob") {
-    return "녹음 오디오가 생성되지 않아 발음 분석을 수행하지 못했습니다.";
+    return "녹음 오디오가 생성되지 않아 발화 보조 지표를 산출하지 못했습니다.";
   }
 
   if (params.pronunciationErrorReason === "insufficient_transcript") {
-    return "전사된 가사 길이가 너무 짧아 자음·모음 분석을 확정하지 못했습니다.";
+    return "전사된 가사 길이가 너무 짧아 자음·모음 보조 지표를 산출하지 못했습니다.";
   }
 
   if (
     params.pronunciationErrorReason &&
     params.pronunciationErrorReason !== "stt_unknown_error"
   ) {
-    return `발음 분석 중 오류가 발생했습니다: ${params.pronunciationErrorReason}`;
+    return `발화 보조 지표 산출 중 오류가 발생했습니다: ${params.pronunciationErrorReason}`;
   }
 
   if (params.pronunciationErrorReason === "stt_unknown_error") {
-    return "STT 응답을 해석하지 못해 발음 분석을 확정하지 못했습니다.";
+    return "STT 응답을 해석하지 못해 발화 보조 지표를 산출하지 못했습니다.";
   }
 
   if (!params.hasMeasuredFace) {
@@ -343,37 +366,39 @@ async function analyzeSongPronunciation(params: {
 }
 
 function calculateCompositeSingScore(metrics: {
-  consonantAccuracy: number | null;
-  vowelAccuracy: number | null;
-  lyricAccuracy: number | null;
-  facialSymmetryAbsolute: number | null;
-  facialResponseChange: number | null;
+  vocalParticipation: number | null;
+  lyricTiming: number | null;
+  voiceFaceSync: number | null;
+  jitterPct: number | null;
   latencyMs: number | null;
 }) {
-  if (
-    metrics.consonantAccuracy == null ||
-    metrics.vowelAccuracy == null ||
-    metrics.lyricAccuracy == null
-  ) {
+  if (metrics.vocalParticipation == null || metrics.lyricTiming == null) {
     return 0;
   }
 
+  const stabilityScore =
+    metrics.jitterPct == null ? 50 : clamp(100 - metrics.jitterPct * 4, 0, 100);
   const latencyScore =
     metrics.latencyMs == null
-      ? 0
-      : clamp(100 - Math.max(0, metrics.latencyMs - 180) / 6, 0, 100);
+      ? 50
+      : clamp(100 - Math.max(0, metrics.latencyMs - 250) / 10, 0, 100);
+  const syncScore = metrics.voiceFaceSync ?? 50;
   const rawScore =
-    metrics.consonantAccuracy * 0.35 +
-    metrics.vowelAccuracy * 0.35 +
-    metrics.lyricAccuracy * 0.25 +
-    latencyScore * 0.05;
+    metrics.vocalParticipation * 0.35 +
+    metrics.lyricTiming * 0.25 +
+    stabilityScore * 0.2 +
+    latencyScore * 0.1 +
+    syncScore * 0.1;
 
-  const lyricGuardCap = metrics.lyricAccuracy < 45 ? metrics.lyricAccuracy + 20 : 100;
-  return Math.round(clamp(Math.min(rawScore, lyricGuardCap), 0, 100));
+  return Math.round(clamp(rawScore, 0, 100));
 }
 
 function buildSingScoreReason(params: {
-  hasMeasuredPronunciation: boolean;
+  hasMeasuredPerformance: boolean;
+  vocalParticipation: number | null;
+  lyricTiming: number | null;
+  voiceFaceSync: number | null;
+  jitterPct: number | null;
   consonantAccuracy: number | null;
   vowelAccuracy: number | null;
   lyricAccuracy: number | null;
@@ -381,8 +406,8 @@ function buildSingScoreReason(params: {
   transcript: string;
   errorReason: string | null;
 }) {
-  if (!params.hasMeasuredPronunciation) {
-    return `score_not_calculated:${params.errorReason || "missing_pronunciation_metrics"}`;
+  if (!params.hasMeasuredPerformance) {
+    return `score_not_calculated:${params.errorReason || "missing_performance_metrics"}`;
   }
 
   const latencyText =
@@ -391,10 +416,14 @@ function buildSingScoreReason(params: {
       : `latency=${Math.round(params.latencyMs)}ms`;
   return [
     SING_SCORING_VERSION,
-    `consonant=${params.consonantAccuracy?.toFixed(1)}`,
-    `vowel=${params.vowelAccuracy?.toFixed(1)}`,
-    `lyric=${params.lyricAccuracy?.toFixed(1)}`,
+    `participation=${params.vocalParticipation?.toFixed(1)}`,
+    `timing=${params.lyricTiming?.toFixed(1)}`,
+    `stability_jitter=${params.jitterPct?.toFixed(2) ?? "not_measured"}`,
+    `voice_face_sync=${params.voiceFaceSync?.toFixed(1) ?? "not_measured"}`,
     latencyText,
+    `stt_consonant_ref=${params.consonantAccuracy?.toFixed(1) ?? "not_measured"}`,
+    `stt_vowel_ref=${params.vowelAccuracy?.toFixed(1) ?? "not_measured"}`,
+    `stt_lyric_ref=${params.lyricAccuracy?.toFixed(1) ?? "not_measured"}`,
     `transcriptChars=${params.transcript.replace(/\s+/g, "").length}`,
   ].join("; ");
 }
@@ -402,6 +431,168 @@ function buildSingScoreReason(params: {
 function normalizeTrackingQuality(value: number) {
   const safe = Number(value || 0);
   return safe <= 1 ? safe * 100 : safe;
+}
+
+type FaceLandmarkPoint = {
+  x: number;
+  y: number;
+  z?: number;
+};
+
+const OUTER_LIP_GUIDE_INDICES = [
+  61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291, 375, 321, 405, 314, 17, 84,
+  181, 91, 146, 61,
+];
+const INNER_LIP_GUIDE_INDICES = [
+  78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87,
+  178, 88, 95, 78,
+];
+const LIP_GUIDE_KEYPOINT_INDICES = [61, 291, 13, 14];
+
+function getContainDrawRect(params: {
+  canvasWidth: number;
+  canvasHeight: number;
+  videoWidth: number;
+  videoHeight: number;
+}) {
+  const videoRatio = params.videoWidth / Math.max(1, params.videoHeight);
+  const canvasRatio = params.canvasWidth / Math.max(1, params.canvasHeight);
+  const drawWidth =
+    canvasRatio > videoRatio
+      ? params.canvasHeight * videoRatio
+      : params.canvasWidth;
+  const drawHeight =
+    canvasRatio > videoRatio
+      ? params.canvasHeight
+      : params.canvasWidth / Math.max(0.001, videoRatio);
+
+  return {
+    x: (params.canvasWidth - drawWidth) / 2,
+    y: (params.canvasHeight - drawHeight) / 2,
+    width: drawWidth,
+    height: drawHeight,
+  };
+}
+
+function drawLipPath(params: {
+  ctx: CanvasRenderingContext2D;
+  landmarks: FaceLandmarkPoint[];
+  indices: number[];
+  drawRect: { x: number; y: number; width: number; height: number };
+  strokeStyle: string;
+  lineWidth: number;
+}) {
+  const points = params.indices
+    .map((index) => params.landmarks[index])
+    .filter((point): point is FaceLandmarkPoint => Boolean(point));
+
+  if (points.length < 3) return;
+
+  params.ctx.beginPath();
+  points.forEach((point, index) => {
+    const x = params.drawRect.x + (1 - Number(point.x)) * params.drawRect.width;
+    const y = params.drawRect.y + Number(point.y) * params.drawRect.height;
+    if (index === 0) {
+      params.ctx.moveTo(x, y);
+    } else {
+      params.ctx.lineTo(x, y);
+    }
+  });
+  params.ctx.strokeStyle = params.strokeStyle;
+  params.ctx.lineWidth = params.lineWidth;
+  params.ctx.lineJoin = "round";
+  params.ctx.lineCap = "round";
+  params.ctx.stroke();
+}
+
+function drawLipTrackingOverlay(params: {
+  canvas: HTMLCanvasElement;
+  video: HTMLVideoElement | null;
+  landmarks: FaceLandmarkPoint[];
+  trackingQuality: number;
+}) {
+  const ctx = params.canvas.getContext("2d");
+  if (!ctx) return;
+
+  const width = params.canvas.width;
+  const height = params.canvas.height;
+  ctx.clearRect(0, 0, width, height);
+
+  const topLip = params.landmarks[13];
+  const bottomLip = params.landmarks[14];
+  const leftMouth = params.landmarks[61];
+  const rightMouth = params.landmarks[291];
+  if (!topLip || !bottomLip || !leftMouth || !rightMouth) return;
+
+  const drawRect = getContainDrawRect({
+    canvasWidth: width,
+    canvasHeight: height,
+    videoWidth: params.video?.videoWidth || 640,
+    videoHeight: params.video?.videoHeight || 480,
+  });
+
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetY = 2;
+
+  drawLipPath({
+    ctx,
+    landmarks: params.landmarks,
+    indices: OUTER_LIP_GUIDE_INDICES,
+    drawRect,
+    strokeStyle: "rgba(16, 185, 129, 0.98)",
+    lineWidth: 4,
+  });
+  drawLipPath({
+    ctx,
+    landmarks: params.landmarks,
+    indices: INNER_LIP_GUIDE_INDICES,
+    drawRect,
+    strokeStyle: "rgba(251, 146, 60, 0.98)",
+    lineWidth: 3,
+  });
+
+  LIP_GUIDE_KEYPOINT_INDICES.forEach((index) => {
+    const point = params.landmarks[index];
+    if (!point) return;
+    const x = drawRect.x + (1 - Number(point.x)) * drawRect.width;
+    const y = drawRect.y + Number(point.y) * drawRect.height;
+    ctx.beginPath();
+    ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(16, 185, 129, 0.92)";
+    ctx.stroke();
+  });
+
+  const labelX =
+    drawRect.x +
+    (1 - (Number(leftMouth.x) + Number(rightMouth.x)) / 2) * drawRect.width;
+  const labelY =
+    drawRect.y +
+    ((Number(topLip.y) + Number(bottomLip.y)) / 2) * drawRect.height +
+    42;
+  const isTrackingUsable =
+    params.trackingQuality >= CALIBRATION_MIN_TRACKING_QUALITY;
+  const label = isTrackingUsable ? "입술 추적 중" : "입술 위치 보정 중";
+  const labelWidth = isTrackingUsable ? 116 : 138;
+
+  ctx.shadowBlur = 14;
+  ctx.fillStyle = isTrackingUsable
+    ? "rgba(5, 150, 105, 0.92)"
+    : "rgba(217, 119, 6, 0.94)";
+  ctx.beginPath();
+  ctx.roundRect(labelX - labelWidth / 2, labelY - 17, labelWidth, 34, 17);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.font = "700 15px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "white";
+  ctx.fillText(label, labelX, labelY);
+  ctx.restore();
 }
 
 function evaluateFaceCalibration(metrics: {
@@ -548,6 +739,9 @@ function buildSkippedSingResult(params: {
     finalConsonant: "74.8",
     finalVowel: "77.6",
     lyricAccuracy: "69.4",
+    vocalParticipation: "82.0",
+    lyricTiming: "78.0",
+    voiceFaceSync: "91.0",
     transcript: demoTranscript,
     metricSource: "demo",
     measurementReason: "관리자 skip으로 인해 실측을 수행하지 않았습니다.",
@@ -603,6 +797,7 @@ function BrainSingPageContent() {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const sideVideoRef = useRef<HTMLVideoElement | null>(null);
+  const mouthOverlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const songAudioRef = useRef<HTMLAudioElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -630,6 +825,15 @@ function BrainSingPageContent() {
   const measuredPitchHistoryRef = useRef<number[]>([]);
   const measuredSymmetryHistoryRef = useRef<number[]>([]);
   const voiceOnsetLatencyMsRef = useRef<number | null>(null);
+  const latestLipOverlayRef = useRef<{
+    faceDetected: boolean;
+    landmarks: FaceLandmarkPoint[];
+    trackingQuality: number;
+  }>({
+    faceDetected: false,
+    landmarks: [],
+    trackingQuality: 0,
+  });
 
   const requestedSong = useMemo(() => {
     const raw = searchParams.get("song");
@@ -677,6 +881,16 @@ function BrainSingPageContent() {
     const lastLine = currentSong.lyrics[currentSong.lyrics.length - 1];
     return lastLine ? lastLine.t + lastLine.d : 30;
   }, [currentSong.lyrics]);
+  const remainingSeconds = Number.parseFloat(remaining);
+  const timerTotalSeconds = Math.max(1, songDurationSec || lyricTimelineEndSec || 30);
+  const remainingPct = Number.isFinite(remainingSeconds)
+    ? clamp((remainingSeconds / timerTotalSeconds) * 100, 0, 100)
+    : 0;
+  const liveTrackingQuality = normalizeTrackingQuality(sidebarMetrics.trackingQuality);
+  const liveLipTrackingLabel =
+    sidebarMetrics.faceDetected && liveTrackingQuality >= CALIBRATION_MIN_TRACKING_QUALITY
+      ? "입술 추적 중"
+      : "입술 위치 확인 중";
 
   useEffect(() => {
     const audio = new Audio(currentSong.audioSrc);
@@ -790,6 +1004,66 @@ function BrainSingPageContent() {
       songAudioRef.current.muted = isBgmMuted;
     }
   }, [isBgmMuted]);
+
+  useEffect(() => {
+    latestLipOverlayRef.current = {
+      faceDetected: Boolean(sidebarMetrics.faceDetected),
+      landmarks: Array.isArray(sidebarMetrics.landmarks)
+        ? (sidebarMetrics.landmarks as FaceLandmarkPoint[])
+        : [],
+      trackingQuality: normalizeTrackingQuality(sidebarMetrics.trackingQuality),
+    };
+  }, [
+    sidebarMetrics.faceDetected,
+    sidebarMetrics.landmarks,
+    sidebarMetrics.trackingQuality,
+  ]);
+
+  useEffect(() => {
+    const canvas = mouthOverlayCanvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+
+    let rafId: number | null = null;
+
+    const render = () => {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const nextWidth = Math.max(1, Math.round(rect.width * dpr));
+      const nextHeight = Math.max(1, Math.round(rect.height * dpr));
+      if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
+        canvas.width = nextWidth;
+        canvas.height = nextHeight;
+      }
+
+      const overlayMetrics = latestLipOverlayRef.current;
+      const shouldDraw = phase === "calibrating";
+
+      if (
+        shouldDraw &&
+        overlayMetrics.faceDetected &&
+        overlayMetrics.landmarks.length > 0
+      ) {
+        drawLipTrackingOverlay({
+          canvas,
+          video: videoRef.current,
+          landmarks: overlayMetrics.landmarks,
+          trackingQuality: overlayMetrics.trackingQuality,
+        });
+      } else {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+      }
+
+      rafId = window.requestAnimationFrame(render);
+    };
+
+    rafId = window.requestAnimationFrame(render);
+    return () => {
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+      context.clearRect(0, 0, canvas.width, canvas.height);
+    };
+  }, [phase]);
 
   useEffect(() => {
     if (phase !== "calibrating") {
@@ -972,15 +1246,26 @@ function BrainSingPageContent() {
       measurementSourceRef.current = source;
       measurementDataRef.current = new Float32Array(analyser.fftSize) as Float32Array<ArrayBuffer>;
 
-      const recorder = new MediaRecorder(new MediaStream(audioTracks));
+      const audioMimeType =
+        typeof MediaRecorder.isTypeSupported === "function" &&
+        MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : typeof MediaRecorder.isTypeSupported === "function" &&
+              MediaRecorder.isTypeSupported("audio/webm")
+            ? "audio/webm"
+            : "";
+      const recorder = new MediaRecorder(
+        new MediaStream(audioTracks),
+        audioMimeType ? { mimeType: audioMimeType } : undefined,
+      );
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           recordedChunksRef.current.push(event.data);
         }
       };
-      await playRecordingStartBeep();
-      recorder.start();
       mediaRecorderRef.current = recorder;
+      recorder.start();
+      void playRecordingStartBeep().catch(() => undefined);
     } catch (error) {
       if (measurementSourceRef.current) {
         measurementSourceRef.current.disconnect();
@@ -1039,6 +1324,11 @@ function BrainSingPageContent() {
           mediaRecorderRef.current = null;
         }
       };
+      try {
+        recorder.requestData();
+      } catch {
+        // Some browsers throw when requestData races with stop; onstop still handles chunks.
+      }
       recorder.stop();
     });
   };
@@ -1130,6 +1420,17 @@ function BrainSingPageContent() {
     jitterData: number[],
     siData: number[],
     responseDeltaData: number[],
+    performanceData: {
+      totalSamples: number;
+      voicedSamples: number;
+      lyricSamples: number;
+      voicedLyricSamples: number;
+      faceSamples: number;
+      voiceFaceSamples: number;
+      voiceConfidenceSum: number;
+      lyricVoiceConfidenceSum: number;
+      voiceFaceConfidenceSum: number;
+    },
   ) => {
     stopAnalysisLoopKeepingCamera();
     collectSingKeyFrame(true);
@@ -1170,6 +1471,23 @@ function BrainSingPageContent() {
       pronunciation.consonantAccuracy != null &&
       pronunciation.vowelAccuracy != null &&
       pronunciation.lyricAccuracy != null;
+    const vocalParticipation =
+      performanceData.totalSamples > 0
+        ? clamp(performanceData.voiceConfidenceSum / performanceData.totalSamples, 0, 100)
+        : null;
+    const lyricTiming =
+      performanceData.lyricSamples > 0
+        ? clamp(performanceData.lyricVoiceConfidenceSum / performanceData.lyricSamples, 0, 100)
+        : null;
+    const voiceFaceSync =
+      performanceData.voicedSamples > 0
+        ? clamp(performanceData.voiceFaceConfidenceSum / performanceData.voicedSamples, 0, 100)
+        : null;
+    const hasMeasuredPerformance =
+      reviewAudio.blob != null &&
+      performanceData.totalSamples >= 8 &&
+      vocalParticipation != null &&
+      lyricTiming != null;
     const liveSymmetrySnapshot = sidebarMetrics.faceDetected
       ? clamp((sidebarMetrics.facialSymmetry || 0) * 100, 0, 100)
       : null;
@@ -1200,20 +1518,21 @@ function BrainSingPageContent() {
       effectiveFacialResponseDelta != null &&
       calibrationCompletedRef.current &&
       effectiveFaceSampleCount >= 1;
-    const metricSource = hasMeasuredPronunciation ? "measured" : "demo";
+    const metricSource = hasMeasuredPerformance ? "measured" : "demo";
     const effectiveJitter = avgJ ?? 0;
     const score = calculateCompositeSingScore({
-      consonantAccuracy: pronunciation.consonantAccuracy,
-      vowelAccuracy: pronunciation.vowelAccuracy,
-      lyricAccuracy: pronunciation.lyricAccuracy,
-      facialSymmetryAbsolute: hasMeasuredFace ? effectiveSymmetry : null,
-      facialResponseChange: hasMeasuredFace
-        ? clamp(effectiveFacialResponseDelta * 12, 0, 100)
-        : null,
+      vocalParticipation,
+      lyricTiming,
+      voiceFaceSync,
+      jitterPct: avgJ,
       latencyMs,
     });
     const scoreReason = buildSingScoreReason({
-      hasMeasuredPronunciation,
+      hasMeasuredPerformance,
+      vocalParticipation,
+      lyricTiming,
+      voiceFaceSync,
+      jitterPct: avgJ,
       consonantAccuracy: pronunciation.consonantAccuracy,
       vowelAccuracy: pronunciation.vowelAccuracy,
       lyricAccuracy: pronunciation.lyricAccuracy,
@@ -1248,6 +1567,14 @@ function BrainSingPageContent() {
           hasMeasuredFace,
           faceSampleCount: effectiveFaceSampleCount,
         });
+    const performanceMeasurementReason =
+      hasMeasuredPerformance
+        ? null
+        : reviewAudio.blob == null
+          ? "녹음 오디오가 생성되지 않아 노래 수행 지표를 산출하지 못했습니다."
+          : performanceData.totalSamples < 8
+            ? "음성 분석 샘플이 부족해 노래 수행 지표를 산출하지 못했습니다."
+            : "발화 참여율 또는 타이밍 맞춤률을 산출하지 못했습니다.";
 
     const finalComment =
       metricSource === "measured"
@@ -1256,11 +1583,14 @@ function BrainSingPageContent() {
             facialSymmetry: hasMeasuredFace ? effectiveSymmetry : null,
             facialResponseChange: hasMeasuredFace ? effectiveFacialResponseDelta : null,
             latencyMs,
+            vocalParticipation: vocalParticipation ?? 0,
+            lyricTiming: lyricTiming ?? 0,
+            voiceFaceSync,
             consonantAccuracy: pronunciation.consonantAccuracy ?? 0,
             vowelAccuracy: pronunciation.vowelAccuracy ?? 0,
             lyricAccuracy: pronunciation.lyricAccuracy ?? 0,
           })
-        : `${measurementReason ?? "자음·모음 또는 안면 측정 데이터가 충분하지 않아 노래방 점수는 로컬 참고용으로만 표시됩니다."} 화면 확인용 결과만 표시됩니다.`;
+        : `${performanceMeasurementReason ?? measurementReason ?? "노래 수행 데이터가 충분하지 않아 노래 훈련 점수는 로컬 참고용으로만 표시됩니다."} 화면 확인용 결과만 표시됩니다.`;
 
     setFinalScore(score);
     setFinalJitter(finalJitterText);
@@ -1299,9 +1629,13 @@ function BrainSingPageContent() {
         finalConsonant: finalConsonantText,
         finalVowel: finalVowelText,
         lyricAccuracy: lyricAccuracyText,
+        vocalParticipation:
+          vocalParticipation == null ? "--" : vocalParticipation.toFixed(1),
+        lyricTiming: lyricTiming == null ? "--" : lyricTiming.toFixed(1),
+        voiceFaceSync: voiceFaceSync == null ? "--" : voiceFaceSync.toFixed(1),
         transcript: pronunciation.transcript,
         metricSource,
-        measurementReason,
+        measurementReason: performanceMeasurementReason ?? measurementReason,
         comment: finalComment,
         rankings: rows,
         completedAt,
@@ -1338,6 +1672,18 @@ function BrainSingPageContent() {
             lyric_accuracy: pronunciation.lyricAccuracy,
             consonant_accuracy: pronunciation.consonantAccuracy,
             vowel_accuracy: pronunciation.vowelAccuracy,
+            vocal_participation: vocalParticipation,
+            lyric_timing: lyricTiming,
+            voice_face_sync: voiceFaceSync,
+            performance_total_samples: performanceData.totalSamples,
+            performance_voiced_samples: performanceData.voicedSamples,
+            performance_lyric_samples: performanceData.lyricSamples,
+            performance_voiced_lyric_samples: performanceData.voicedLyricSamples,
+            performance_face_samples: performanceData.faceSamples,
+            performance_voice_face_samples: performanceData.voiceFaceSamples,
+            performance_voice_confidence_sum: Number(performanceData.voiceConfidenceSum.toFixed(3)),
+            performance_lyric_voice_confidence_sum: Number(performanceData.lyricVoiceConfidenceSum.toFixed(3)),
+            performance_voice_face_confidence_sum: Number(performanceData.voiceFaceConfidenceSum.toFixed(3)),
             facial_response_delta:
               hasMeasuredFace && effectiveFacialResponseDelta != null
                 ? Number(effectiveFacialResponseDelta.toFixed(1))
@@ -1372,6 +1718,17 @@ function BrainSingPageContent() {
     const jitterData: number[] = [];
     const siData: number[] = [];
     const responseDeltaData: number[] = [];
+    const performanceData = {
+      totalSamples: 0,
+      voicedSamples: 0,
+      lyricSamples: 0,
+      voicedLyricSamples: 0,
+      faceSamples: 0,
+      voiceFaceSamples: 0,
+      voiceConfidenceSum: 0,
+      lyricVoiceConfidenceSum: 0,
+      voiceFaceConfidenceSum: 0,
+    };
     sessionStartRef.current = startedAt;
     measuredPitchHistoryRef.current = [];
     measuredSymmetryHistoryRef.current = [];
@@ -1407,7 +1764,7 @@ function BrainSingPageContent() {
         window.clearTimeout(finishTimerRef.current);
         finishTimerRef.current = null;
       }
-      void finishSinging(jitterData, siData, responseDeltaData);
+      void finishSinging(jitterData, siData, responseDeltaData, performanceData);
     };
 
     finishTimerRef.current = window.setTimeout(
@@ -1472,10 +1829,34 @@ function BrainSingPageContent() {
       const analyser = measurementAnalyserRef.current;
       const measurementData = measurementDataRef.current;
       const audioContext = measurementAudioContextRef.current;
+      let currentRms = 0;
+      let currentVoiced = false;
+      let currentVoiceConfidence = 0;
       if (analyser && measurementData && audioContext) {
         (analyser as any).getFloatTimeDomainData(measurementData);
         const rms = computeRms(measurementData);
-        if (voiceOnsetLatencyMsRef.current == null && rms >= AUDIO_LEVEL_ONSET_THRESHOLD) {
+        currentRms = rms;
+        currentVoiceConfidence = computeVoiceConfidenceFromRms(rms);
+        currentVoiced = currentVoiceConfidence >= 15;
+        performanceData.totalSamples += 1;
+        performanceData.voiceConfidenceSum += currentVoiceConfidence;
+        if (currentVoiced) {
+          performanceData.voicedSamples += 1;
+        }
+        const activeLyricLine =
+          lastStartedIndex >= 0 ? currentSong.lyrics[lastStartedIndex] : null;
+        const inActiveLyricWindow =
+          Boolean(activeLyricLine) &&
+          lyricElapsed >= (activeLyricLine?.t ?? 0) &&
+          lyricElapsed <= (activeLyricLine?.t ?? 0) + Math.max(0.1, activeLyricLine?.d ?? 0);
+        if (inActiveLyricWindow) {
+          performanceData.lyricSamples += 1;
+          performanceData.lyricVoiceConfidenceSum += currentVoiceConfidence;
+          if (currentVoiced) {
+            performanceData.voicedLyricSamples += 1;
+          }
+        }
+        if (voiceOnsetLatencyMsRef.current == null && currentVoiceConfidence >= 20) {
           voiceOnsetLatencyMsRef.current = Math.max(0, performance.now() - startedAt);
         }
 
@@ -1502,6 +1883,11 @@ function BrainSingPageContent() {
       }
 
       if (sidebarMetrics.faceDetected) {
+        performanceData.faceSamples += 1;
+        if (currentVoiced) {
+          performanceData.voiceFaceSamples += 1;
+          performanceData.voiceFaceConfidenceSum += currentVoiceConfidence;
+        }
         const symmetryScore = clamp((sidebarMetrics.facialSymmetry || 0) * 100, 0, 100);
         measuredSymmetryHistoryRef.current.push(symmetryScore);
         if (measuredSymmetryHistoryRef.current.length > 60) {
@@ -1535,7 +1921,7 @@ function BrainSingPageContent() {
       if (!hasReliableAudioDuration && elapsed >= effectiveDuration) {
         finalizeIfNeeded();
       }
-    }, 100);
+    }, SING_MEASUREMENT_INTERVAL_MS);
   };
 
   const resetAll = () => {
@@ -1669,13 +2055,24 @@ function BrainSingPageContent() {
 
       <main className="flex-1 overflow-y-auto lg:min-h-0 lg:overflow-hidden px-4 sm:px-6 py-4">
         <div className="flex min-h-[calc(100svh-120px)] lg:h-full lg:min-h-0 items-center justify-center">
-          <section className="relative h-full w-full min-h-[calc(100svh-140px)] lg:min-h-0 overflow-hidden rounded-[28px] border border-emerald-100 bg-white shadow-[0_10px_30px_rgba(16,185,129,0.05)]">
+          <section
+            className={`relative h-full w-full min-h-[calc(100svh-140px)] lg:min-h-0 overflow-hidden rounded-[28px] border shadow-[0_10px_30px_rgba(16,185,129,0.05)] ${
+              phase === "singing" || phase === "countdown"
+                ? "border-slate-900 bg-[#08111f]"
+                : "border-emerald-100 bg-white"
+            }`}
+          >
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
               className="hidden lg:block absolute inset-0 h-full w-full object-contain scale-x-[-1] bg-black"
+            />
+            <canvas
+              ref={mouthOverlayCanvasRef}
+              aria-hidden="true"
+              className="pointer-events-none hidden lg:block absolute inset-0 z-[3] h-full w-full"
             />
 
             <div
@@ -1717,24 +2114,71 @@ function BrainSingPageContent() {
 
             {phase === "singing" && (
               <>
-                <div className="absolute inset-0 z-[2] opacity-[0.06] [background-image:linear-gradient(rgba(255,255,255,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.06)_1px,transparent_1px)] [background-size:52px_52px]" />
-                <div className="brain-sing-scanline absolute inset-x-0 top-0 z-[4] h-[22%]" />
-                <div className="absolute inset-x-0 top-0 z-[4] h-px bg-emerald-300/45 shadow-[0_0_24px_rgba(52,211,153,0.6)]" />
-                <div className="absolute right-6 top-20 z-10 font-mono text-[56px] font-black tracking-tight text-white drop-shadow-[0_0_16px_rgba(0,0,0,0.7)] sm:text-[64px]">
-                  {remaining}
+                {/* 상단 그라데이션 매트 — KPI 캡슐과 LEVEL 배지 시인성 보강 */}
+                <div className="pointer-events-none absolute inset-x-0 top-0 z-[2] h-[26%] bg-gradient-to-b from-black/70 via-black/35 to-transparent" />
+                {/* 하단 그라데이션 매트 — 자막 띠 가독성 보강 */}
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] h-[44%] bg-gradient-to-t from-black/85 via-black/55 to-transparent" />
+                <div className="pointer-events-none absolute inset-x-0 top-0 z-[4] h-px bg-emerald-300/40 shadow-[0_0_18px_rgba(52,211,153,0.5)]" />
+
+                {/* 상단 가운데 KPI 캡슐 — 가로형 슬림 */}
+                <div className="absolute left-1/2 top-6 z-10 -translate-x-1/2 w-[min(560px,calc(100%-48px))]">
+                  <div className="flex items-center gap-4 rounded-full border border-white/20 bg-black/55 px-5 py-3 text-white shadow-[0_14px_36px_rgba(0,0,0,0.40)] backdrop-blur-md">
+                    {/* 남은 시간 */}
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="font-mono text-[28px] font-black leading-none tracking-[-0.04em]">
+                        {remaining}
+                      </span>
+                      <span className="text-xs font-black text-white/55">초</span>
+                    </div>
+
+                    {/* 진척바 (가운데, flex-1로 확장) */}
+                    <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-white/15">
+                      <div
+                        className="h-full rounded-full bg-[linear-gradient(90deg,#10b981_0%,#34d399_100%)] transition-[width] duration-200"
+                        style={{ width: `${remainingPct}%` }}
+                      />
+                    </div>
+
+                    {/* 추적 상태 도트 + 품질 % */}
+                    <div className="flex items-center gap-2">
+                      <span
+                        aria-label={liveLipTrackingLabel}
+                        className={`inline-flex h-2.5 w-2.5 rounded-full ${
+                          liveLipTrackingLabel === "입술 추적 중"
+                            ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.7)]"
+                            : "bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.6)]"
+                        }`}
+                      />
+                      <span className="font-mono text-sm font-black tabular-nums">
+                        {liveTrackingQuality.toFixed(0)}%
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div className="absolute bottom-8 left-1/2 z-10 w-[min(96%,980px)] -translate-x-1/2 overflow-hidden rounded-[26px] border border-emerald-200/18 bg-black/22 px-8 py-5 text-center backdrop-blur-md sm:bottom-10 lg:w-[min(88%,1120px)] lg:px-10 lg:py-6">
-                  <p className="relative flex flex-wrap items-center justify-center gap-x-[0.03em] text-3xl font-black tracking-[-0.03em] sm:text-4xl lg:text-5xl">
-                    {renderProgressLyric(
-                      lyricBase,
-                      lyricFillPct,
-                      currentLyricCues,
-                      lyricElapsedSec,
-                    )}
-                  </p>
-                  <p className="mt-3 line-clamp-1 text-xl font-black tracking-[-0.03em] text-white/40 sm:text-2xl lg:text-3xl">
-                    {nextLyricBase}
-                  </p>
+
+                {/* 하단 자막 띠 — 카메라 영역 맨 아래 풀 너비, 검은 그라데이션 위 */}
+                <div className="absolute inset-x-0 bottom-0 z-10 px-6 pb-8 pt-12 sm:pb-10 lg:pb-12 lg:pt-16">
+                  <div className="mx-auto w-full max-w-[1180px] text-center">
+                    {/* 다음 가사 (위에 작게) */}
+                    {nextLyricBase ? (
+                      <p className="line-clamp-1 text-base font-bold tracking-[-0.02em] text-white/45 sm:text-lg lg:text-xl">
+                        <span className="mr-2 text-[10px] font-black uppercase tracking-[0.22em] text-white/35">
+                          NEXT
+                        </span>
+                        {nextLyricBase}
+                      </p>
+                    ) : null}
+
+                    {/* 현재 가사 (메인, 큼직하게) */}
+                    <p className="mt-2 relative flex flex-wrap items-center justify-center gap-x-[0.04em] text-4xl font-black leading-[1.15] tracking-[-0.03em] text-white drop-shadow-[0_4px_18px_rgba(0,0,0,0.55)] sm:text-5xl lg:text-[64px]">
+                      {renderProgressLyric(
+                        lyricBase,
+                        lyricFillPct,
+                        currentLyricCues,
+                        lyricElapsedSec,
+                      )}
+                    </p>
+                  </div>
                 </div>
               </>
             )}
@@ -1771,71 +2215,112 @@ function BrainSingPageContent() {
               </div>
             )}
 
-            {phase === "calibrating" && (
-              <div className="absolute inset-0 z-20 bg-[rgba(15,23,42,0.12)] backdrop-blur-[0.5px]">
-                <div className="absolute inset-0 flex items-center justify-center p-5 sm:p-8">
-                  <div className="pointer-events-auto relative flex w-full max-w-[760px] flex-col items-center rounded-[34px] border border-white/55 bg-[rgba(255,255,255,0.18)] px-6 py-7 text-center shadow-[0_20px_50px_rgba(15,23,42,0.18)] backdrop-blur-md sm:px-8 sm:py-8">
-                    <div className="space-y-2">
-                      <p className="text-[11px] font-black uppercase tracking-[0.34em] text-emerald-300">
-                        Face Calibration
-                      </p>
-                      <h2 className="text-3xl font-black tracking-[-0.04em] text-white drop-shadow-[0_2px_10px_rgba(15,23,42,0.28)] sm:text-4xl">
-                        얼굴을 가이드에 맞춰 주세요
-                      </h2>
-                      <p className="text-sm font-semibold text-white/85 sm:text-base">
-                        시작 전에 정면 얼굴을 먼저 안정적으로 인식합니다.
-                      </p>
+            {phase === "calibrating" && (() => {
+              const trackingPct = normalizeTrackingQuality(
+                sidebarMetrics.trackingQuality,
+              );
+              return (
+                <div className="absolute inset-0 z-20 pointer-events-none bg-[rgba(15,23,42,0.10)]">
+                  <div className="absolute left-5 top-20 w-[min(360px,calc(100%-40px))] rounded-[24px] border border-white/30 bg-[rgba(15,23,42,0.55)] p-5 text-white shadow-[0_18px_42px_rgba(15,23,42,0.30)] backdrop-blur-md sm:left-6">
+                    {/* 헤더: 큰 진척률 + 상태 */}
+                    <div className="flex items-end justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-black uppercase tracking-[0.22em] text-emerald-300">
+                          측정 준비
+                        </p>
+                        <h2 className="mt-1 text-2xl font-black leading-none tracking-[-0.03em]">
+                          입술선 보정 중
+                        </h2>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-mono text-[34px] font-black leading-none tracking-[-0.04em] text-white">
+                          {trackingPct.toFixed(0)}
+                          <span className="ml-0.5 text-base text-white/60">%</span>
+                        </p>
+                        <p className="mt-0.5 text-[10px] font-black uppercase tracking-[0.18em] text-white/60">
+                          추적 품질
+                        </p>
+                      </div>
                     </div>
 
-                    <div className="relative mt-5 flex h-[250px] w-[210px] items-center justify-center sm:mt-6 sm:h-[300px] sm:w-[248px]">
-                      <div className="absolute inset-0 rounded-[48%] border-[3px] border-dashed border-emerald-400 shadow-[0_0_28px_rgba(16,185,129,0.20)]" />
-                      <div className="absolute inset-[10px] rounded-[48%] border border-emerald-300/40" />
-                      <div className="absolute left-1/2 top-[16%] h-[68%] w-[2px] -translate-x-1/2 bg-emerald-400/85" />
-                      <div className="absolute left-1/2 top-1/2 h-[2px] w-[68%] -translate-x-1/2 bg-emerald-400/75" />
-                      <div className="absolute left-1/2 top-[36%] h-3.5 w-3.5 -translate-x-1/2 rounded-full border border-emerald-100 bg-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.35)]" />
+                    {/* 진척바 */}
+                    <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/15">
+                      <div
+                        className={`h-full rounded-full transition-[width] duration-300 ${
+                          calibrationReady
+                            ? "bg-[linear-gradient(90deg,#10b981_0%,#34d399_100%)]"
+                            : "bg-[linear-gradient(90deg,#f59e0b_0%,#fbbf24_100%)]"
+                        }`}
+                        style={{
+                          width: `${Math.max(4, Math.min(100, trackingPct))}%`,
+                        }}
+                      />
                     </div>
 
-                    <div className="mt-5 w-full rounded-[22px] border border-white/35 bg-[rgba(15,23,42,0.22)] px-4 py-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.12)]">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <p className="text-sm font-bold text-white/95">{calibrationMessage}</p>
-                        <span
-                          className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${
-                            calibrationReady
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-white/15 text-white/85"
-                          }`}
-                        >
-                          추적 품질 {normalizeTrackingQuality(sidebarMetrics.trackingQuality).toFixed(0)}%
+                    {/* 가이드 */}
+                    <p className="mt-4 text-sm font-semibold leading-relaxed text-white/85">
+                      카메라를 정면으로 보고, 입술이 화면 가운데에 오도록 자세를
+                      잡아 주세요.
+                    </p>
+
+                    {/* 표시선 범례 */}
+                    <div className="mt-4 rounded-2xl border border-white/15 bg-white/8 px-3 py-2.5">
+                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/60">
+                        화면 표시선
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap gap-3 text-xs font-bold">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                          초록 — 입술 외곽
+                        </span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="h-2.5 w-2.5 rounded-full bg-orange-400" />
+                          주황 — 구강 개방
                         </span>
                       </div>
+                    </div>
 
-                      <div className="mt-4 flex flex-wrap items-center justify-center gap-3 sm:justify-end">
-                        <button
-                          type="button"
-                          onClick={() => void startCalibration()}
-                          className="inline-flex h-11 items-center justify-center rounded-full border border-white/35 bg-white px-5 text-sm font-black text-slate-700"
-                        >
-                          다시 인식
-                        </button>
-                        <button
-                          type="button"
-                          onClick={startCountdown}
-                          disabled={!calibrationReady}
-                          className={`inline-flex h-12 items-center justify-center gap-3 rounded-full px-7 text-base font-black transition ${
-                            calibrationReady
-                              ? "bg-emerald-500 text-white shadow-[0_16px_34px_rgba(16,185,129,0.38)] hover:bg-emerald-400"
-                              : "cursor-not-allowed bg-white/20 text-white/45"
-                          }`}
-                        >
-                          <ChevronRight className="h-5 w-5" />
-                          노래 시작
-                        </button>
-                      </div>
+                    {/* 상태 메시지 */}
+                    <div
+                      className={`mt-3 flex items-start gap-2 rounded-2xl px-3 py-2.5 text-sm font-bold leading-relaxed ${
+                        calibrationReady
+                          ? "bg-emerald-500/20 text-emerald-100"
+                          : "bg-amber-500/15 text-amber-100"
+                      }`}
+                    >
+                      <span aria-hidden className="mt-0.5">
+                        {calibrationReady ? "✓" : "•"}
+                      </span>
+                      <span>{calibrationMessage}</span>
                     </div>
                   </div>
+
+                  {/* 액션 영역 (우하단) */}
+                  <div className="pointer-events-auto absolute bottom-6 right-6 flex w-[min(360px,calc(100%-48px))] gap-3 rounded-[24px] border border-white/50 bg-white/95 p-3 text-slate-900 shadow-[0_18px_44px_rgba(15,23,42,0.20)] backdrop-blur-md">
+                    <button
+                      type="button"
+                      onClick={() => void startCalibration()}
+                      className="inline-flex h-12 flex-1 items-center justify-center rounded-full border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 transition hover:bg-slate-50"
+                    >
+                      다시 인식
+                    </button>
+                    <button
+                      type="button"
+                      onClick={startCountdown}
+                      disabled={!calibrationReady}
+                      className={`inline-flex h-12 flex-[1.4] items-center justify-center gap-1.5 rounded-full px-4 text-sm font-black transition ${
+                        calibrationReady
+                          ? "bg-emerald-500 text-white shadow-[0_16px_34px_rgba(16,185,129,0.38)] hover:bg-emerald-400"
+                          : "cursor-not-allowed bg-slate-200 text-slate-400"
+                      }`}
+                    >
+                      노래 시작
+                      <ChevronRight className="h-5 w-5" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {phase === "countdown" && (
               <div className="absolute inset-0 z-20 flex items-center justify-center bg-[rgba(15,23,42,0.16)]">

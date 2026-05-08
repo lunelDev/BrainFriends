@@ -13,7 +13,7 @@ const PROGRAM_OPTIONS = [
   { value: "step-5", label: "Step 5" },
   { value: "step-6", label: "Step 6" },
   { value: "lingo", label: "Lingofriend" },
-  { value: "sing-training", label: "노래방 훈련" },
+  { value: "sing-training", label: "노래 훈련" },
 ];
 
 const DEFAULT_SCOPE = ["step-2", "step-4", "step-5", "lingo"];

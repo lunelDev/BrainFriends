@@ -44,7 +44,7 @@ const MODE_CARDS = [
   },
   {
     key: "brain-sing",
-    title: "브레인 노래방",
+    title: "노래 훈련",
     modeLabel: "Sing",
     desc: "노래를 따라 부르며 리듬감과 발화 반응을 함께 연습합니다.",
     actionLabel: "노래 훈련 시작",
@@ -368,6 +368,18 @@ export default function ModeSelectPage() {
               className="rounded-full border border-violet-300 bg-gradient-to-r from-violet-50 to-indigo-50 px-4 py-2 text-sm font-black text-violet-700 transition hover:from-violet-100 hover:to-indigo-100"
             >
               XR 체험 <span className="ml-1 rounded-full bg-violet-600 px-1.5 py-0.5 text-[9px] tracking-wider text-white">PREVIEW</span>
+            </button>
+            {/*
+              AAC 보조 채널 진입 버튼.
+              - 발화가 어려운 환자가 처방 없이도 보조 의사소통 도구를 켤 수 있도록
+                /programs/aac 가 아닌 /select-page/aac 로 보낸다.
+              - 보호 라우팅은 proxy.ts 의 /select-page 매칭으로 적용된다.
+            */}
+            <button
+              onClick={() => router.push("/select-page/aac")}
+              className="rounded-full border border-orange-300 bg-gradient-to-r from-orange-50 to-amber-50 px-4 py-2 text-sm font-black text-orange-700 transition hover:from-orange-100 hover:to-amber-100"
+            >
+              AAC <span className="ml-1 rounded-full bg-orange-500 px-1.5 py-0.5 text-[9px] tracking-wider text-white">보조</span>
             </button>
             <button
               onClick={logout}

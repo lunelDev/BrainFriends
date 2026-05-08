@@ -345,7 +345,7 @@ export default function SingSyncManagerPage() {
             Sync Manager
           </p>
           <h1 className="mt-3 text-3xl font-black text-white">
-            브레인 노래방 싱크 매니저
+            노래 훈련 싱크 매니저
           </h1>
           <p className="mt-3 text-sm leading-relaxed text-slate-300">
             음원을 재생한 뒤 음절이 들릴 때마다 <span className="font-black text-white">Space</span> 를 누르세요.

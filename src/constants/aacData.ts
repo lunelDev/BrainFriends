@@ -61,6 +61,120 @@ export const AAC_UNIVERSAL_INTENTS: AacSymbol[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Quick-access core expressions (장소와 무관, 임상 우선순위 최상위)
+// ---------------------------------------------------------------------------
+//
+// AAC 의사 표현에서 가장 빈도가 높고 임상적으로 시급한 4개 영역:
+//   - emergency : 응급/도움 요청 (즉시 호출 가능해야 함)
+//   - feeling   : 감정 호소 (의식·정서 상태)
+//   - body_pain : 신체 부위 통증 (어디가 아픈지 빠르게 가리키기)
+//   - greeting  : 사회적 의례 (의사소통 유지)
+//
+// 모든 quick 항목은 "단독 클릭 = 1문장 호소" 가 되도록 label 자체가 완성형.
+// intentTemplate 의 quick 단독 분기에서 라벨을 그대로 출력한다.
+
+export type AacQuickCategory =
+  | "emergency"
+  | "feeling"
+  | "body_pain"
+  | "greeting";
+
+export interface AacQuickGroup {
+  key: AacQuickCategory;
+  title: string;
+  shortTitle: string;
+  /** 카테고리 톤. AACBoard 색상 매핑에 사용. */
+  tone: "rose" | "sky" | "amber" | "emerald";
+  items: Array<{ label: string; emoji: string; frequency?: number }>;
+}
+
+export const AAC_QUICK_GROUPS: AacQuickGroup[] = [
+  {
+    key: "emergency",
+    title: "긴급 호소",
+    shortTitle: "긴급",
+    tone: "rose",
+    items: [
+      { label: "도와주세요", emoji: "🆘", frequency: 5 },
+      { label: "119 불러주세요", emoji: "🚑", frequency: 5 },
+      { label: "숨이 안 쉬어져요", emoji: "🫁", frequency: 5 },
+      { label: "가슴이 답답해요", emoji: "💔", frequency: 5 },
+      { label: "어지러워요", emoji: "💫", frequency: 4 },
+      { label: "쓰러질 것 같아요", emoji: "😵", frequency: 4 },
+    ],
+  },
+  {
+    key: "feeling",
+    title: "감정 표현",
+    shortTitle: "감정",
+    tone: "sky",
+    items: [
+      { label: "기뻐요", emoji: "😊", frequency: 4 },
+      { label: "슬퍼요", emoji: "😢", frequency: 4 },
+      { label: "화나요", emoji: "😡", frequency: 4 },
+      { label: "무서워요", emoji: "😨", frequency: 5 },
+      { label: "외로워요", emoji: "😔", frequency: 4 },
+      { label: "불안해요", emoji: "😟", frequency: 4 },
+    ],
+  },
+  {
+    key: "body_pain",
+    title: "통증 부위",
+    shortTitle: "통증",
+    tone: "amber",
+    items: [
+      { label: "머리가 아파요", emoji: "🤕", frequency: 5 },
+      { label: "가슴이 아파요", emoji: "❤️‍🩹", frequency: 5 },
+      { label: "배가 아파요", emoji: "🤢", frequency: 5 },
+      { label: "허리가 아파요", emoji: "🦴", frequency: 4 },
+      { label: "팔이 아파요", emoji: "💪", frequency: 4 },
+      { label: "다리가 아파요", emoji: "🦵", frequency: 4 },
+    ],
+  },
+  {
+    key: "greeting",
+    title: "인사·예의",
+    shortTitle: "인사",
+    tone: "emerald",
+    items: [
+      { label: "안녕하세요", emoji: "👋", frequency: 4 },
+      { label: "감사합니다", emoji: "🙏", frequency: 5 },
+      { label: "죄송합니다", emoji: "🙇", frequency: 4 },
+      { label: "안녕히 가세요", emoji: "👋", frequency: 3 },
+    ],
+  },
+];
+
+/** quick 카테고리 전체를 1차원 배열로 평탄화 + stable id 부여. */
+export const AAC_QUICK_SYMBOLS: AacSymbol[] = AAC_QUICK_GROUPS.flatMap(
+  (group) =>
+    group.items.map((item, idx) => ({
+      id: `quick/${group.key}/${idx}`,
+      label: item.label,
+      emoji: item.emoji,
+      kind: "intent" as const,
+      frequency: item.frequency ?? 4,
+    })),
+);
+
+/** quick 심볼을 카테고리별로 다시 묶은 형태 (AACBoard 가 카테고리 그리드를 그릴 때 사용). */
+export const AAC_QUICK_SYMBOLS_BY_CATEGORY: Record<AacQuickCategory, AacSymbol[]> =
+  AAC_QUICK_GROUPS.reduce(
+    (acc, group) => {
+      acc[group.key] = AAC_QUICK_SYMBOLS.filter((s) =>
+        s.id.startsWith(`quick/${group.key}/`),
+      );
+      return acc;
+    },
+    {
+      emergency: [],
+      feeling: [],
+      body_pain: [],
+      greeting: [],
+    } as Record<AacQuickCategory, AacSymbol[]>,
+  );
+
+// ---------------------------------------------------------------------------
 // Place-specific nouns (visualTrainingData PLACE_SEEDS 재사용 with stable ids)
 // ---------------------------------------------------------------------------
 
@@ -245,6 +359,9 @@ export function getAacSymbolsForPlace(place: PlaceType): AacSymbol[] {
 export function findAacSymbolById(id: string): AacSymbol | undefined {
   if (id.startsWith("subj/")) {
     return AAC_UNIVERSAL_SUBJECTS.find((s) => s.id === id);
+  }
+  if (id.startsWith("quick/")) {
+    return AAC_QUICK_SYMBOLS.find((s) => s.id === id);
   }
   if (id.startsWith("intent/") && id.split("/").length === 2) {
     return AAC_UNIVERSAL_INTENTS.find((s) => s.id === id);

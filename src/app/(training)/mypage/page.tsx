@@ -71,7 +71,7 @@ function getTrainingModeLabel(entry: TrainingHistoryEntry) {
   if (entry.trainingMode === "rehab") {
     return `언어 재활${entry.rehabStep ? ` · Step ${entry.rehabStep}` : ""}`;
   }
-  if (entry.trainingMode === "sing") return "브레인 노래방";
+  if (entry.trainingMode === "sing") return "노래 훈련";
   return "자가점검";
 }
 
@@ -343,7 +343,7 @@ function ReportSummaryCard({
 
   // 언어 재활은 진행한 rehabStep 1개만 점수가 찍히므로 그 하나만 노출.
   // 자가점검은 step 1~6 전체가 측정되므로 전부 노출.
-  // 노래방(sing)은 stepScores 를 쓰지 않으므로 카드에서 숨김.
+  // 노래 훈련(sing)은 stepScores 를 쓰지 않으므로 카드에서 숨김.
   const allStepKeys: Array<keyof TrainingHistoryEntry["stepScores"]> = [
     "step1",
     "step2",
@@ -446,7 +446,7 @@ function ReportSummaryCard({
           </p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <FacialMetric
-              label="비대칭 위험"
+              label="비대칭 참고"
               value={formatFacialPercent(entry.facialAnalysisSnapshot.asymmetryRisk)}
               tone="rose"
             />
