@@ -32,7 +32,7 @@ export default async function AdminPrescriptionsPage() {
         <header className="flex items-center justify-between">
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              DTx 처방 · 임시 발급
+              처방 · 임시 발급
             </div>
             <h1 className="mt-1 text-2xl font-bold text-slate-900">
               처방 생성

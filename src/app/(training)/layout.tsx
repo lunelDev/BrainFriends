@@ -114,12 +114,13 @@ function TrainingLayoutContent({ children }: { children: React.ReactNode }) {
     fpsEmaRef.current = 0;
     precisionHistoryRef.current = [];
 
+    // claim-lock §5 — 미검증 임상 임계값(95.2% / 0.85 / 0.8)을 reset 시점에 default 로 두지 않는다.
     updateClinical({
       systemLatency: 0,
       trackingPrecision: 0,
-      analysisAccuracy: 95.2,
-      correlation: 0.85,
-      reliability: 0.8,
+      analysisAccuracy: 0,
+      correlation: 0,
+      reliability: 0,
       stability: 0,
     });
 

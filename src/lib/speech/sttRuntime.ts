@@ -30,7 +30,6 @@ export function resolveSttRuntime(params: {
   devMode?: boolean;
   wasmAvailable?: boolean;
   allowTrainingServerFallback?: boolean;
-  allowWasmExperiment?: boolean;
 }): SttRuntimeState {
   const wasmAvailable = params.wasmAvailable ?? isBrowserWasmAudioAvailable();
   const policy = resolveSttPolicy({
@@ -42,9 +41,6 @@ export function resolveSttRuntime(params: {
     allowTrainingServerFallback:
       params.allowTrainingServerFallback ??
       parseBooleanFlag(process.env.NEXT_PUBLIC_STT_TRAINING_SERVER_FALLBACK, false),
-    allowWasmExperiment:
-      params.allowWasmExperiment ??
-      parseBooleanFlag(process.env.NEXT_PUBLIC_STT_WASM_EXPERIMENT, false),
   });
 
   return {

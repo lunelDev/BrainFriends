@@ -1034,7 +1034,7 @@ export function AdminConsoleClient({
                       <li>외부 보안 침투 시험 위탁 (CVE 면제 등록부 ✅, 침투 시험 ✗)</li>
                       <li>GMP/QMS 옵션 결정 (A 자체 / B 외주 / C 하이브리드) — PM 사업 의사결정</li>
                       <li>품목 / 등급 식약처 회신 (자체 분석 Class B 권고 ✅)</li>
-                      <li>DTx 분류 동시 신청 vs 후속 결정 (NIDS 답변 SaMD ⊃ DTx ✅)</li>
+                      <li>디지털치료기기 트랙 진입 검토 — NIDS 답변은 내부 참고용 (식약처 공식 회신 대기)</li>
                     </ul>
                   </article>
 

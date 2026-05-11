@@ -12,6 +12,10 @@ import {
 import { DerivedKwab, ExportFile } from "@/features/result/types";
 import { createZipBlob } from "@/features/result/utils/zipExport";
 import {
+  appendDossierFiles,
+  RESULT_REVIEW_BOUNDARY,
+} from "@/features/result/utils/dossierExport";
+import {
   buildFacialReport,
   buildStepDetails,
   deriveSpontaneousSpeechFromStep4,
@@ -823,11 +827,17 @@ function ResultContent() {
     };
     const adaptiveEvidence = collectAdaptiveEvidence(currentHistoryEntry ?? null);
 
+    const exportedAt = new Date().toISOString();
     const exportPayload = {
-      exportedAt: new Date().toISOString(),
+      schemaVersion: "bf-result-json-v1",
+      exportedAt,
       patient,
       place,
       trainingMode: currentTrainingMode,
+      review: RESULT_REVIEW_BOUNDARY,
+      measurementQuality: currentHistoryEntry?.measurementQuality ?? null,
+      scoreReason:
+        "자가점검 결과는 훈련 방향과 치료사 검토 우선순위를 정하기 위한 보조 지표입니다.",
       vnv: currentHistoryEntry?.vnv ?? null,
       queryScores,
       derivedKwab,
@@ -874,7 +884,7 @@ function ResultContent() {
       },
     ];
     files.push(...buildSttEvaluationCsvFiles(currentHistoryEntry ?? null));
-      const mediaFiles = await Promise.all([
+    const mediaFiles = await Promise.all([
         ...pickExportStepItems(currentHistoryEntry, sessionData, "step2").map((item: any, index: number) =>
           assetUrlToExportFile(
             `media/step2/audio-${index + 1}.webm`,
@@ -901,6 +911,43 @@ function ResultContent() {
       ),
     ]);
     files.push(...mediaFiles.filter((file): file is ExportFile => Boolean(file)));
+    appendDossierFiles(files, {
+      mode: "self-assessment",
+      exportedAt,
+      patient,
+      primaryScore: stepDetails.length
+        ? Number(
+            (
+              stepDetails.reduce(
+                (sum, item) => sum + Number(item.percent || 0),
+                0,
+              ) / stepDetails.length
+            ).toFixed(1),
+          )
+        : null,
+      scoreLabel: "자가점검 보조점수",
+      scoreReason:
+        "자가점검 결과는 확정 진단이 아니라 치료사 검토와 다음 훈련 계획 수립을 돕는 보조 지표입니다.",
+      taskContext: {
+        place,
+        trainingMode: currentTrainingMode,
+        counts: exportPayload.counts,
+      },
+      measurementQuality: {
+        level:
+          currentHistoryEntry?.measurementQuality?.overall === "measured"
+            ? "measured"
+            : currentHistoryEntry?.measurementQuality?.overall === "partial"
+              ? "partial"
+              : "reference_only",
+        reason:
+          currentHistoryEntry?.measurementQuality?.overall === "measured"
+            ? "자가점검 수행 원자료와 지표가 함께 저장되었습니다."
+            : "일부 수행 원자료가 누락될 수 있어 치료사 검토 시 저장 스냅샷을 함께 확인해야 합니다.",
+        hasTranscript: true,
+        hasAdaptiveEvidence: adaptiveEvidence.length > 0,
+      },
+    });
 
     const zipBlob = createZipBlob(files);
     const url = URL.createObjectURL(zipBlob);

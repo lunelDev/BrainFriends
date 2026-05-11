@@ -32,12 +32,6 @@ export interface SpeechAnalysisResult {
   };
 }
 
-export type SttLifecycleCallbacks = {
-  onWasmLoadStart?: () => void;
-  onWasmLoadSuccess?: () => void;
-  onWasmLoadError?: (errorCode: string) => void;
-};
-
 export interface PronunciationMetrics {
   syllableAccuracy: number;
   tonalAccuracy: number;
@@ -177,7 +171,6 @@ export class WhisperTranscriber {
     options?: {
       targetText?: string;
       useCase?: SttUseCase;
-      lifecycle?: SttLifecycleCallbacks;
     },
   ): Promise<{
     text: string;
@@ -203,32 +196,6 @@ export class WhisperTranscriber {
 
     if (runtime.engine === "disabled") {
       throw new Error(`stt_policy_blocked:${runtime.reason}`);
-    }
-
-    if (runtime.engine === "wasm_whisper") {
-      const { transcribeWithWasmStt } = await import("@/lib/speech/wasmSttAdapter");
-      options?.lifecycle?.onWasmLoadStart?.();
-      let result: Awaited<ReturnType<typeof transcribeWithWasmStt>>;
-      try {
-        result = await transcribeWithWasmStt(audioBlob, {
-          targetText: options?.targetText,
-          useCase,
-        });
-        options?.lifecycle?.onWasmLoadSuccess?.();
-      } catch (error) {
-        options?.lifecycle?.onWasmLoadError?.(
-          error instanceof Error ? error.message : "wasm_stt_unknown_error",
-        );
-        throw error;
-      }
-      return {
-        text: result.text,
-        confidence: result.confidence,
-        sttStatus: "ok",
-        sttDetailStatus: "ok",
-        reviewRequired: false,
-        reviewReason: null,
-      };
     }
 
     const mimeToExt: Record<string, string> = {
@@ -464,7 +431,6 @@ export class SpeechAnalyzer {
 
   async stopAnalysis(
     expectedText: string,
-    options?: { lifecycle?: SttLifecycleCallbacks },
   ): Promise<SpeechAnalysisResult> {
     let audioBlob: Blob;
     const duration = Date.now() - this.startTime;
@@ -523,7 +489,6 @@ export class SpeechAnalyzer {
       } = await this.transcriber.transcribe(audioBlob, {
         targetText: expectedText,
         useCase: "daily_training",
-        lifecycle: options?.lifecycle,
       });
       const processingMs = Math.max(
         0,

@@ -68,8 +68,6 @@ import {
   scoreAacTranscriptMatch,
   type AacTrainingCommit,
 } from "@/lib/aac/trainingIntegration";
-import { useWasmSttLoading } from "@/lib/speech/useWasmSttLoading";
-import WasmSttLoadingIndicator from "@/components/training/WasmSttLoadingIndicator";
 import { buildAdaptiveTrainingOrder } from "@/lib/adaptive/adaptiveTraining";
 import { STEP2_REPETITION_BANK } from "@/lib/adaptive/itemBank";
 import { playRecordingStartBeep } from "@/lib/audio/playRecordingStartBeep";
@@ -205,7 +203,6 @@ function Step2Content() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const wasmSttLoading = useWasmSttLoading();
   const [isSaving, setIsSaving] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isPromptPlaying, setIsPromptPlaying] = useState(false);
@@ -1073,16 +1070,7 @@ function Step2Content() {
       });
 
       try {
-        const result = await analyzerRef.current!.stopAnalysis(
-          currentItem.text,
-          {
-            lifecycle: {
-              onWasmLoadStart: wasmSttLoading.beginLoad,
-              onWasmLoadSuccess: wasmSttLoading.finishLoad,
-              onWasmLoadError: wasmSttLoading.fail,
-            },
-          },
-        );
+        const result = await analyzerRef.current!.stopAnalysis(currentItem.text);
         if (result.errorReason) {
           setTranscript("");
           setResultScore(null);
@@ -1617,13 +1605,6 @@ function Step2Content() {
                         : guideText || "녹음 버튼을 눌러 시작해 주세요"}
               </h1>
             </div>
-
-            <WasmSttLoadingIndicator
-              state={wasmSttLoading.state}
-              onRetry={wasmSttLoading.reset}
-              className="border-orange-200 bg-orange-50 text-orange-900"
-              barColorClassName="bg-orange-500"
-            />
 
             {/* 결과 리포트 카드 */}
             {resultScore !== null && (

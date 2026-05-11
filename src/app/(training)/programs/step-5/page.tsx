@@ -50,8 +50,6 @@ import {
   clearFirstDiagnosisFlow,
   isFirstDiagnosisFlow,
 } from "@/lib/firstDiagnosisFlow";
-import { useWasmSttLoading } from "@/lib/speech/useWasmSttLoading";
-import WasmSttLoadingIndicator from "@/components/training/WasmSttLoadingIndicator";
 
 export const dynamic = "force-dynamic";
 const STEP5_STORAGE_KEY = "step5_recorded_data";
@@ -248,7 +246,6 @@ function Step5Content() {
   const [isMounted, setIsMounted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [phase, setPhase] = useState<"ready" | "reading" | "review">("ready");
-  const wasmSttLoading = useWasmSttLoading();
   const [readingTime, setReadingTime] = useState(0);
   const [highlightIndex, setHighlightIndex] = useState(-1);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
@@ -714,13 +711,7 @@ function Step5Content() {
     });
     try {
       if (!analyzerRef.current) analyzerRef.current = new SpeechAnalyzer();
-      const analysis = await analyzerRef.current.stopAnalysis(currentItem.text, {
-        lifecycle: {
-          onWasmLoadStart: wasmSttLoading.beginLoad,
-          onWasmLoadSuccess: wasmSttLoading.finishLoad,
-          onWasmLoadError: wasmSttLoading.fail,
-        },
-      });
+      const analysis = await analyzerRef.current.stopAnalysis(currentItem.text);
       if (analysis.errorReason) {
         const runtimeMessage = analysis.errorReason.includes(
           "recorder_stop_failed",
@@ -1366,13 +1357,6 @@ function Step5Content() {
                 })()}
               </div>
             </div>
-
-            <WasmSttLoadingIndicator
-              state={wasmSttLoading.state}
-              onRetry={wasmSttLoading.reset}
-              className="border-orange-200 bg-orange-50 text-orange-900"
-              barColorClassName="bg-orange-500"
-            />
 
             <div className="flex flex-col items-center gap-6">
               {phase === "ready" && (

@@ -62,6 +62,8 @@ export const TRACEABILITY_MATRIX: TraceabilityRecord[] = [
   { requirementId: "SR-IRT-ITEMBANK", moduleName: "src/lib/adaptive/itemBank.ts", functionName: "getItemBankForStep / STEP1/2/4_BANK", testCaseId: "TC-IRT-ITEMBANK-001" },
   { requirementId: "SR-CONSENT-015", moduleName: "src/lib/guardian/consentState.ts", functionName: "evaluateGuardianConsent / isLegalTransition", testCaseId: "TC-CONSENT-015-001" },
   { requirementId: "SR-CHANGE-016", moduleName: "src/lib/server/changeImpactAnalysis.ts", functionName: "diffManifestComponents / analyzeChangeImpact", testCaseId: "TC-CHANGE-016-001" },
+  { requirementId: "SR-CHANGE-016", moduleName: "src/lib/server/releaseChangeDossier.ts", functionName: "buildReleaseChangeDossier / serialize JSON MD CSV", testCaseId: "TC-CHANGE-DOSSIER-001" },
+  { requirementId: "SR-SEC-SI04-MANIFEST", moduleName: "src/lib/server/releaseChangeDossier.ts", functionName: "manifest delta anomaly retest impact export", testCaseId: "TC-CHANGE-DOSSIER-001" },
   { requirementId: "SR-IEC62304-EXPORT", moduleName: "src/lib/vnv/iec62304Export.ts", functionName: "buildIec62304TraceabilityMatrix / serialize MD / serialize CSV", testCaseId: "TC-IEC62304-001" },
   { requirementId: "SR-IEC62304-EXPORT", moduleName: "src/app/api/therapist/system/iec62304-traceability/route.ts", functionName: "GET (format=json|md|csv)", testCaseId: "TC-IEC62304-001" },
   { requirementId: "SR-USABILITY-017", moduleName: "src/lib/usability/useScenarioValidator.ts", functionName: "normalizeScenarios / buildTaskCompletionStats / bucketUseErrors / buildHazardCoverage / evaluateSummativeUsability", testCaseId: "TC-USABILITY-001" },

@@ -1,0 +1,2 @@
+section,id,status,severity_or_kind,related,summary
+impact,manifest-delta,ready_for_review,patch,,changed=0; filing=false

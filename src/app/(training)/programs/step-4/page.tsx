@@ -64,8 +64,6 @@ import {
   persistAacIntentBestEffort,
   type AacTrainingCommit,
 } from "@/lib/aac/trainingIntegration";
-import { useWasmSttLoading } from "@/lib/speech/useWasmSttLoading";
-import WasmSttLoadingIndicator from "@/components/training/WasmSttLoadingIndicator";
 import { buildAdaptiveTrainingOrder } from "@/lib/adaptive/adaptiveTraining";
 import { STEP4_SENTENCE_BANK } from "@/lib/adaptive/itemBank";
 import { playRecordingStartBeep } from "@/lib/audio/playRecordingStartBeep";
@@ -281,7 +279,6 @@ function Step4Content() {
   const [isMounted, setIsMounted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [phase, setPhase] = useState<Phase>("ready");
-  const wasmSttLoading = useWasmSttLoading();
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
   const [isPromptPlaying, setIsPromptPlaying] = useState(false);
@@ -796,13 +793,6 @@ function Step4Content() {
     try {
       const analysis = await analyzerRef.current!.stopAnalysis(
         currentScenario.answerKeywords.join(" "),
-        {
-          lifecycle: {
-            onWasmLoadStart: wasmSttLoading.beginLoad,
-            onWasmLoadSuccess: wasmSttLoading.finishLoad,
-            onWasmLoadError: wasmSttLoading.fail,
-          },
-        },
       );
       if (analysis.errorReason) {
         updateRuntimeStatus({
@@ -1705,13 +1695,6 @@ function Step4Content() {
                   )}
                 </div>
               </div>
-
-              <WasmSttLoadingIndicator
-                state={wasmSttLoading.state}
-                onRetry={wasmSttLoading.reset}
-                className="border-orange-200 bg-orange-50 text-orange-900"
-                barColorClassName="bg-orange-500"
-              />
 
               {/* 녹음 컨트롤 */}
               <div

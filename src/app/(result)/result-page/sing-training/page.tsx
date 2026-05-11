@@ -23,6 +23,10 @@ import { dataUrlToBlob, uploadClinicalMedia } from "@/lib/client/clinicalMediaUp
 import type { ExportFile } from "@/features/result/types";
 import { createZipBlob } from "@/features/result/utils/zipExport";
 import {
+  appendDossierFiles,
+  RESULT_REVIEW_BOUNDARY,
+} from "@/features/result/utils/dossierExport";
+import {
   SING_TRAINING_ANALYSIS_VERSION,
   SING_TRAINING_CATALOG_VERSION,
   SONGS,
@@ -710,15 +714,24 @@ export default function SingTrainingResultPage() {
       reviewAudioPresent: Boolean(reviewAudioExportUrl),
       reviewKeyFrameCount: result.reviewKeyFrames?.length ?? 0,
     };
+    const exportedAt = new Date().toISOString();
     const files: ExportFile[] = [
       {
         name: "result.json",
         data: new TextEncoder().encode(
           JSON.stringify(
             {
-              exportedAt: new Date().toISOString(),
+              schemaVersion: "bf-result-json-v1",
+              exportedAt,
               patient: patient ?? null,
               trainingMode: "sing",
+              review: RESULT_REVIEW_BOUNDARY,
+              measurementQuality: {
+                overall: isMeasuredSingResult(result) ? "measured" : "partial",
+                reason:
+                  result.measurementReason ??
+                  "노래훈련 결과는 발화 참여율, 타이밍, 발성 안정도, 안면-음성 동시성을 치료사가 검토하기 위한 보조 지표입니다.",
+              },
               dbSaveState,
               result,
               myRank,
@@ -806,6 +819,36 @@ export default function SingTrainingResultPage() {
         ),
       });
     }
+    appendDossierFiles(files, {
+      mode: "sing-training",
+      exportedAt,
+      patient: patient ?? null,
+      primaryScore: Number(result.score),
+      scoreLabel: "노래훈련 수행 보조점수",
+      scoreReason:
+        result.scoreReason ??
+        "노래훈련 총점은 STT 전사 정확도 중심이 아니라 발화 참여율, 타이밍, 발성 안정도, 반응시간, 안면-음성 동시성 중심의 치료사 검토용 보조 지표입니다.",
+      taskContext: {
+        song: result.song,
+        expectedLyrics: result.expectedLyrics ?? null,
+        scoringVersion: result.scoringVersion ?? null,
+        catalogVersion:
+          result.governance?.catalogVersion ?? SING_TRAINING_CATALOG_VERSION,
+        analysisVersion:
+          result.governance?.analysisVersion ?? SING_TRAINING_ANALYSIS_VERSION,
+      },
+      measurementQuality: {
+        level: isMeasuredSingResult(result) ? "measured" : "partial",
+        reason:
+          result.measurementReason ??
+          (isMeasuredSingResult(result)
+            ? "노래훈련 수행 원자료와 보조 지표가 함께 저장되었습니다."
+            : "노래훈련 수행 샘플 일부가 부족하여 치료사 검토 시 원자료와 화면 결과를 함께 확인해야 합니다."),
+        hasAudio: Boolean(reviewAudioExportUrl),
+        hasTranscript: Boolean(result.transcript),
+        hasFaceFrames: (result.reviewKeyFrames?.length ?? 0) > 0,
+      },
+    });
 
     const zipBlob = createZipBlob(files);
     const url = URL.createObjectURL(zipBlob);

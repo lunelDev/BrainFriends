@@ -134,6 +134,12 @@ import {
   diffManifestComponents,
 } from "@/lib/server/changeImpactAnalysis";
 import {
+  buildReleaseChangeDossier,
+  serializeReleaseChangeDossierCsv,
+  serializeReleaseChangeDossierJson,
+  serializeReleaseChangeDossierMarkdown,
+} from "@/lib/server/releaseChangeDossier";
+import {
   buildIec62304TraceabilityMatrix,
   serializeIec62304Csv,
   serializeIec62304Markdown,
@@ -847,14 +853,13 @@ function runSttPolicyCheck(): CheckResult {
   });
   assert.equal(temporaryFallback.engine, "server_whisper");
 
-  const wasm = resolveSttPolicy({
+  const browserWasmAvailable = resolveSttPolicy({
     useCase: "daily_training",
     wasmAvailable: true,
     allowTrainingServerFallback: false,
-    allowWasmExperiment: true,
   });
-  assert.equal(wasm.engine, "wasm_whisper");
-  assert.equal(wasm.rawAudioLeavesDevice, false);
+  assert.equal(browserWasmAvailable.engine, "server_whisper");
+  assert.equal(browserWasmAvailable.rawAudioLeavesDevice, true);
 
   const prompt = buildKoreanSttPrompt("바다 가족");
   assert.equal(prompt.includes("바다"), true);
@@ -865,11 +870,11 @@ function runSttPolicyCheck(): CheckResult {
     area: "stt",
     requirementIds: ["SR-STT-009"],
     inputSummary:
-      "daily/weekly/default server/wasm experiment STT policy fixture + Korean prompt fixture",
+      "daily/weekly/default server STT policy fixture + Korean prompt fixture",
     expected:
-      "dev mock, daily server, weekly server, training fallback server, wasm only with experiment flag, prompt includes target terms",
-    actual: `mock=${mock.engine}, daily=${blocked.engine}, weekly=${evaluation.engine}, fallback=${temporaryFallback.engine}, wasm=${wasm.engine}, promptHasTarget=${prompt.includes("바다")}`,
-    detail: `mock=${mock.engine}; daily=${blocked.engine}; weekly=${evaluation.engine}; fallback=${temporaryFallback.engine}; wasm=${wasm.engine}`,
+      "dev mock, daily server, weekly server, training fallback server, browser WASM availability ignored in product runtime, prompt includes target terms",
+    actual: `mock=${mock.engine}, daily=${blocked.engine}, weekly=${evaluation.engine}, fallback=${temporaryFallback.engine}, browserWasm=${browserWasmAvailable.engine}, promptHasTarget=${prompt.includes("바다")}`,
+    detail: `mock=${mock.engine}; daily=${blocked.engine}; weekly=${evaluation.engine}; fallback=${temporaryFallback.engine}; browserWasm=${browserWasmAvailable.engine}`,
   };
 }
 
@@ -886,12 +891,11 @@ function runSttRuntimeResolutionCheck(): CheckResult {
     wasmAvailable: false,
     allowTrainingServerFallback: false,
   });
-  const wasm = resolveSttRuntime({
+  const browserWasmAvailable = resolveSttRuntime({
     useCase: "daily_training",
     devMode: false,
     wasmAvailable: true,
     allowTrainingServerFallback: false,
-    allowWasmExperiment: true,
   });
   const server = resolveSttRuntime({
     useCase: "weekly_kwab",
@@ -906,8 +910,8 @@ function runSttRuntimeResolutionCheck(): CheckResult {
   assert.equal(blocked.engine, "server_whisper");
   assert.equal(blocked.canUploadToServer, true);
   assert.equal(blocked.reason, "server_default_for_training");
-  assert.equal(wasm.engine, "wasm_whisper");
-  assert.equal(wasm.rawAudioLeavesDevice, false);
+  assert.equal(browserWasmAvailable.engine, "server_whisper");
+  assert.equal(browserWasmAvailable.rawAudioLeavesDevice, true);
   assert.equal(server.engine, "server_whisper");
   assert.equal(server.canUploadToServer, true);
 
@@ -916,11 +920,11 @@ function runSttRuntimeResolutionCheck(): CheckResult {
     area: "stt",
     requirementIds: ["SR-STT-009"],
     inputSummary:
-      "mock / training server / wasm experiment / evaluation server STT runtime fixture + adapter availability",
+      "mock / training server / evaluation server STT runtime fixture + adapter availability",
     expected:
-      "runtime uses server STT by default for training, keeps WASM behind experiment flag, and supports evaluation server STT",
-    actual: `mock=${mock.engine}, blocked=${blocked.engine}, wasm=${wasm.engine}, server=${server.engine}, adapter=${isWasmSttAvailable()}`,
-    detail: `mock=${mock.engine}; blocked=${blocked.engine}; wasm=${wasm.engine}; server=${server.engine}; adapter=${isWasmSttAvailable()}`,
+      "runtime uses server STT for training even when browser WASM is available, and supports evaluation server STT",
+    actual: `mock=${mock.engine}, blocked=${blocked.engine}, browserWasm=${browserWasmAvailable.engine}, server=${server.engine}, adapter=${isWasmSttAvailable()}`,
+    detail: `mock=${mock.engine}; blocked=${blocked.engine}; browserWasm=${browserWasmAvailable.engine}; server=${server.engine}; adapter=${isWasmSttAvailable()}`,
   };
 }
 
@@ -947,11 +951,10 @@ function runSttClientPreflightCheck(): CheckResult {
     wasmAvailable: false,
     allowTrainingServerFallback: false,
   });
-  const gameWasmExperiment = resolveClientSttPreflight({
+  const gameBrowserWasmAvailable = resolveClientSttPreflight({
     useCase: "game_training",
     wasmAvailable: true,
     allowTrainingServerFallback: false,
-    allowWasmExperiment: true,
   });
   const weekly = resolveClientSttPreflight({
     useCase: "weekly_kwab",
@@ -962,9 +965,9 @@ function runSttClientPreflightCheck(): CheckResult {
   assert.equal(gameBlocked.canUploadToServer, true);
   assert.equal(gameBlocked.rawAudioLeavesDevice, true);
   assert.equal(gameBlocked.reason, "server_default_for_training");
-  assert.equal(gameWasmExperiment.canUploadToServer, false);
-  assert.equal(gameWasmExperiment.rawAudioLeavesDevice, false);
-  assert.equal(gameWasmExperiment.engine, "wasm_whisper");
+  assert.equal(gameBrowserWasmAvailable.canUploadToServer, true);
+  assert.equal(gameBrowserWasmAvailable.rawAudioLeavesDevice, true);
+  assert.equal(gameBrowserWasmAvailable.engine, "server_whisper");
   assert.equal(weekly.canUploadToServer, true);
   assert.equal(weekly.reason, "server_allowed_for_evaluation");
 
@@ -973,11 +976,11 @@ function runSttClientPreflightCheck(): CheckResult {
     area: "stt",
     requirementIds: ["SR-STT-009"],
     inputSummary:
-      "game_training client preflight server default + WASM experiment + weekly_kwab fixture",
+      "game_training client preflight server default + browser WASM ignored + weekly_kwab fixture",
     expected:
-      "game training uses server STT by default; explicit WASM experiment keeps raw audio local; weekly evaluation can upload",
-    actual: `game=${gameBlocked.canUploadToServer}/${gameBlocked.reason}, wasm=${gameWasmExperiment.engine}, weekly=${weekly.canUploadToServer}/${weekly.reason}`,
-    detail: `gameUpload=${gameBlocked.canUploadToServer}; rawLeaves=${gameBlocked.rawAudioLeavesDevice}; wasmRawLeaves=${gameWasmExperiment.rawAudioLeavesDevice}; weekly=${weekly.canUploadToServer}`,
+      "game training uses server STT by default; browser WASM availability does not switch product runtime; weekly evaluation can upload",
+    actual: `game=${gameBlocked.canUploadToServer}/${gameBlocked.reason}, browserWasm=${gameBrowserWasmAvailable.engine}, weekly=${weekly.canUploadToServer}/${weekly.reason}`,
+    detail: `gameUpload=${gameBlocked.canUploadToServer}; rawLeaves=${gameBlocked.rawAudioLeavesDevice}; browserWasmRawLeaves=${gameBrowserWasmAvailable.rawAudioLeavesDevice}; weekly=${weekly.canUploadToServer}`,
   };
 }
 
@@ -2433,6 +2436,130 @@ function runChangeImpactAnalysisCheck(): CheckResult {
   };
 }
 
+function runReleaseChangeDossierExportCheck(): CheckResult {
+  const SHA = (c: string) => c.repeat(64);
+  const previousManifest = buildManifest({
+    productName: "golden",
+    productVersion: "0.1.0",
+    components: [
+      { id: "git-sha", description: "git", sha256: SHA("a") },
+      { id: "package-lock", description: "lock", sha256: SHA("b") },
+      { id: "soup", description: "soup", sha256: SHA("c") },
+    ],
+  });
+  const nextManifest = buildManifest({
+    productName: "golden",
+    productVersion: "0.1.1",
+    components: [
+      { id: "git-sha", description: "git", sha256: SHA("d") },
+      { id: "package-lock", description: "lock", sha256: SHA("e") },
+      { id: "soup", description: "soup", sha256: SHA("c") },
+      {
+        id: "model-asset-public_models_face_landmarker_task",
+        description: "model",
+        sha256: SHA("f"),
+      },
+    ],
+  });
+
+  const dossier = buildReleaseChangeDossier({
+    previousManifest,
+    nextManifest,
+    generatedAt: "2026-05-11T00:00:00.000Z",
+    anomalies: [
+      {
+        id: "AN-002",
+        title: "녹음 ZIP 원자료 누락",
+        severity: "major",
+        status: "fixed",
+        affectedComponentIds: ["git-sha"],
+        linkedRequirementIds: ["SR-HISTORY-005"],
+        disposition: "result ZIP media export patched",
+      },
+      {
+        id: "AN-001",
+        title: "WASM-STT 제품 경로 혼입",
+        severity: "major",
+        status: "fixed",
+        affectedComponentIds: ["package-lock", "git-sha"],
+        linkedRequirementIds: ["SR-STT-009", "SR-CHANGE-016"],
+      },
+    ],
+    retests: [
+      {
+        id: "RT-002",
+        testCaseId: "TC-STT-001",
+        status: "pass",
+        relatedAnomalyIds: ["AN-001"],
+        relatedComponentIds: ["git-sha", "package-lock"],
+        evidence: "npm run test:vnv",
+      },
+      {
+        id: "RT-001",
+        testCaseId: "TC-SEC-SI04-MANIFEST-001",
+        status: "pass",
+        relatedAnomalyIds: [],
+        relatedComponentIds: ["model-asset-public_models_face_landmarker_task"],
+      },
+    ],
+  });
+
+  assert.equal(dossier.schemaVersion, "bf-release-change-dossier-v1");
+  assert.equal(dossier.summary.changeKind, "major");
+  assert.equal(dossier.summary.requiresRegulatoryFiling, true);
+  assert.equal(dossier.summary.openAnomalyCount, 0);
+  assert.equal(dossier.summary.blockingAnomalyCount, 0);
+  assert.equal(dossier.summary.failedRetestCount, 0);
+  assert.equal(dossier.summary.retestCoverage, "complete");
+  assert.equal(dossier.summary.releaseGate, "ready_for_review");
+  assert.deepEqual(
+    dossier.anomalies.map((anomaly) => anomaly.id),
+    ["AN-001", "AN-002"],
+  );
+  assert.equal(
+    dossier.impact.impactedRequirementIds.includes("SR-AI-EVAL-014"),
+    true,
+  );
+
+  const json = serializeReleaseChangeDossierJson(dossier);
+  const markdown = serializeReleaseChangeDossierMarkdown(dossier);
+  const csv = serializeReleaseChangeDossierCsv(dossier);
+  assert.equal(json.includes('"schemaVersion": "bf-release-change-dossier-v1"'), true);
+  assert.equal(markdown.includes("## Retest Results"), true);
+  assert.equal(csv.split("\n")[0], "section,id,status,severity_or_kind,related,summary");
+
+  const blockedDossier = buildReleaseChangeDossier({
+    previousManifest,
+    nextManifest,
+    generatedAt: "2026-05-11T00:00:00.000Z",
+    anomalies: [
+      {
+        id: "AN-003",
+        title: "미해결 major anomaly",
+        severity: "major",
+        status: "open",
+        affectedComponentIds: ["git-sha"],
+        linkedRequirementIds: ["SR-CHANGE-016"],
+      },
+    ],
+    retests: [],
+  });
+  assert.equal(blockedDossier.summary.releaseGate, "blocked");
+  assert.equal(blockedDossier.summary.retestCoverage, "none");
+
+  return {
+    id: "TC-CHANGE-DOSSIER-001",
+    area: "change_management",
+    requirementIds: ["SR-CHANGE-016", "SR-SEC-SI04-MANIFEST"],
+    inputSummary: "release manifest delta + fixed/open anomalies + retest coverage fixtures",
+    expected:
+      "dossier JSON/MD/CSV export, anomaly sorting, retest coverage, release gate, filing flag deterministic",
+    actual: `kind=${dossier.summary.changeKind}; gate=${dossier.summary.releaseGate}; blockedGate=${blockedDossier.summary.releaseGate}; csvLines=${csv.split("\n").length}`,
+    detail:
+      "Release change dossier export deterministic — anomaly/retest/impact 제26조 묶음 검증",
+  };
+}
+
 function runIec62304ExportCheck(): CheckResult {
   // SR-IEC62304-EXPORT. IEC 62304 별지 제2호 추적성 매트릭스 결정성 export.
 
@@ -2842,36 +2969,53 @@ async function runWasmSttAdapterCheck(): Promise<CheckResult> {
     "public/vendor/onnxruntime/ort-wasm-simd-threaded.asyncify.mjs",
     "public/vendor/onnxruntime/ort-wasm-simd-threaded.asyncify.wasm",
   ];
-  const localAssetSizes = expectedLocalAssetPaths.map((assetPath) => {
+  const localAssetPresence = expectedLocalAssetPaths.map((assetPath) => {
     const fullPath = join(process.cwd(), assetPath);
-    assert.equal(existsSync(fullPath), true, `${assetPath} should exist`);
+    if (!existsSync(fullPath)) {
+      return { assetPath, exists: false, size: 0 };
+    }
     const size = statSync(fullPath).size;
     assert.ok(size > 0, `${assetPath} should be non-empty`);
-    return size;
+    return { assetPath, exists: true, size };
   });
-  const totalLocalAssetBytes = localAssetSizes.reduce((sum, size) => sum + size, 0);
+  const existingLocalAssets = localAssetPresence.filter((asset) => asset.exists);
+  const totalLocalAssetBytes = existingLocalAssets.reduce(
+    (sum, asset) => sum + asset.size,
+    0,
+  );
+  const hasCompleteLocalAssetSet =
+    existingLocalAssets.length === expectedLocalAssetPaths.length;
   const manifestPath = join(
     process.cwd(),
     "public/models/wasm-stt/asset-manifest.json",
   );
-  assert.equal(existsSync(manifestPath), true, "WASM-STT asset manifest should exist");
-  const assetManifest = JSON.parse(
-    readFileSync(manifestPath, "utf8").replace(/^\uFEFF/, ""),
-  ) as {
-    schemaVersion?: string;
-    modelId?: string;
-    modelDtype?: string;
-    remoteModelLoading?: boolean;
-    files?: Array<{ path: string; bytes: number; sha256: string }>;
-  };
-  assert.equal(
-    assetManifest.schemaVersion,
-    "brainfriends-wasm-stt-local-assets-v1",
-  );
-  assert.equal(assetManifest.modelId, WASM_STT_MODEL_ID);
-  assert.equal(assetManifest.modelDtype, WASM_STT_MODEL_DTYPE);
-  assert.equal(assetManifest.remoteModelLoading, false);
-  assert.equal(assetManifest.files?.length, expectedLocalAssetPaths.length);
+  const hasAssetManifest = existsSync(manifestPath);
+  if (hasCompleteLocalAssetSet) {
+    assert.equal(
+      hasAssetManifest,
+      true,
+      "complete WASM-STT local assets require asset-manifest.json",
+    );
+  }
+  if (hasAssetManifest) {
+    const assetManifest = JSON.parse(
+      readFileSync(manifestPath, "utf8").replace(/^\uFEFF/, ""),
+    ) as {
+      schemaVersion?: string;
+      modelId?: string;
+      modelDtype?: string;
+      remoteModelLoading?: boolean;
+      files?: Array<{ path: string; bytes: number; sha256: string }>;
+    };
+    assert.equal(
+      assetManifest.schemaVersion,
+      "brainfriends-wasm-stt-local-assets-v1",
+    );
+    assert.equal(assetManifest.modelId, WASM_STT_MODEL_ID);
+    assert.equal(assetManifest.modelDtype, WASM_STT_MODEL_DTYPE);
+    assert.equal(assetManifest.remoteModelLoading, false);
+    assert.equal(assetManifest.files?.length, expectedLocalAssetPaths.length);
+  }
 
   // Node 에서 transcribeWithWasmStt 는 명시 에러로 차단되어야 한다.
   let thrown: Error | null = null;
@@ -2906,11 +3050,11 @@ async function runWasmSttAdapterCheck(): Promise<CheckResult> {
     area: "stt",
     requirementIds: ["SR-STT-009"],
     inputSummary:
-      "Node 환경에서 isWasmSttAvailable / transcribeWithWasmStt / 로컬 WASM-STT 자산 / 캐시 reset 결정성 검증",
+      "Node 환경에서 isWasmSttAvailable / transcribeWithWasmStt / 실험 후보 WASM-STT 자산 정책 / 캐시 reset 결정성 검증",
     expected:
-      "isWasmSttAvailable=false, transcribeWithWasmStt rejects with wasm_stt_unavailable (반복), fp32 로컬 모델/ONNX 런타임 자산 존재, sampleRate=16000, __resetWasmSttPipelineForTest idempotent",
-    actual: `wasmAvailable=${isWasmSttAvailable()}; sampleRate=${WASM_STT_SAMPLE_RATE}; modelId=${WASM_STT_MODEL_ID}; dtype=${WASM_STT_MODEL_DTYPE}; engine=${WASM_STT_ENGINE_VERSION}; assets=${expectedLocalAssetPaths.length}; assetBytes=${totalLocalAssetBytes}; rejection=${thrown!.message}/${thrownAgain!.message}`,
-    detail: `transformers.js@${WASM_STT_PACKAGE_VERSION} local fp32 adapter contract — Node 환경 5종 + 로컬 자산 ${expectedLocalAssetPaths.length}개 결정성 검증 + 2 rejection round-trip`,
+      "isWasmSttAvailable=false, transcribeWithWasmStt rejects with wasm_stt_unavailable (반복), sampleRate=16000, 로컬 모델 자산이 있으면 manifest 검증, 없으면 실험 후보로만 유지, __resetWasmSttPipelineForTest idempotent",
+    actual: `wasmAvailable=${isWasmSttAvailable()}; sampleRate=${WASM_STT_SAMPLE_RATE}; modelId=${WASM_STT_MODEL_ID}; dtype=${WASM_STT_MODEL_DTYPE}; engine=${WASM_STT_ENGINE_VERSION}; localAssets=${existingLocalAssets.length}/${expectedLocalAssetPaths.length}; assetManifest=${hasAssetManifest}; assetBytes=${totalLocalAssetBytes}; rejection=${thrown!.message}/${thrownAgain!.message}`,
+    detail: `transformers.js@${WASM_STT_PACKAGE_VERSION} local fp32 adapter contract — Node 환경 5종 + 실험 후보 로컬 자산 정책 검증 + 2 rejection round-trip`,
   };
 }
 
@@ -3926,6 +4070,7 @@ export async function runDeterministicChecks() {
     runWerCalculatorCheck(),
     runGuardianConsentStateCheck(),
     runChangeImpactAnalysisCheck(),
+    runReleaseChangeDossierExportCheck(),
     runIec62304ExportCheck(),
     runUsabilityValidatorCheck(),
     runWerRunnerCheck(),

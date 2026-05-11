@@ -4,7 +4,7 @@ export type SttUseCase =
   | "weekly_kwab"
   | "clinical_evaluation";
 
-export type SttEngine = "mock_stt" | "wasm_whisper" | "server_whisper" | "disabled";
+export type SttEngine = "mock_stt" | "server_whisper" | "disabled";
 
 export type SttPolicyDecision = {
   engine: SttEngine;
@@ -17,7 +17,6 @@ export type SttPolicyInput = {
   devMode?: boolean;
   wasmAvailable: boolean;
   allowTrainingServerFallback: boolean;
-  allowWasmExperiment?: boolean;
 };
 
 const TRAINING_USE_CASES = new Set<SttUseCase>([
@@ -62,18 +61,6 @@ export function resolveSttPolicy(input: SttPolicyInput): SttPolicyDecision {
       engine: "mock_stt",
       rawAudioLeavesDevice: false,
       reason: "dev_mode_mock",
-    };
-  }
-
-  if (
-    input.allowWasmExperiment &&
-    input.wasmAvailable &&
-    isTrainingSttUseCase(input.useCase)
-  ) {
-    return {
-      engine: "wasm_whisper",
-      rawAudioLeavesDevice: false,
-      reason: "wasm_experiment_enabled",
     };
   }
 

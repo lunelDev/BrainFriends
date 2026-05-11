@@ -9,14 +9,17 @@ export const SAMD_CONFIG = {
   FACE_WEIGHT: 0.4,
 } as const;
 
-/** * 시스템 성능 모니터링을 위한 임계값 (Target)
- * 이 수치를 벗어나면 대시보드에서 경고(WARN)를 표시합니다.
+/**
+ * @deprecated claim-lock §5 — 임상 검증되지 않은 정량 임계값(95.2%, ICC 0.82, r 0.98 등)을
+ * 화면에 "Target/임계값"으로 노출하지 않는다. ClinicalFooter / MonitoringDashboard 가
+ * 더 이상 사용하지 않는다. 새 코드에서 import 하지 말 것. 임상 검증 결과가 확보되면
+ * 별도 검증 페이지에서 출처와 함께 표기한다.
  */
 export const METRIC_TARGETS = {
-  latency: 50, // Latency ≤ 50ms
-  face: 0.5, // Face ≤ 0.5mm
-  speech: 95.2, // Speech ≥ 95.2%
-  rValue: 0.98, // r ≥ 0.98
-  icc: 0.82, // ICC ≥ 0.82
-  stability: 1.18, // Stability ≤ 1.18%
+  latency: 50,
+  face: 0.5,
+  speech: 0,
+  rValue: 0,
+  icc: 0,
+  stability: 0,
 } as const;

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "bf-release-change-dossier-v1",
+  "generatedAt": "2026-05-11T02:54:21.288Z",
+  "previousManifestHash": "97079f5ff913e6eb825f3d08171ea0b2fd4878d6607f018622c08c7d306a7810",
+  "nextManifestHash": "97079f5ff913e6eb825f3d08171ea0b2fd4878d6607f018622c08c7d306a7810",
+  "productName": "golden",
+  "productVersion": "0.1.0",
+  "delta": {
+    "addedComponentIds": [],
+    "removedComponentIds": [],
+    "changedComponentIds": []
+  },
+  "impact": {
+    "delta": {
+      "addedComponentIds": [],
+      "removedComponentIds": [],
+      "changedComponentIds": []
+    },
+    "kind": "patch",
+    "impactedRequirementIds": [],
+    "revalidationTriggers": [],
+    "requiresRegulatoryFiling": false
+  },
+  "anomalies": [],
+  "retests": [],
+  "summary": {
+    "changeKind": "patch",
+    "requiresRegulatoryFiling": false,
+    "changedComponentCount": 0,
+    "openAnomalyCount": 0,
+    "blockingAnomalyCount": 0,
+    "failedRetestCount": 0,
+    "blockedRetestCount": 0,
+    "retestCoverage": "complete",
+    "releaseGate": "ready_for_review"
+  },
+  "article26Mapping": {
+    "anomalyList": "SW 변경 후 발견된 문제 목록과 처분 상태",
+    "retestResult": "변경 영향 component 별 재시험 결과와 증거",
+    "impactAssessment": "release manifest delta 기반 영향받는 요구사항과 변경허가 필요 여부"
+  }
+}

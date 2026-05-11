@@ -1,7 +1,7 @@
 // WASM STT adapter — transformers.js (@huggingface/transformers) 기반 온디바이스 Whisper.
 //
 // 클레임 잠금 §3 "안면·시선 분석은 온디바이스, STT 는 사용 목적별 정책" + §4 STT 행 정합.
-// useCase 가 daily_training / game_training 일 때 sttPolicy.ts 의 wasm_whisper 분기에서 호출된다.
+// 제품 STT 경로에서는 호출하지 않는다. /dev/wasm-stt-test 에서만 실험 후보로 직접 호출한다.
 //
 // 본 모듈은 SSR (server) 에서는 자동으로 unavailable 로 보고된다 (window/WebAssembly 미존재).
 // V&V 결정성 함수가 Node 환경에서 isWasmSttAvailable()=false 를 가정하고 있으므로,

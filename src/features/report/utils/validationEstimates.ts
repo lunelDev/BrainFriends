@@ -1,3 +1,8 @@
+// claim-lock §5 준수 — 정량 임계값 "기준 ≥ 95.2% / ≥ 0.85 / ≥ 0.80" 은 임상 검증된
+// 수치가 아니므로 화면에 절대치 형태로 노출하지 않는다. thresholdLabel 은 모두
+// "참고 임계값 (내부 개발 기준 · 임상 검증 전)" 으로 잠근다. "임상적 상관성"
+// 라벨도 "측정 상관성 (참고)" 로 치환한다. PASS/FAIL 계산 자체는 내부 모니터링용
+// 이므로 유지하되, 외부 노출 시에는 임상 인증 인상을 주지 않도록 한다.
 import { TrainingHistoryEntry } from "@/lib/kwab/SessionManager";
 import { StepKey } from "@/features/report/utils/reportHelpers";
 
@@ -225,7 +230,7 @@ export function buildEstimatedValidationMetrics(params: {
       label: "분석 정확도(추정)",
       value: Number(analysisAccuracy.toFixed(1)),
       unit: "%",
-      thresholdLabel: "기준 ≥ 95.2%",
+      thresholdLabel: "참고 임계값 (내부 개발 기준 · 임상 검증 전)",
       status: analysisStatus,
       note:
         itemScores.length > 0
@@ -234,10 +239,10 @@ export function buildEstimatedValidationMetrics(params: {
     },
     {
       key: "clinicalCorrelation",
-      label: "임상적 상관성(추정)",
+      label: "측정 상관성 (참고)",
       value: r === null ? null : Number(r.toFixed(3)),
       unit: "r",
-      thresholdLabel: "기준 ≥ 0.85",
+      thresholdLabel: "참고 임계값 (내부 개발 기준 · 임상 검증 전)",
       status: corrStatus,
       note: r === null ? `데이터 부족 (${sampleHint})` : sampleHint,
     },
@@ -246,7 +251,7 @@ export function buildEstimatedValidationMetrics(params: {
       label: "반복측정 신뢰도 ICC(추정)",
       value: icc === null ? null : Number(icc.toFixed(3)),
       unit: "",
-      thresholdLabel: "기준 ≥ 0.80",
+      thresholdLabel: "참고 임계값 (내부 개발 기준 · 임상 검증 전)",
       status: iccStatus,
       note: icc === null ? `데이터 부족 (${sampleHint})` : sampleHint,
     },
@@ -266,16 +271,16 @@ export function buildAggregateEstimatedValidationMetrics(
         label: "분석 정확도(추정)",
         value: null,
         unit: "%",
-        thresholdLabel: "기준 ≥ 95.2%",
+        thresholdLabel: "참고 임계값 (내부 개발 기준 · 임상 검증 전)",
         status: "PENDING",
         note: "표본 없음",
       },
       {
         key: "clinicalCorrelation",
-        label: "임상적 상관성(추정)",
+        label: "측정 상관성 (참고)",
         value: null,
         unit: "r",
-        thresholdLabel: "기준 ≥ 0.85",
+        thresholdLabel: "참고 임계값 (내부 개발 기준 · 임상 검증 전)",
         status: "PENDING",
         note: "표본 없음",
       },
@@ -284,7 +289,7 @@ export function buildAggregateEstimatedValidationMetrics(
         label: "반복측정 신뢰도 ICC(추정)",
         value: null,
         unit: "",
-        thresholdLabel: "기준 ≥ 0.80",
+        thresholdLabel: "참고 임계값 (내부 개발 기준 · 임상 검증 전)",
         status: "PENDING",
         note: "표본 없음",
       },
@@ -353,7 +358,7 @@ export function buildAggregateEstimatedValidationMetrics(
       label: "분석 정확도(추정)",
       value: analysisAccuracy === null ? null : Number(analysisAccuracy.toFixed(1)),
       unit: "%",
-      thresholdLabel: "기준 ≥ 95.2%",
+      thresholdLabel: "참고 임계값 (내부 개발 기준 · 임상 검증 전)",
       status:
         analysisAccuracy === null
           ? "PENDING"
@@ -366,10 +371,10 @@ export function buildAggregateEstimatedValidationMetrics(
     },
     {
       key: "clinicalCorrelation",
-      label: "임상적 상관성(추정)",
+      label: "측정 상관성 (참고)",
       value: r === null ? null : Number(r.toFixed(3)),
       unit: "r",
-      thresholdLabel: "기준 ≥ 0.85",
+      thresholdLabel: "참고 임계값 (내부 개발 기준 · 임상 검증 전)",
       status: r === null ? "PENDING" : r >= 0.85 ? "PASS" : "FAIL",
       note: r === null ? `데이터 부족 (${sampleHint})` : `${sampleHint} · ${sampleDetailHint}`,
     },
@@ -378,7 +383,7 @@ export function buildAggregateEstimatedValidationMetrics(
       label: "반복측정 신뢰도 ICC(추정)",
       value: icc === null ? null : Number(icc.toFixed(3)),
       unit: "",
-      thresholdLabel: "기준 ≥ 0.80",
+      thresholdLabel: "참고 임계값 (내부 개발 기준 · 임상 검증 전)",
       status: icc === null ? "PENDING" : icc >= 0.8 ? "PASS" : "FAIL",
       note: icc === null ? `데이터 부족 (${sampleHint})` : `${sampleHint} · ${sampleDetailHint}`,
     },

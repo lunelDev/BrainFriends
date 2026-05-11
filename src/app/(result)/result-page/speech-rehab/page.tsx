@@ -9,6 +9,10 @@ import {
 } from "@/lib/kwab/SessionManager";
 import { ExportFile } from "@/features/result/types";
 import { createZipBlob } from "@/features/result/utils/zipExport";
+import {
+  appendDossierFiles,
+  RESULT_REVIEW_BOUNDARY,
+} from "@/features/result/utils/dossierExport";
 import { REHAB_STEP_LABELS } from "@/lib/results/rehab/constants";
 import {
   buildDetailComparisons,
@@ -492,12 +496,18 @@ function ResultRehabPage() {
     const currentItems = mergeExportItems(historyItems, transientItems);
     const historyForStep = stepRows.sort((a, b) => b.completedAt - a.completedAt);
     const adaptiveEvidence = collectAdaptiveEvidence(latestStepRow);
+    const exportedAt = new Date().toISOString();
     const exportPayload = {
-      exportedAt: new Date().toISOString(),
+      schemaVersion: "bf-result-json-v1",
+      exportedAt,
       patient,
       place,
       trainingMode: "rehab",
       targetStep: safeStep,
+      review: RESULT_REVIEW_BOUNDARY,
+      measurementQuality: latestStepRow.measurementQuality ?? null,
+      scoreReason:
+        "언어재활 결과는 과제 수행 이력과 원자료를 치료사가 검토하기 위한 보조 지표입니다.",
       vnv: latestStepRow.vnv ?? null,
       currentScore,
       latestHistoryEntry: latestStepRow,
@@ -582,6 +592,37 @@ function ResultRehabPage() {
       }),
     );
     files.push(...mediaFiles.filter((file): file is ExportFile => Boolean(file)));
+    appendDossierFiles(files, {
+      mode: "speech-rehab",
+      exportedAt,
+      patient,
+      primaryScore: currentScore,
+      scoreLabel: `${REHAB_STEP_LABELS[safeStep] ?? `Step ${safeStep}`} 보조점수`,
+      scoreReason:
+        "언어재활 결과는 자동 진단이 아니라 치료사가 녹음, 키프레임, 전사 참고값을 함께 검토하기 위한 보조 지표입니다.",
+      taskContext: {
+        place,
+        targetStep: safeStep,
+        targetStepLabel: REHAB_STEP_LABELS[safeStep] ?? `Step ${safeStep}`,
+        itemCount: currentItems.length,
+      },
+      measurementQuality: {
+        level:
+          latestStepRow.measurementQuality?.overall === "measured"
+            ? "measured"
+            : latestStepRow.measurementQuality?.overall === "partial"
+              ? "partial"
+              : "reference_only",
+        reason:
+          latestStepRow.measurementQuality?.overall === "measured"
+            ? "언어재활 수행 원자료와 지표가 함께 저장되었습니다."
+            : "일부 수행 원자료가 누락될 수 있어 치료사 검토 시 저장 스냅샷을 함께 확인해야 합니다.",
+        hasTranscript: currentItems.some((item: any) =>
+          Boolean(item?.transcript || item?.recognizedText || item?.spokenText),
+        ),
+        hasAdaptiveEvidence: adaptiveEvidence.length > 0,
+      },
+    });
 
     const zipBlob = createZipBlob(files);
     const url = URL.createObjectURL(zipBlob);

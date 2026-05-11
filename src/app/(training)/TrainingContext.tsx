@@ -67,12 +67,14 @@ const TrainingContext = createContext<TrainingContextType | undefined>(
 );
 
 export function TrainingProvider({ children }: { children: React.ReactNode }) {
+  // claim-lock §5 준수 — 임상 검증 임계값(95.2% / 0.85 / 0.8)을 default 로 두면
+  // 실측 전에도 "달성"으로 보일 수 있으므로 모두 0으로 초기화한다.
   const [clinicalMetrics, setClinicalMetrics] = useState<ClinicalMetrics>({
     systemLatency: 0,
     trackingPrecision: 0,
-    analysisAccuracy: 95.2,
-    correlation: 0.85,
-    reliability: 0.8,
+    analysisAccuracy: 0,
+    correlation: 0,
+    reliability: 0,
     stability: 0,
   });
 

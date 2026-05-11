@@ -32,8 +32,6 @@ import {
 } from "@/lib/aac/trainingIntegration";
 import type { PlaceType } from "@/constants/trainingData";
 import { WhisperTranscriber } from "@/lib/speech/SpeechAnalyzer";
-import { useWasmSttLoading } from "@/lib/speech/useWasmSttLoading";
-import WasmSttLoadingIndicator from "@/components/training/WasmSttLoadingIndicator";
 
 type SentenceQuestion = (typeof SENTENCE_EXAMPLE_QUESTIONS)[number];
 type SentenceMode = (typeof SENTENCE_MAGIC_MODES)[number];
@@ -562,7 +560,6 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
   const [battleModal, setBattleModal] = useState<BattleModal | null>(null);
   const [battleDetailsOpen, setBattleDetailsOpen] = useState(false);
   const [serverError, setServerError] = useState("");
-  const wasmSttLoading = useWasmSttLoading();
 
   // 결정론 셔플 시드. 컴포넌트 마운트 시 1회 결정 후 라운드마다 +1.
   // 현재 단계는 시드를 외부 결과 메타에 저장하지 않지만, 같은 마운트(=같은 세션)
@@ -856,11 +853,6 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
       const result = await transcriber.transcribe(audioBlob, {
         targetText: targetSentence,
         useCase: "game_training",
-        lifecycle: {
-          onWasmLoadStart: wasmSttLoading.beginLoad,
-          onWasmLoadSuccess: wasmSttLoading.finishLoad,
-          onWasmLoadError: wasmSttLoading.fail,
-        },
       });
 
       setIsAnalyzing(false);
@@ -871,18 +863,14 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
         error instanceof Error ? error.message : "음성 분석 중 오류가 발생했어요.";
       setServerError(
         message.includes("server_stt_blocked")
-          ? "훈련 음성은 현재 서버로 전송하지 않습니다. 심볼 입력을 사용하거나 온디바이스 STT가 연결된 환경에서 다시 시도해 주세요."
-          : message.includes("wasm_stt_unavailable")
-            ? "이 브라우저에서는 온디바이스 STT를 사용할 수 없습니다. 심볼 입력을 사용하거나 WASM 지원 브라우저에서 다시 시도해 주세요."
+          ? "음성 인식 서버 연결이 차단되었습니다. 심볼 입력을 사용하거나 연결 상태를 확인해 주세요."
           : message.includes("마이크")
           ? "마이크를 확인한 뒤 다시 시도해 주세요."
           : "음성 인식 연결이 불안정합니다. 다시 시도해 주세요.",
       );
       setMessage(
         message.includes("server_stt_blocked")
-          ? "훈련 음성 서버 전송이 차단되었습니다."
-          : message.includes("wasm_stt")
-            ? "온디바이스 음성 인식에 실패했어요."
+          ? "음성 인식 서버 연결이 차단되었습니다."
           : "음성 분석에 실패했어요. 다시 시도해 보세요.",
       );
     }
@@ -1244,13 +1232,6 @@ export default function SentenceMagicGame({ onBack }: { onBack?: () => void }) {
               </p>
             </div>
           ) : null}
-
-          <WasmSttLoadingIndicator
-            state={wasmSttLoading.state}
-            onRetry={wasmSttLoading.reset}
-            className="mx-auto mt-5 max-w-4xl border-violet-500/30 bg-violet-950/30 text-violet-100"
-            barColorClassName="bg-violet-400"
-          />
 
             {battleModal ? (
               <SentenceBattleResultModal
