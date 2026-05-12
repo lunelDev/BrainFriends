@@ -14,7 +14,6 @@ import {
   Printer,
   Sparkles,
   Timer,
-  Trophy,
 } from "lucide-react";
 import type { PatientProfile } from "@/lib/patientStorage";
 import type { VersionSnapshot } from "@/lib/analysis/versioning";
@@ -75,6 +74,13 @@ type SingResult = {
   transcript?: string;
   metricSource?: "measured" | "demo";
   measurementReason?: string | null;
+  // 측정 신뢰도 종합 등급 — sing-training/page.tsx 에서 raw 측정값(jitterPct, vocalParticipation)
+  // 기반으로 산출되어 sessionStorage 로 전달됨.
+  //   high: 정상 범위. 배너 없음.
+  //   medium: 환경/발성 이상치 1개 — 노란 배너 + 반복 측정 권장.
+  //   low: 환경/발성 이상치 2개 이상 또는 임계치 크게 초과 — 참고 제한 배너.
+  measurementReliability?: "high" | "medium" | "low";
+  reliabilityReasons?: string[];
   comment: string;
   rankings: RankRow[];
   completedAt: number;
@@ -140,11 +146,14 @@ function buildSingSourceSessionKey(song: string, completedAt: number) {
 }
 
 function decodeDataUrlToBytes(dataUrl: string) {
-  const match = /^data:([^;,]+)?(;base64)?,([\s\S]*)$/.exec(dataUrl);
-  if (!match) return null;
+  const normalized = String(dataUrl || "").trim();
+  if (!normalized.startsWith("data:")) return null;
+  const commaIndex = normalized.indexOf(",");
+  if (commaIndex < 0) return null;
 
-  const isBase64 = Boolean(match[2]);
-  const payload = match[3] || "";
+  const header = normalized.slice(0, commaIndex);
+  const payload = normalized.slice(commaIndex + 1);
+  const isBase64 = /;base64(?:;|$)/i.test(header);
   if (!isBase64) {
     return new TextEncoder().encode(decodeURIComponent(payload));
   }
@@ -189,6 +198,9 @@ async function assetUrlToExportFile(
 
 function getReviewAudioAccessUrl(result: SingResult | null) {
   if (!result) return null;
+  if (result.reviewAudioObjectKey && result.reviewAudioUrl?.startsWith("blob:")) {
+    return `/api/media/access?objectKey=${encodeURIComponent(result.reviewAudioObjectKey)}`;
+  }
   if (result.reviewAudioUrl) return result.reviewAudioUrl;
   if (result.reviewAudioObjectKey) {
     return `/api/media/access?objectKey=${encodeURIComponent(result.reviewAudioObjectKey)}`;
@@ -642,6 +654,16 @@ export default function SingTrainingResultPage() {
   const { patient } = useTrainingSession();
   const lastPersistedKeyRef = useRef<string | null>(null);
   const reviewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const localReviewAudioUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (result?.reviewAudioUrl?.startsWith("data:")) {
+      localReviewAudioUrlRef.current = result.reviewAudioUrl;
+    }
+  }, [result?.reviewAudioUrl]);
+
+  const getStableReviewAudioAccessUrl = () =>
+    localReviewAudioUrlRef.current ?? getReviewAudioAccessUrl(result);
 
   const moveToSongSelect = () => {
     if (typeof window === "undefined") return;
@@ -655,7 +677,7 @@ export default function SingTrainingResultPage() {
   };
 
   const playReviewAudio = () => {
-    const reviewAudioAccessUrl = getReviewAudioAccessUrl(result);
+    const reviewAudioAccessUrl = getStableReviewAudioAccessUrl();
     if (!reviewAudioAccessUrl || isPlayingReview) return;
     if (reviewAudioRef.current) {
       reviewAudioRef.current.pause();
@@ -704,7 +726,7 @@ export default function SingTrainingResultPage() {
     const currentHistoryRows = historyEntries
       .filter((entry) => entry.trainingMode === "sing")
       .sort((a, b) => b.completedAt - a.completedAt);
-    const reviewAudioExportUrl = getReviewAudioAccessUrl(result);
+    const reviewAudioExportUrl = getStableReviewAudioAccessUrl();
     const storageSnapshot = {
       transientResult: result,
       historyMatches: currentHistoryRows.filter((entry) =>
@@ -904,6 +926,9 @@ export default function SingTrainingResultPage() {
       const parsed = JSON.parse(raw) as SingResult;
       window.sessionStorage.removeItem(SING_RESULT_SESSION_KEY);
       window.sessionStorage.removeItem(SING_LAST_SONG_SESSION_KEY);
+      if (parsed.reviewAudioUrl?.startsWith("data:")) {
+        localReviewAudioUrlRef.current = parsed.reviewAudioUrl;
+      }
       setFallbackSong(null);
       setResult(parsed);
       const parsedMyRank = parsed.rankings.find(
@@ -1141,12 +1166,6 @@ export default function SingTrainingResultPage() {
       : result.score >= 90
       ? "목표 가사 대비 발화 보조 지표가 높게 산출되었습니다."
       : "목표 가사 대비 발화 보조 지표가 산출되었습니다.";
-  const hasDbRanking = result.rankings.some((row) =>
-    Number.isFinite(Number(row.rank)),
-  );
-  const displayedRankings: RankRow[] = hasDbRanking
-    ? result.rankings
-    : EMPTY_RANKINGS;
   const scoreLabel = isMeasuredResult ? `${result.score}` : "미측정";
   const consonantLabel =
     consonantScore == null ? "미측정" : `${consonantScore.toFixed(1)}점`;
@@ -1173,6 +1192,10 @@ export default function SingTrainingResultPage() {
         ? `입술/안면 추적 품질은 ${lipTrackingQualityLabel}으로 안정 구간입니다. 낮은 결과 점수는 추적 실패가 아니라 발화 참여율·타이밍·음성-안면 동시성 쪽에서 나온 값입니다.`
         : `입술/안면 추적 품질은 ${lipTrackingQualityLabel}으로 낮아 재측정 시 조명과 얼굴 위치를 먼저 확인해야 합니다.`;
   const latencyLabel = formatLatencyLabel(result.rtLatency);
+  const isSttReferenceLimited =
+    result.measurementReliability === "low" ||
+    lyricAccuracyScore == null ||
+    lyricAccuracyScore < 40;
   const hasMeasuredPerformance =
     participationScore != null && timingScore != null;
   const performanceMetricRows = [
@@ -1193,9 +1216,11 @@ export default function SingTrainingResultPage() {
   const transcriptPreview = String(result.transcript || "")
     .replace(/\s+/g, " ")
     .trim();
-  const reviewAudioExportUrl = getReviewAudioAccessUrl(result);
+  const reviewAudioExportUrl = getStableReviewAudioAccessUrl();
   const scoreInterpretationText = !isMeasuredResult
     ? result.measurementReason || "노래 수행 데이터가 부족해 보조 지표를 산출하지 못했습니다."
+    : isSttReferenceLimited
+      ? "자동 전사 신뢰도가 낮아 가사 기반 지표는 치료사 확인 전까지 참고 제한 상태입니다."
     : weakestPerformanceMetric
       ? `${weakestPerformanceMetric.label}가 상대적으로 낮게 산출되어 반복 확인이 필요합니다.`
       : "노래 구간 대비 발화 수행 보조 지표가 산출되었습니다.";
@@ -1379,6 +1404,48 @@ export default function SingTrainingResultPage() {
                 </p>
               </div>
 
+              {/* 측정 신뢰도 안내 배너 — sing-training/page.tsx 에서 raw 측정값 기반 산출.
+                  low: 주황 — 자동 전사/가사 지표 참고 제한.
+                  medium: 앰버 — 반복 측정 권장.
+                  high: 표시 없음. */}
+              {result.measurementReliability === "low" ? (
+                <div className="flex items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-950">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                  <div className="space-y-1.5">
+                    <p className="font-black">
+                      측정 신뢰도가 낮아 자동 전사·가사 기반 지표는 참고 제한 상태입니다
+                    </p>
+                    {result.reliabilityReasons?.length ? (
+                      <ul className="ml-1 list-disc space-y-0.5 pl-4 text-[13px] font-medium text-amber-900">
+                        {result.reliabilityReasons.map((reason, i) => (
+                          <li key={i}>{reason}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    <p className="pt-1 text-[12px] font-medium text-amber-800">
+                      유선 헤드셋 사용 후 조용한 환경에서 재측정해 주세요. 반주 누설
+                      또는 블루투스 SCO 한계가 전사 참고값을 왜곡할 수 있습니다.
+                    </p>
+                  </div>
+                </div>
+              ) : result.measurementReliability === "medium" ? (
+                <div className="flex items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50/80 px-4 py-3 text-sm font-semibold text-amber-900">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                  <div className="space-y-1">
+                    <p className="font-black">
+                      측정 신뢰도가 보통 — 반복 측정으로 참고값 확인을 권장합니다
+                    </p>
+                    {result.reliabilityReasons?.length ? (
+                      <ul className="ml-1 list-disc space-y-0.5 pl-4 text-[12px] font-medium text-amber-800">
+                        {result.reliabilityReasons.map((reason, i) => (
+                          <li key={i}>{reason}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
               {isServerExcluded ? (
                 <div className="flex flex-wrap gap-2">
                   {isDemoSkipResult ? <DemoResultBadge /> : null}
@@ -1392,11 +1459,14 @@ export default function SingTrainingResultPage() {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-[160px_1fr_1fr] md:items-center">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.16em] text-emerald-700">
-                  이번 결과
+                  수행 참고지표
                 </p>
                 <p className="mt-1 text-4xl font-black tracking-tight tabular-nums text-emerald-700">
                   {isMeasuredResult ? `${scoreLabel}` : "미측정"}
                   {isMeasuredResult ? <span className="text-2xl"> / 100</span> : null}
+                </p>
+                <p className="mt-1 text-[11px] font-black uppercase tracking-[0.14em] text-emerald-700/70">
+                  자동 판정 점수 아님
                 </p>
               </div>
               <div className="text-sm font-semibold leading-6 text-slate-700">
@@ -1428,10 +1498,10 @@ export default function SingTrainingResultPage() {
               </div>
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.22em] text-emerald-600">
-                  Performance Metrics · 100점 척도
+                  Performance Metrics · 참고 척도
                 </p>
                 <h2 className="mt-1 text-xl font-black text-slate-900 sm:text-2xl">
-                  노래 수행 지표
+                  노래 수행 참고 지표
                 </h2>
               </div>
             </div>
@@ -1441,11 +1511,13 @@ export default function SingTrainingResultPage() {
                 label="발화 참여율"
                 value={participationScore}
                 fallbackLabel={participationLabel}
+                limited={isSttReferenceLimited}
               />
               <ProgressMetricRow
                 label="타이밍 맞춤률"
                 value={timingScore}
                 fallbackLabel={timingLabel}
+                limited={isSttReferenceLimited}
               />
               <ProgressMetricRow
                 label="안면-음성 동시성"
@@ -1474,6 +1546,9 @@ export default function SingTrainingResultPage() {
                   : "전사 가능한 발화가 수집되지 않았습니다."}
               </p>
               <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
+                노래 음성에서는 자동 전사 정확도가 낮을 수 있어 단독 채점 근거로 사용하지 않습니다.
+              </p>
+              <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
                 STT 참고값: 자음 {consonantLabel} · 모음 {vowelLabel} · 전사 일치 {lyricAccuracyLabel}
               </p>
             </div>
@@ -1544,67 +1619,13 @@ export default function SingTrainingResultPage() {
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                  자동 전사
+                  자동 전사 참고값
                 </p>
                 <p className="mt-2 max-h-24 overflow-auto text-sm font-medium leading-6 text-slate-700">
                   {transcriptPreview || "자동 전사 결과가 없습니다."}
                 </p>
               </div>
             </div>
-          </section>
-
-          <section className="mt-5 rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] sm:p-7">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                <Activity className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">
-                  Acoustic Metrics
-                </p>
-                <h2 className="mt-1 text-xl font-black text-slate-900 sm:text-2xl">
-                  음향 지표
-                </h2>
-              </div>
-            </div>
-
-            <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <AcousticMetricCard
-                icon={<Timer className="h-4 w-4" />}
-                title="반응 지연 시간"
-                value={latencyLabel}
-                hint="자극 제시 후 첫 발화까지의 지연. 낮을수록 좋습니다."
-              />
-              <AcousticMetricCard
-                icon={<Mic className="h-4 w-4" />}
-                title="발성 안정도 (Jitter)"
-                value={jitterLabel}
-                hint="음성 주파수 변동 비율. 낮을수록 안정적인 발성입니다."
-              />
-            </div>
-          </section>
-
-          <section className="mt-5 rounded-[28px] border border-emerald-100 bg-[linear-gradient(180deg,#f7fcfa_0%,#eefbf4_100%)] p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] sm:p-7">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
-                <Sparkles className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.22em] text-emerald-600">
-                  Clinical Note
-                </p>
-                <h2 className="mt-1 text-xl font-black text-slate-900 sm:text-2xl">
-                  세션 코멘트
-                </h2>
-              </div>
-            </div>
-            <p className="mt-4 text-base leading-relaxed text-slate-700">
-              {result.comment ||
-                (isMeasuredResult
-                  ? "전사 가능한 발화가 수집되어 목표 가사 대비 보조 지표를 산출했습니다."
-                  : result.measurementReason ||
-                    "측정 데이터가 충분하지 않아 치료사 검토용 보조 지표를 산출하지 못했습니다.")}
-            </p>
           </section>
 
           <div className="mt-5 space-y-5">
@@ -1676,6 +1697,46 @@ export default function SingTrainingResultPage() {
               </div>
             </section>
 
+            <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] sm:p-8">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
+                  <Activity className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">
+                    Acoustic Metrics
+                  </p>
+                  <h2 className="mt-1 text-2xl font-black text-slate-900">
+                    음향 참고 지표
+                  </h2>
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <AcousticMetricCard
+                  icon={<Timer className="h-4 w-4" />}
+                  title="반응 지연 시간"
+                  value={latencyLabel}
+                  hint="자극 제시 후 첫 발화까지의 지연. 낮을수록 좋습니다."
+                />
+                <AcousticMetricCard
+                  icon={<Mic className="h-4 w-4" />}
+                  title="발성 안정 참고값 (Jitter)"
+                  value={jitterLabel}
+                  hint="정상 발성 0.5~1.5%. 5% 초과 시 측정 환경(반주 누설, 배경 잡음) 영향 가능."
+                  qualityBadge={
+                    jitterScore == null
+                      ? undefined
+                      : jitterScore <= 1.5
+                        ? { label: "정상 범위", tone: "ok" }
+                        : jitterScore <= 5
+                          ? { label: "정상 범위 초과", tone: "warn" }
+                          : { label: "측정 환경 점검 권장", tone: "bad" }
+                  }
+                />
+              </div>
+            </section>
+
             {baselineComparisonDelta != null ? (
               <section className="rounded-[30px] border border-emerald-100 bg-[#fbfefc] p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] sm:p-8">
                 <div className="flex items-center gap-3">
@@ -1712,62 +1773,94 @@ export default function SingTrainingResultPage() {
               </section>
             ) : null}
 
-            <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] sm:p-8">
+            <section className="rounded-[30px] border border-emerald-100 bg-[linear-gradient(180deg,#f7fcfa_0%,#eefbf4_100%)] p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] sm:p-8">
               <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-800">
-                  <Trophy className="h-6 w-6" />
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+                  <Sparkles className="h-6 w-6" />
                 </div>
                 <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">
-                    Overall Ranking
+                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-emerald-600">
+                    Review Memo
                   </p>
                   <h2 className="mt-1 text-2xl font-black text-slate-900">
-                    전체 랭킹 Top 5 (곡별 최고 기록 기준)
+                    검토 메모
                   </h2>
                 </div>
               </div>
-              <p className="mt-4 text-base font-medium text-slate-500">
-                {result.song} 곡에서 각 사용자의 최고 기록만 반영해 상위 5명을 표시합니다.
+              <p className="mt-4 text-base leading-relaxed text-slate-700">
+                {result.comment ||
+                  (isMeasuredResult
+                    ? "전사 가능한 발화가 수집되어 목표 가사 대비 보조 지표를 산출했습니다."
+                    : result.measurementReason ||
+                      "측정 데이터가 충분하지 않아 치료사 검토용 보조 지표를 산출하지 못했습니다.")}
               </p>
+            </section>
 
-              <div className="mt-5 rounded-[24px] border border-emerald-200 bg-emerald-50 p-4">
+            <section className="rounded-[30px] border border-emerald-100 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] sm:p-8">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+                  <CheckCircle2 className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-emerald-600">
+                    Next Activity
+                  </p>
+                  <h2 className="mt-1 text-2xl font-black text-slate-900">
+                    다음 권장 활동
+                  </h2>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-[24px] border border-emerald-200 bg-emerald-50 p-5">
                 <p className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-700">
-                    나의 순위
-                  </p>
-                  <p className="mt-2 text-xl font-black text-slate-900">
-                    {myRank && hasDbRanking
-                      ? `${myRank.rank}위 · ${myRank.score}점`
-                      : dbSaveState === "saving"
-                        ? "랭킹 산출 중"
-                      : dbSaveState === "local_only"
-                        ? "로컬 모드"
-                        : "--"}
-                  </p>
-                <p className="mt-1 text-sm font-medium text-slate-600">
-                    {myRank && hasDbRanking
-                      ? `나의 최고 기록 ${myRank.score}점 · 이번 결과 ${result.score}점`
-                      : dbSaveState === "local_only"
-                        ? "실측 지표가 없어 서버 저장과 DB 랭킹 계산을 생략했습니다."
-                        : `${result.song} 기준 DB 랭킹 데이터가 아직 없습니다.`}
+                  권장 방향
+                </p>
+                <p className="mt-2 text-2xl font-black text-slate-900">
+                  {nextActionLabel}
+                </p>
+                <p className="mt-2 text-base font-medium leading-relaxed text-emerald-900">
+                  {nextActionText}
                 </p>
               </div>
 
-              <div className="mt-5 space-y-3">
-                {displayedRankings.map((row, idx) => (
-                  <div
-                    key={`${row.name}-${idx}-${row.rank}`}
-                    className={`flex items-center justify-between rounded-2xl border px-4 py-4 text-base font-bold ${
-                      row.me
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                        : "border-slate-200 bg-slate-50 text-slate-700"
-                    }`}
-                  >
-                    <span>
-                      {row.rank ?? idx + 1}위. {row.name} ({row.region})
-                    </span>
-                    <span>{hasDbRanking ? `${row.score}점` : "--"}</span>
-                  </div>
-                ))}
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                    우선 확인 지표
+                  </p>
+                  <p className="mt-2 text-lg font-black text-slate-900">
+                    {weakestPerformanceMetric?.label ?? "측정 환경"}
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-slate-500">
+                    치료사가 녹음과 대표 프레임으로 먼저 확인할 항목입니다.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                    같은 곡 기준
+                  </p>
+                  <p className="mt-2 text-lg font-black text-slate-900">
+                    {result.song}
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-slate-500">
+                    다음 세션에서 동일 곡 반복 시 변화량 비교에 사용합니다.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                    저장 상태
+                  </p>
+                  <p className="mt-2 text-lg font-black text-slate-900">
+                    {dbSaveState === "saving"
+                      ? "저장 중"
+                      : dbSaveState === "saved"
+                        ? "DB 저장 완료"
+                        : "로컬/ZIP 확인"}
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-slate-500">
+                    결과 ZIP과 원자료 포함 여부를 함께 확인하세요.
+                  </p>
+                </div>
               </div>
             </section>
           </div>
@@ -1781,38 +1874,65 @@ function ProgressMetricRow({
   label,
   value,
   fallbackLabel,
+  limited = false,
 }: {
   label: string;
   value: number | null;
   fallbackLabel: string;
+  limited?: boolean;
 }) {
   const unmeasured = value == null;
   const clamped = unmeasured ? 0 : Math.max(0, Math.min(100, value ?? 0));
-  const tone =
-    unmeasured
-      ? "bg-slate-200"
-      : clamped >= 75
-        ? "bg-[linear-gradient(90deg,#10b981_0%,#34d399_100%)]"
-        : clamped >= 50
-          ? "bg-[linear-gradient(90deg,#22c55e_0%,#86efac_100%)]"
-          : clamped >= 25
-            ? "bg-[linear-gradient(90deg,#f59e0b_0%,#fcd34d_100%)]"
-            : "bg-[linear-gradient(90deg,#f43f5e_0%,#fda4af_100%)]";
+  const fillBackground = unmeasured
+    ? "#cbd5e1"
+    : clamped >= 75
+      ? "linear-gradient(90deg,#10b981 0%,#34d399 100%)"
+      : clamped >= 50
+        ? "linear-gradient(90deg,#22c55e 0%,#86efac 100%)"
+        : clamped >= 25
+          ? "linear-gradient(90deg,#f59e0b 0%,#fcd34d 100%)"
+          : "linear-gradient(90deg,#f43f5e 0%,#fda4af 100%)";
+  const fillWidth = unmeasured ? 4 : Math.max(8, clamped);
 
   return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50/60 px-4 py-3">
+    <div
+      className={`rounded-2xl border px-4 py-3 ${
+        limited
+          ? "border-amber-100 bg-amber-50/50"
+          : "border-slate-100 bg-slate-50/60"
+      }`}
+    >
       <div className="flex items-baseline justify-between gap-3">
         <p className="text-sm font-black text-slate-800">{label}</p>
-        <p className="text-base font-black tabular-nums text-slate-900">
-          {unmeasured ? fallbackLabel : `${clamped.toFixed(1)} / 100`}
+        <p
+          className={`text-base font-black tabular-nums ${
+            limited ? "text-amber-800" : "text-slate-900"
+          }`}
+        >
+          {limited
+            ? "참고 제한"
+            : unmeasured
+              ? fallbackLabel
+              : `${clamped.toFixed(1)} / 100`}
         </p>
       </div>
-      <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-200">
+      <div className="mt-2 h-3 overflow-hidden rounded-full border border-slate-200 bg-slate-100 shadow-inner">
         <div
-          className={`h-2.5 rounded-full ${tone}`}
-          style={{ width: `${unmeasured ? 4 : Math.max(4, clamped)}%` }}
+          className="h-full rounded-full transition-[width] duration-300"
+          style={{
+            width: `${fillWidth}%`,
+            background: fillBackground,
+            boxShadow: unmeasured
+              ? "none"
+              : "0 0 10px rgba(16,185,129,0.22)",
+          }}
         />
       </div>
+      {limited ? (
+        <p className="mt-2 text-xs font-semibold leading-5 text-amber-800">
+          자동 전사 신뢰가 낮아 치료사 확인 전까지 참고값으로만 봅니다.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -1822,12 +1942,25 @@ function AcousticMetricCard({
   title,
   value,
   hint,
+  qualityBadge,
 }: {
   icon: ReactNode;
   title: string;
   value: string;
   hint: string;
+  qualityBadge?: {
+    label: string;
+    tone: "ok" | "warn" | "bad";
+  };
 }) {
+  const toneClass =
+    qualityBadge?.tone === "ok"
+      ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+      : qualityBadge?.tone === "warn"
+        ? "bg-amber-100 text-amber-800 border-amber-200"
+        : qualityBadge?.tone === "bad"
+          ? "bg-rose-100 text-rose-700 border-rose-200"
+          : "";
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4">
       <div className="flex items-center gap-2 text-slate-500">
@@ -1839,6 +1972,13 @@ function AcousticMetricCard({
       <p className="mt-3 text-3xl font-black tracking-tight tabular-nums text-slate-900">
         {value}
       </p>
+      {qualityBadge ? (
+        <p
+          className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black ${toneClass}`}
+        >
+          {qualityBadge.label}
+        </p>
+      ) : null}
       <p className="mt-2 text-xs font-medium leading-relaxed text-slate-500">{hint}</p>
     </div>
   );

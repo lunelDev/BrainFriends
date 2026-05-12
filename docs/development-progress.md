@@ -1,13 +1,14 @@
 # 브레인톡톡 / 브레인프렌즈 / GOLDEN — 일자별 주간 리포트
 
-기간: **2026-02-25 ~ 2026-05-08**
-작성: 2026-05-08
+기간: **2026-02-25 ~ 2026-05-11**
+작성: 2026-05-11
 
 각 일자별 핵심 작업과 검증·후속을 이미지 형식(파일 경로/모듈 + 신규/수정 + 검증 + 후속)에 맞춰 압축 정리했습니다.
 
 - 2026-05-08: AAC 보조 채널(/select-page/aac) 추가 + AAC 퀵 스트립/TTS + XR 라이브러리 리디자인 + 노래 훈련 점수 v3(참여율/타이밍/안정도/동시성) 반영
 - 2026-05-07: 반복훈련 step1/4/5 안정화 + 노래훈련 증적 ZIP 내보내기 + XR 프리뷰 라우트(/select-page/xr) + 인허가 소스 감사표/인덱스 정리
 - 2026-05-06: Report 리팩터링(/report→/mypage) + Step2 점수/복원 안정화 + WASM STT 로컬 자산화(실험 플래그) + IRT evidence export
+- 2026-05-11: 회원가입 연락처 입력 포맷(10/11자리) 보정 + 개발 기록 문서 정리
 
 ---
 
@@ -458,6 +459,19 @@
   - src/app/therapist/* 일부 수정 — 위험도/정상 표기 용어를 “주의도/일반”으로 정리(대시보드/리다이렉트 문구)
 - 검증: `npx tsc --noEmit` 통과
 
+## 2026-05-11: 회원가입 연락처 입력 포맷 보정 + 개발 기록 정리
+
+- 회원가입 연락처 입력 포맷 보정(10자리/11자리)
+  - src/app/signup/page.tsx 수정 — `formatPhoneInput()`에서 10자리(3-3-4) / 11자리(3-4-4) 케이스를 분기 처리해 하이픈 포맷이 깨지지 않도록 수정
+  - 검증: 10자리/11자리 입력 포맷 출력 로직 단위 확인(node 실행)
+- 개발 기록 정리
+  - 개발내용.md 신규 — 변경사항을 별도 요약 문서로 기록(상세 이력은 본 문서 유지)
+- (preview) 게임 모드/결과/세션 스키마 확장(작업 중)
+  - brainfriends-preview/src/app/(training)/select-page/game-mode/page.tsx 수정 — VR 투어(4 시나리오) 중심의 Game Hub로 재구성(딥링크/섹션 구성)
+  - brainfriends-preview/src/lib/gameModeProgress.ts 수정 — 권역/도시/미션 진행도 localStorage 기반 잠금 해제 시스템 추가
+  - brainfriends-preview/src/lib/kwab/SessionManager.ts 수정 — 음향 분석(AcousticSnapshot), V&V traceability/runtime check, 시선 응시(gaze) 요약 등 결과 스키마 확장
+  - brainfriends-preview/src/lib/client/clinicalMediaUpload.ts 수정 — 오프라인 미디어 저장을 deterministic id/objectKey로 정리
+
 ## 누적 후속 과제 (2026-05-08 기준)
 
 - SaMD 시험기관 사전 문의 / 품목·등급 확정 / 필요 성적서 종류 확정
@@ -473,3 +487,4 @@
 - 게임 모드 — 경주~제주 구간 노드별 문구 품질 보정
 - 결제 — 로컬 환경에서 토스페이먼츠 승인 완료까지 검증
 - 운영 — 카페24 서버/DB 접속 정보 추가 변경 및 관리
+

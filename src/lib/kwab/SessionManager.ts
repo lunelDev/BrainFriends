@@ -152,6 +152,8 @@ export interface Step2Result {
   averagePronunciation: number;
   averageConsonantAccuracy?: number;
   averageVowelAccuracy?: number;
+  scoredSpeechItemCount?: number;
+  aacResponseCount?: number;
   timestamp: number;
 }
 
@@ -219,6 +221,8 @@ export interface Step4Result {
   score: number; // Result 페이지용
   correctCount: number; // 5점 이상 통과 개수
   totalCount: number;
+  scoredSpeechScenarioCount?: number;
+  aacResponseCount?: number;
   averageArticulationWritingConsistency?: number;
   timestamp: number;
 }
@@ -597,6 +601,8 @@ export class SessionManager {
         average_pronunciation: result.averagePronunciation,
         average_consonant_accuracy: result.averageConsonantAccuracy ?? null,
         average_vowel_accuracy: result.averageVowelAccuracy ?? null,
+        scored_speech_item_count: result.scoredSpeechItemCount ?? null,
+        aac_response_count: result.aacResponseCount ?? null,
       },
       "multimodal",
     );
@@ -643,6 +649,8 @@ export class SessionManager {
       {
         average_kwab_score: result.averageKwabScore,
         total_scenarios: result.totalScenarios,
+        scored_speech_scenario_count: result.scoredSpeechScenarioCount ?? null,
+        aac_response_count: result.aacResponseCount ?? null,
         average_articulation_writing_consistency:
           result.averageArticulationWritingConsistency ?? null,
       },

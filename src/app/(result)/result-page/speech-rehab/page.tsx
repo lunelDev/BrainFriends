@@ -230,6 +230,18 @@ function ResultRehabPage() {
 
   const previousStepRow = stepRows.length > 1 ? stepRows[1] : null;
   const latestStepRow = liveHistoryEntry ?? (stepRows.length ? stepRows[0] : null);
+  const latestStepItems = useMemo(() => {
+    const details = latestStepRow?.stepDetails?.[detailKey];
+    return Array.isArray(details) ? details : [];
+  }, [detailKey, latestStepRow]);
+  const latestAacItems = useMemo(
+    () => latestStepItems.filter((item: any) => item?.inputModality === "aac"),
+    [latestStepItems],
+  );
+  const latestSpeechItems = useMemo(
+    () => latestStepItems.filter((item: any) => item?.inputModality !== "aac"),
+    [latestStepItems],
+  );
   const qualityUi = getMeasurementQualityUi(
     latestStepRow?.measurementQuality?.overall,
   );
@@ -808,6 +820,36 @@ function ResultRehabPage() {
             </div>
           </div>
         </section>
+
+        {latestAacItems.length > 0 && (
+          <section className="print-compact-card rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-5 shadow-sm">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-amber-700">
+              AAC 보조 의사표현 기록
+            </p>
+            <h3 className="mt-1 text-base sm:text-lg font-black text-slate-900">
+              심볼 응답 {latestAacItems.length}건은 발음 점수 산정에서 제외했습니다.
+            </h3>
+            <p className="mt-2 text-sm font-semibold leading-6 text-slate-700">
+              음성 응답 {latestSpeechItems.length}건만 재활 점수에 반영했습니다. AAC 항목은
+              환자가 말 대신 선택한 의사표현으로 저장되며, 치료사 검토용 원자료로만 사용합니다.
+            </p>
+            <div className="mt-3 grid gap-2">
+              {latestAacItems.slice(0, 3).map((item: any, index: number) => (
+                <div
+                  key={`aac-review-${index}-${item?.aacSentence || item?.transcript || ""}`}
+                  className="rounded-xl border border-amber-200 bg-white px-3 py-2"
+                >
+                  <p className="text-[11px] font-black text-amber-700">
+                    항목 {Number(item?.index ?? index) + 1}
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-slate-900">
+                    {String(item?.aacSentence || item?.transcript || "문장 없음")}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">

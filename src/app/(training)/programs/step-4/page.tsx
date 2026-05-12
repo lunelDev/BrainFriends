@@ -1163,10 +1163,14 @@ function Step4Content() {
       const finalizedResults = buildPersistedStep4Results();
       try {
         const sm = new SessionManager(patientProfile as any, place);
+        const speechResults = finalizedResults.filter(
+          (row) => row.inputModality !== "aac",
+        );
+        const aacResponseCount = finalizedResults.length - speechResults.length;
         const averageKwabScore =
-          finalizedResults.length > 0
-            ? finalizedResults.reduce((sum, r) => sum + r.kwabScore, 0) /
-              finalizedResults.length
+          speechResults.length > 0
+            ? speechResults.reduce((sum, r) => sum + r.kwabScore, 0) /
+              speechResults.length
             : 0;
         sm.saveStep4Result({
           items: finalizedResults.map((r) => ({
@@ -1212,15 +1216,17 @@ function Step4Content() {
           averageKwabScore: Number(averageKwabScore.toFixed(1)),
           totalScenarios: finalizedResults.length,
           score: Math.round(averageKwabScore),
-          correctCount: finalizedResults.filter((r) => r.kwabScore >= 5).length,
+          correctCount: speechResults.filter((r) => r.kwabScore >= 5).length,
           totalCount: finalizedResults.length,
+          scoredSpeechScenarioCount: speechResults.length,
+          aacResponseCount,
           averageArticulationWritingConsistency:
-            finalizedResults.length > 0
-              ? finalizedResults.reduce(
+            speechResults.length > 0
+              ? speechResults.reduce(
                   (sum, r) =>
                     sum + Number(r.articulationWritingConsistency || 0),
                   0,
-                ) / finalizedResults.length
+                ) / speechResults.length
               : 0,
           timestamp: Date.now(),
           versionSnapshot: buildVersionSnapshot("step4"),
@@ -1228,11 +1234,14 @@ function Step4Content() {
       } catch (e) {
       }
 
+      const speechResults = finalizedResults.filter(
+        (row) => row.inputModality !== "aac",
+      );
       const avgScore =
-        finalizedResults.length > 0
+        speechResults.length > 0
           ? Math.round(
-              finalizedResults.reduce((s, r) => s + r.kwabScore, 0) /
-                finalizedResults.length,
+              speechResults.reduce((s, r) => s + r.kwabScore, 0) /
+                speechResults.length,
             )
           : 0;
       pushStep5OrRehabResult(avgScore);
@@ -1357,15 +1366,6 @@ function Step4Content() {
       const matched = currentScenario.answerKeywords.filter((keyword) =>
         payload.sentence.includes(keyword),
       );
-      const scored = scoreStep4Response({
-        matchedKeywordCount: matched.length,
-        totalKeywords: currentScenario.answerKeywords.length,
-        transcript: payload.sentence,
-        speechDurationSec: Math.max(2, payload.sentence.length / 4),
-        consonantAccuracy: 0,
-        vowelAccuracy: 0,
-        responseStartMs: 0,
-      });
       const metadata = buildAacTrainingMetadata(payload);
       const evalResult: Step4EvalResult = {
         index: currentIndex,
@@ -1374,23 +1374,23 @@ function Step4Content() {
         situation: currentScenario.situation,
         prompt: currentScenario.prompt,
         transcript: payload.sentence,
-        isCorrect: scored.kwabScore >= 5,
+        isCorrect: false,
         matchedKeywords: Array.from(new Set(matched)),
         relevantSentenceCount: payload.sentence ? 1 : 0,
         totalSentenceCount: 1,
-        relevanceScore: scored.contentScore,
-        contentComponentScore: scored.contentScore,
-        fluencyComponentScore: scored.fluencyScore,
-        clarityComponentScore: scored.clarityScore,
-        responseStartComponentScore: scored.responseStartScore,
+        relevanceScore: 0,
+        contentComponentScore: 0,
+        fluencyComponentScore: 0,
+        clarityComponentScore: 0,
+        responseStartComponentScore: 0,
         responseStartMs: 0,
-        finalScore: scored.finalScore,
+        finalScore: 0,
         speechDuration: Math.max(2, payload.sentence.length / 4),
         silenceRatio: 0,
         averageAmplitude: 0,
         peakCount: 0,
-        kwabScore: scored.kwabScore,
-        rawScore: scored.finalScore,
+        kwabScore: 0,
+        rawScore: 0,
         audioUrl: "",
         consonantAccuracy: 0,
         vowelAccuracy: 0,
@@ -1437,14 +1437,14 @@ function Step4Content() {
           .sort((a, b) => a[0] - b[0])
           .map((entry) => entry[1]);
       });
-      setSaveStatusText("AAC 심볼 입력 저장 완료");
+      setSaveStatusText("AAC 보조 의사표현 저장 완료. 발화 점수에는 반영하지 않습니다.");
       setPhase("review");
       updateRuntimeStatus({
         recording: false,
         saving: false,
         pageError: false,
         needsRetry: false,
-        message: "AAC 입력 저장 완료",
+        message: "AAC 보조 의사표현 저장 완료",
       });
     },
     [currentIndex, currentScenario, scenarios.length, stepSignature, updateRuntimeStatus],

@@ -10,6 +10,7 @@
 | `permit-readiness-internal-standard.md` | 허가 준비 내부 기준서. 허가 관련 핵심 내용을 링크 없이 한 MD 안에 통합 정리 |
 | `regulatory-master-map.md` | 분류·등급 → GMP → 개발 증빙 → 임상/성능 지표를 한 화면에서 보는 통합 지도 |
 | `regulatory-work-log.md` | 날짜별로 어떤 원문을 봤고 어떤 판단/문서/다음 작업을 남겼는지 확인하는 작업 로그 |
+| `ktl-meeting-developer-action-plan-2026-05-12.md` | KTL 1차 미팅 내용을 개발자가 해야 할 작업으로 전환한 액션 플랜 |
 | `class-2-samd-readiness-matrix.md` | 2등급 SaMD 준비 기준으로 이미 된 것과 해야 할 것을 정리한 실행 매트릭스 |
 | `article-24-dossier-index.md` | 제24조 첨부서류 8종 기준으로 내부 산출물/코드 증적/부족 항목을 보는 제출자료 인덱스 |
 | `regulatory-source-audit.md` | 제공받은 원문 가이드라인/NIDS 자료가 내부 문서에 어떻게 반영됐는지 추적 |

@@ -65,7 +65,6 @@ import { getSessionShuffledItems } from "@/lib/training/questionOrder";
 import {
   buildAacTrainingMetadata,
   persistAacIntentBestEffort,
-  scoreAacTranscriptMatch,
   type AacTrainingCommit,
 } from "@/lib/aac/trainingIntegration";
 import { buildAdaptiveTrainingOrder } from "@/lib/adaptive/adaptiveTraining";
@@ -830,28 +829,32 @@ function Step2Content() {
     } else {
       try {
         const completedResults = analysisResultsRef.current;
+        const speechResults = completedResults.filter(
+          (row) => row.inputModality !== "aac",
+        );
+        const aacResponseCount = completedResults.length - speechResults.length;
         const sm = new SessionManager(patientProfile as any, place);
         const avgSymmetry =
-          completedResults.length > 0
-            ? completedResults.reduce((a, b) => a + b.faceScore, 0) /
-              completedResults.length
+          speechResults.length > 0
+            ? speechResults.reduce((a, b) => a + b.faceScore, 0) /
+              speechResults.length
             : 0;
         const avgFinalScore =
-          completedResults.length > 0
-            ? completedResults.reduce((a, b) => a + (b.finalScore ?? 0), 0) /
-              completedResults.length
+          speechResults.length > 0
+            ? speechResults.reduce((a, b) => a + (b.finalScore ?? 0), 0) /
+              speechResults.length
             : 0;
         const avgConsonantAccuracy =
-          completedResults.length > 0
-            ? completedResults.reduce(
+          speechResults.length > 0
+            ? speechResults.reduce(
                 (a, b) => a + (b.consonantAccuracy || 0),
                 0,
-              ) / completedResults.length
+              ) / speechResults.length
             : 0;
         const avgVowelAccuracy =
-          completedResults.length > 0
-            ? completedResults.reduce((a, b) => a + (b.vowelAccuracy || 0), 0) /
-              completedResults.length
+          speechResults.length > 0
+            ? speechResults.reduce((a, b) => a + (b.vowelAccuracy || 0), 0) /
+              speechResults.length
             : 0;
         sm.saveStep2Result({
           items: completedResults.map((row) => ({
@@ -913,6 +916,8 @@ function Step2Content() {
           averagePronunciation: avgFinalScore,
           averageConsonantAccuracy: avgConsonantAccuracy,
           averageVowelAccuracy: avgVowelAccuracy,
+          scoredSpeechItemCount: speechResults.length,
+          aacResponseCount,
           timestamp: Date.now(),
           versionSnapshot: buildVersionSnapshot("step2"),
         });
@@ -920,10 +925,13 @@ function Step2Content() {
       }
 
       const completedResults = analysisResultsRef.current;
+      const speechResults = completedResults.filter(
+        (row) => row.inputModality !== "aac",
+      );
       const avgScore =
-        completedResults.length > 0
-          ? completedResults.reduce((a, b) => a + b.finalScore, 0) /
-            completedResults.length
+        speechResults.length > 0
+          ? speechResults.reduce((a, b) => a + b.finalScore, 0) /
+            speechResults.length
           : 0;
       pushStep3OrRehabResult(Number(avgScore.toFixed(0)));
     }
@@ -1401,10 +1409,6 @@ function Step2Content() {
   const handleAacCommit = useCallback(
     (payload: AacTrainingCommit) => {
       if (!currentItem) return;
-      const finalScore = scoreAacTranscriptMatch({
-        targetText: currentItem.text,
-        sentence: payload.sentence,
-      });
       const metadata = buildAacTrainingMetadata(payload);
       const currentResultEntry = {
         index: currentIndex,
@@ -1413,9 +1417,9 @@ function Step2Content() {
         text: currentItem.text,
         transcript: payload.sentence,
         rawTranscript: payload.sentence,
-        isCorrect: finalScore >= 60,
-        finalScore,
-        phraseMatchScore: finalScore,
+        isCorrect: false,
+        finalScore: 0,
+        phraseMatchScore: 0,
         articulationScore: 0,
         speechScore: 0,
         faceScore: 0,
@@ -1441,11 +1445,11 @@ function Step2Content() {
       void persistAacIntentBestEffort(payload);
 
       setTranscript(payload.sentence);
-      setResultScore(finalScore);
+      setResultScore(null);
       setResultConsonantAccuracy(0);
       setResultVowelAccuracy(0);
       setReviewAudioUrl(null);
-      setStatusText("AAC 심볼 입력이 저장되었습니다.");
+      setStatusText("AAC 보조 의사표현으로 저장되었습니다. 발음 점수에는 반영하지 않습니다.");
       setIsAacMode(false);
       setCanRecord(false);
       const nextAnalysisResults = mergeStep2ResultsByIndex(
@@ -1460,7 +1464,7 @@ function Step2Content() {
         saving: false,
         pageError: false,
         needsRetry: false,
-        message: "AAC 입력 저장 완료",
+        message: "AAC 보조 의사표현 저장 완료",
       });
     },
     [

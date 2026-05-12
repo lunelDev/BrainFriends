@@ -74,6 +74,8 @@ type SingResultEnvelope = {
   voiceFaceSync?: string;
   transcript?: string;
   metricSource?: "measured" | "demo";
+  measurementReliability?: "high" | "medium" | "low";
+  reliabilityReasons?: string[];
   measurementReason?: string | null;
   comment: string;
   rankings: RankRow[];
@@ -126,6 +128,7 @@ const MIN_SING_TRANSCRIPT_CHARS = 2;
 const MAX_SING_KEY_FRAMES = 3;
 const KEY_FRAME_CAPTURE_INTERVAL_MS = 5000;
 const SING_MEASUREMENT_INTERVAL_MS = 200;
+const VOICE_WAVEFORM_POINTS = 42;
 const CALIBRATION_MIN_TRACKING_QUALITY = 30;
 const CALIBRATION_MIN_FACE_WIDTH = 0.1;
 const CALIBRATION_MAX_CENTER_OFFSET = 0.18;
@@ -216,8 +219,11 @@ function buildMeasuredComment(params: {
   vowelAccuracy: number;
   lyricAccuracy: number;
 }) {
+  // 부동소수점 그대로 출력하면 "1033.1000000238419ms" 같이 보임 → 의료 보고서로 부적절.
   const latencyText =
-    params.latencyMs == null ? "반응속도는 측정되지 않았습니다" : `반응 시작 시간은 ${params.latencyMs}ms`;
+    params.latencyMs == null
+      ? "반응속도는 측정되지 않았습니다"
+      : `반응 시작 시간은 ${Math.round(params.latencyMs)}ms`;
   const faceText =
     params.facialResponseChange == null
       ? "안면 반응 변화 참고값은 확보되지 않았습니다"
@@ -230,7 +236,17 @@ function buildMeasuredComment(params: {
     params.voiceFaceSync == null
       ? "안면-음성 동시성은 확보되지 않았습니다"
       : `안면-음성 동시성은 ${params.voiceFaceSync.toFixed(1)}점`;
-  return `노래 과제 수행 기록에서 발화 참여율은 ${params.vocalParticipation.toFixed(1)}점, 가사 타이밍 맞춤률은 ${params.lyricTiming.toFixed(1)}점으로 산출되었습니다. ${syncText}이며 ${faceText}, ${supportText}. 발성 흔들림은 ${params.jitterPct.toFixed(2)}% 수준입니다. ${latencyText}. STT 기반 자음·모음·전사 결과는 자동 전사 참고값으로만 해석합니다.`;
+  // 발성 흔들림(Jitter) 정상 범위 안내 — 일반 0.5~1.5%. 5% 초과 시 측정 환경 영향 큰 것으로
+  // 판단 (반주 누설/배경 잡음/낮은 SNR). 의료 보고서에서 단순 수치만 보여주면 임상 오해석 가능.
+  const jitterNote =
+    params.jitterPct == null
+      ? ""
+      : params.jitterPct <= 1.5
+        ? " (정상 범위)"
+        : params.jitterPct <= 5
+          ? " (정상 범위 초과 — 발성 불안정 또는 환경 노이즈 영향 가능)"
+          : " (정상 범위 크게 초과 — 측정 환경/마이크 입력 점검 권장)";
+  return `노래 과제 수행 기록에서 발화 참여율은 ${params.vocalParticipation.toFixed(1)}점, 가사 타이밍 맞춤률은 ${params.lyricTiming.toFixed(1)}점으로 산출되었습니다. ${syncText}이며 ${faceText}, ${supportText}. 발성 흔들림은 ${params.jitterPct.toFixed(2)}%${jitterNote} 수준입니다. ${latencyText}. STT 기반 자음·모음·전사 결과는 자동 전사 참고값으로만 해석합니다.`;
 }
 
 function normalizeLyricsForAnalysis(text: string) {
@@ -274,6 +290,10 @@ function describeSingMeasurementReason(params: {
     return "전사된 가사 길이가 너무 짧아 자음·모음 보조 지표를 산출하지 못했습니다.";
   }
 
+  if (params.pronunciationErrorReason === "stt_hallucination_detected") {
+    return "음성 입력이 너무 약해 STT 가 의미 없는 패턴(숫자 시퀀스 등)을 출력했습니다. 마이크를 입 가까이 두고 또렷하게 다시 불러주세요.";
+  }
+
   if (
     params.pronunciationErrorReason &&
     params.pronunciationErrorReason !== "stt_unknown_error"
@@ -290,6 +310,82 @@ function describeSingMeasurementReason(params: {
   }
 
   return "발음 또는 안면 측정 데이터가 충분하지 않습니다.";
+}
+
+function VoicePulseWaveform({
+  level,
+  values,
+}: {
+  level: number;
+  values: number[];
+}) {
+  const width = 280;
+  const height = 46;
+  const baseline = height / 2;
+  const points = values.length
+    ? values
+    : Array.from({ length: VOICE_WAVEFORM_POINTS }, () => 0);
+  const polyline = points
+    .map((value, index) => {
+      const x = (index / Math.max(points.length - 1, 1)) * width;
+      const normalized = clamp(value / 100, 0, 1);
+      const heartbeatLift =
+        normalized > 0.08
+          ? Math.sin(index * 1.35) * normalized * 15 +
+            Math.sin(index * 3.1) * normalized * 5
+          : Math.sin(index * 0.8) * 1.2;
+      const y = clamp(baseline - heartbeatLift, 4, height - 4);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  const levelPct = clamp(level, 0, 100);
+  const active = levelPct >= 15;
+
+  return (
+    <div className="mt-2 h-[58px] overflow-hidden rounded-full border border-white/14 bg-black/42 px-3 py-2 shadow-[0_10px_26px_rgba(0,0,0,0.28)] backdrop-blur-md">
+      <div className="flex h-full items-center gap-3">
+        <div className="flex min-w-[74px] items-center gap-2">
+          <span
+            className={`h-2.5 w-2.5 rounded-full ${
+              active
+                ? "bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,0.85)]"
+                : "bg-white/25"
+            }`}
+          />
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/70">
+            Voice
+          </span>
+        </div>
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          className="h-[34px] flex-1"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <line
+            x1="0"
+            y1={baseline}
+            x2={width}
+            y2={baseline}
+            stroke="rgba(255,255,255,0.16)"
+            strokeWidth="1"
+          />
+          <polyline
+            points={polyline}
+            fill="none"
+            stroke={active ? "#6ee7b7" : "rgba(255,255,255,0.35)"}
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="drop-shadow-[0_0_8px_rgba(16,185,129,0.65)]"
+          />
+        </svg>
+        <span className="min-w-[42px] text-right font-mono text-xs font-black tabular-nums text-white/80">
+          {Math.round(levelPct)}%
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function buildExpectedSongLyrics(songKey: SongKey) {
@@ -338,6 +434,30 @@ async function analyzeSongPronunciation(params: {
         vowelAccuracy: null,
         lyricAccuracy: null,
         errorReason: "insufficient_transcript",
+      };
+    }
+
+    // STT 환각 감지 — Whisper 는 입력이 무음/잡음에 가까우면 학습 데이터의 자주 보이는
+    //   패턴(숫자 시퀀스 "26 27 28 ...", "Thank you for watching" 등)을 환각으로 출력한다.
+    //   글자 수 체크(insufficient_transcript)는 통과하지만 가사가 아닌 의미 없는 출력.
+    //   감지 조건:
+    //     1) 한글/영문 의미 글자가 거의 없음 (< 4)
+    //     2) 숫자가 다수 (>= 5)
+    //   이 경우 transcript 를 폐기하고 hallucination 마킹 → 측정 신뢰도 low 강제.
+    //   targetText:undefined 정책은 그대로 (과대 전사 방지). 환각만 차단.
+    const meaningfulLetterCount =
+      (transcript.match(/[가-힣]/g)?.length || 0) +
+      (transcript.match(/[a-zA-Z]/g)?.length || 0);
+    const digitCount = transcript.match(/\d/g)?.length || 0;
+    const isHallucinated =
+      meaningfulLetterCount < 4 && digitCount >= 5;
+    if (isHallucinated) {
+      return {
+        transcript: "",
+        consonantAccuracy: null,
+        vowelAccuracy: null,
+        lyricAccuracy: null,
+        errorReason: "stt_hallucination_detected",
       };
     }
 
@@ -837,6 +957,9 @@ function BrainSingPageContent() {
 
   const [phase, setPhase] = useState<Phase>(requestedSong ? "ready" : "select");
   const [song, setSong] = useState<SongKey>(requestedSong ?? "나비야");
+  // 측정 환경 안내 모달 — sessionStorage 1회 dismissal. 노래 훈련은 마이크 입력 품질이
+  // 참고 지표(Jitter, 발화 참여율 등)에 직접 영향이라 진입 시 환경 가이드를 제공한다.
+  const [showEnvAdvice, setShowEnvAdvice] = useState(false);
   const [clockText, setClockText] = useState("");
   const [countdown, setCountdown] = useState(3);
   const [remaining, setRemaining] = useState("30.0");
@@ -861,6 +984,10 @@ function BrainSingPageContent() {
   const [isBgmMuted, setIsBgmMuted] = useState(false);
   const [audioReady, setAudioReady] = useState(false);
   const [songDurationSec, setSongDurationSec] = useState(30);
+  const [liveVoiceLevel, setLiveVoiceLevel] = useState(0);
+  const [voiceWaveform, setVoiceWaveform] = useState<number[]>(
+    Array.from({ length: VOICE_WAVEFORM_POINTS }, () => 0),
+  );
   const [calibrationReady, setCalibrationReady] = useState(false);
   const [calibrationMessage, setCalibrationMessage] = useState(
     "카메라를 켜고 얼굴을 화면 중앙 가이드에 맞춰 주세요.",
@@ -885,6 +1012,22 @@ function BrainSingPageContent() {
     sidebarMetrics.faceDetected && liveTrackingQuality >= CALIBRATION_MIN_TRACKING_QUALITY
       ? "입술 추적 중"
       : "입술 위치 확인 중";
+
+  // 측정 환경 안내 모달 — mount 시 1회 노출 (sessionStorage 로 dismissal 기억).
+  // 마이크 입력 품질이 참고 지표(Jitter, 발화 참여율, STT)에 직접 영향이라
+  // 환자/사용자에게 사전에 환경 조건을 안내하는 의료기기 SW 기본 가이드.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const dismissed = window.sessionStorage.getItem(
+        "bf_sing_env_advice_dismissed",
+      );
+      if (!dismissed) setShowEnvAdvice(true);
+    } catch {
+      // sessionStorage 차단된 환경에서도 안내는 표시
+      setShowEnvAdvice(true);
+    }
+  }, []);
 
   useEffect(() => {
     const audio = new Audio(currentSong.audioSrc);
@@ -1187,12 +1330,19 @@ function BrainSingPageContent() {
     }
 
     try {
+      // autoGainControl 정책:
+      //   - 이전: false (음향 정밀 측정 Jitter/Shimmer 보존 의도)
+      //   - 변경: true (헤드셋 마이크 raw 게인이 너무 낮아 사용자 음성 자체가 안 잡히는
+      //     케이스 발생. AGC OFF로 인풋이 약해지면 발화 참여율·voiceConfidence 모두 0에 가까워져
+      //     측정 자체가 무의미해짐.)
+      //   - 트레이드오프: AGC ON 시 동적 범위 압축으로 Jitter/Shimmer 정밀도 일부 감소.
+      //     이는 측정 신뢰도 배너 (medium/low 등급) 로 자동 경고되므로 임상 안전성 유지.
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: false,
+          autoGainControl: true,
           channelCount: 1,
         },
       });
@@ -1360,6 +1510,8 @@ function BrainSingPageContent() {
     setLyricFillPct(0);
     setLyricElapsedSec(0);
     setCurrentLyricCues(null);
+    setLiveVoiceLevel(0);
+    setVoiceWaveform(Array.from({ length: VOICE_WAVEFORM_POINTS }, () => 0));
     setRtJitter("0.00%");
     setRtSi("0.0");
     setRtLatency("-- ms");
@@ -1579,12 +1731,52 @@ function BrainSingPageContent() {
             vowelAccuracy: pronunciation.vowelAccuracy ?? 0,
             lyricAccuracy: pronunciation.lyricAccuracy ?? 0,
           })
-        : `${performanceMeasurementReason ?? measurementReason ?? "노래 수행 데이터가 충분하지 않아 노래 훈련 점수는 로컬 참고용으로만 표시됩니다."} 화면 확인용 결과만 표시됩니다.`;
+        : `${performanceMeasurementReason ?? measurementReason ?? "노래 수행 데이터가 충분하지 않아 노래 훈련 참고지표는 로컬 확인용으로만 표시됩니다."} 화면 확인용 결과만 표시됩니다.`;
 
     setFinalScore(score);
     setFinalJitter(finalJitterText);
     setFinalSi(finalSiText);
     setComment(finalComment);
+
+    // ===== 측정 신뢰도 종합 등급 산출 =====
+    //   알고리즘 본질은 그대로 두고, raw 측정값을 보고 신뢰도 등급/사유를 결과에 메타로 추가.
+    //   기준:
+    //     - jitterPct 정상 0.5~1.5%. 5% 초과는 환경 영향 의심, 10% 초과는 측정 환경 노이즈 거의 확정.
+    //     - vocalParticipation 정상 50점 이상. 30점 미만은 RMS 자체가 낮거나 환경 노이즈로 왜곡.
+    //   low → 결과 페이지에 참고 제한 안내.
+    //   medium → 노란 배너 + 반복 측정 권장 안내.
+    //   high → 배너 없음.
+    const reliabilityReasons: string[] = [];
+    if (effectiveJitter != null && effectiveJitter > 10) {
+      reliabilityReasons.push(
+        "발성 흔들림 비정상치(>10%) — 측정 환경 노이즈 의심",
+      );
+    } else if (effectiveJitter != null && effectiveJitter > 5) {
+      reliabilityReasons.push(
+        "발성 흔들림 정상 범위 초과(>5%) — 환경 점검 권장",
+      );
+    }
+    if (vocalParticipation != null && vocalParticipation < 30) {
+      reliabilityReasons.push(
+        "발화 참여율 매우 낮음(<30%) — 발성 또는 마이크 입력 확인",
+      );
+    } else if (vocalParticipation != null && vocalParticipation < 60) {
+      reliabilityReasons.push("발화 참여율 낮음(<60%) — 반복 시도 권장");
+    }
+    // STT 환각이 감지된 경우 — 임상 해석 불가. 자동 low 강제.
+    if (pronunciation.errorReason === "stt_hallucination_detected") {
+      reliabilityReasons.push(
+        "음성 인식이 의미 없는 패턴(숫자 시퀀스 등)을 출력 — 음성 입력 미약 의심",
+      );
+    }
+    const measurementReliability: "high" | "medium" | "low" =
+      (effectiveJitter != null && effectiveJitter > 10) ||
+      (vocalParticipation != null && vocalParticipation < 30) ||
+      pronunciation.errorReason === "stt_hallucination_detected"
+        ? "low"
+        : reliabilityReasons.length > 0
+          ? "medium"
+          : "high";
 
     const masked =
       userName.length >= 2
@@ -1622,6 +1814,9 @@ function BrainSingPageContent() {
           vocalParticipation == null ? "--" : vocalParticipation.toFixed(1),
         lyricTiming: lyricTiming == null ? "--" : lyricTiming.toFixed(1),
         voiceFaceSync: voiceFaceSync == null ? "--" : voiceFaceSync.toFixed(1),
+        // 측정 신뢰도 메타데이터 — 결과 페이지 경고 배너 + V&V 로그용.
+        measurementReliability,
+        reliabilityReasons,
         transcript: pronunciation.transcript,
         metricSource,
         measurementReason: performanceMeasurementReason ?? measurementReason,
@@ -1730,6 +1925,8 @@ function BrainSingPageContent() {
     setJitterHistory([]);
     setSiHistory([]);
     setLyricFillPct(0);
+    setLiveVoiceLevel(0);
+    setVoiceWaveform(Array.from({ length: VOICE_WAVEFORM_POINTS }, () => 0));
     await startVoiceRecording();
 
     const hasReliableAudioDuration = audioReady && songDurationSec > 0;
@@ -1871,6 +2068,16 @@ function BrainSingPageContent() {
         }
       }
 
+      setLiveVoiceLevel(currentVoiceConfidence);
+      setVoiceWaveform((prev) => {
+        const next = prev.length >= VOICE_WAVEFORM_POINTS
+          ? prev.slice(prev.length - VOICE_WAVEFORM_POINTS + 1)
+          : prev.slice();
+        next.push(currentVoiceConfidence);
+        while (next.length < VOICE_WAVEFORM_POINTS) next.unshift(0);
+        return next;
+      });
+
       if (sidebarMetrics.faceDetected) {
         performanceData.faceSamples += 1;
         if (currentVoiced) {
@@ -1926,6 +2133,8 @@ function BrainSingPageContent() {
     setLyricFillPct(0);
     setLyricElapsedSec(0);
     setCurrentLyricCues(null);
+    setLiveVoiceLevel(0);
+    setVoiceWaveform(Array.from({ length: VOICE_WAVEFORM_POINTS }, () => 0));
     setRtJitter("0.00%");
     setRtSi("0.0");
     setRtLatency("-- ms");
@@ -2103,11 +2312,19 @@ function BrainSingPageContent() {
                 <div className="pointer-events-none absolute inset-x-0 top-0 z-[4] h-px bg-emerald-300/40 shadow-[0_0_18px_rgba(52,211,153,0.5)]" />
 
                 {/* 상단 가운데 KPI 캡슐 — 가로형 슬림 */}
-                <div className="absolute left-1/2 top-6 z-10 -translate-x-1/2 w-[min(560px,calc(100%-48px))]">
-                  <div className="flex items-center gap-4 rounded-full border border-white/20 bg-black/55 px-5 py-3 text-white shadow-[0_14px_36px_rgba(0,0,0,0.40)] backdrop-blur-md">
+                <div
+                  className="absolute left-1/2 top-6 z-10"
+                  style={{
+                    width: "560px",
+                    maxWidth: "calc(100% - 48px)",
+                    transform: "translate3d(-50%,0,0)",
+                    contain: "layout paint",
+                  }}
+                >
+                  <div className="flex h-[58px] items-center gap-4 rounded-full border border-white/20 bg-black/55 px-5 py-3 text-white shadow-[0_14px_36px_rgba(0,0,0,0.40)] backdrop-blur-md">
                     {/* 남은 시간 */}
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="font-mono text-[28px] font-black leading-none tracking-[-0.04em]">
+                    <div className="flex w-[88px] shrink-0 items-baseline gap-1.5">
+                      <span className="inline-block min-w-[58px] text-right font-mono text-[28px] font-black leading-none tracking-[-0.04em] tabular-nums">
                         {remaining}
                       </span>
                       <span className="text-xs font-black text-white/55">초</span>
@@ -2122,7 +2339,7 @@ function BrainSingPageContent() {
                     </div>
 
                     {/* 추적 상태 도트 + 품질 % */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex w-[58px] shrink-0 items-center justify-end gap-2">
                       <span
                         aria-label={liveLipTrackingLabel}
                         className={`inline-flex h-2.5 w-2.5 rounded-full ${
@@ -2136,6 +2353,10 @@ function BrainSingPageContent() {
                       </span>
                     </div>
                   </div>
+                  <VoicePulseWaveform
+                    level={liveVoiceLevel}
+                    values={voiceWaveform}
+                  />
                 </div>
 
                 {/* 하단 자막 띠 — 카메라 영역 맨 아래 풀 너비, 검은 그라데이션 위 */}
@@ -2183,7 +2404,7 @@ function BrainSingPageContent() {
                   <p className="max-w-[620px] text-base sm:text-xl lg:text-2xl xl:text-[28px] font-medium leading-relaxed text-slate-500">
                     시작하기를 누르면 카운트다운 후
                     <br />
-                    카메라와 가창 분석이 시작됩니다.
+                    카메라와 노래 수행 기록이 시작됩니다.
                   </p>
                   <button
                     type="button"
@@ -2333,6 +2554,88 @@ function BrainSingPageContent() {
           </section>
         </div>
       </main>
+
+      {/* 측정 환경 안내 모달 — 노래 훈련은 마이크 입력 품질이 참고 지표에 직접 영향.
+          블루투스 이어셋(에어팟 등) 사용 시 SCO 모드 한계로 반주가 마이크에 누설되어
+          Jitter/발화참여율/STT 모두 왜곡되는 케이스가 임상 현장에서 발견됨. */}
+      {showEnvAdvice ? (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sing-env-advice-title"
+        >
+          <div className="w-full max-w-[480px] rounded-[28px] border border-emerald-200 bg-white p-6 shadow-2xl sm:p-7">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-2xl">
+                🎧
+              </div>
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.22em] text-emerald-600">
+                  Measurement Environment
+                </p>
+                <h2
+                  id="sing-env-advice-title"
+                  className="mt-1 text-xl font-black text-slate-900"
+                >
+                  참고 지표 기록을 위한 환경 안내
+                </h2>
+              </div>
+            </div>
+            <div className="mt-5 space-y-3 text-sm font-medium leading-relaxed text-slate-700">
+              <p>
+                반주 소리가 마이크에 섞이면 발성 안정 참고값(Jitter)과 발화 참여율
+                참고 지표가 왜곡될 수 있습니다.
+              </p>
+              <ul className="space-y-2 rounded-2xl bg-emerald-50/60 p-4 text-[13px]">
+                <li className="flex items-start gap-2">
+                  <span className="mt-0.5 text-emerald-600">✓</span>
+                  <span>
+                    <strong>유선 헤드셋·이어폰</strong> 사용을 가장 권장합니다.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-0.5 text-emerald-600">✓</span>
+                  <span>유선 이어폰 + 노트북 내장 마이크 조합도 좋습니다.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-0.5 text-rose-500">✗</span>
+                  <span>
+                    <strong>에어팟 등 블루투스 이어셋</strong>은 노래 음성 기록 품질이
+                    떨어질 수 있습니다 (SCO 모드 음질 한계).
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-0.5 text-rose-500">✗</span>
+                  <span>스피커로 반주를 들으면 마이크에 섞여 들어갑니다.</span>
+                </li>
+              </ul>
+              <p className="text-xs text-slate-500">
+                기록 신뢰도가 낮은 환경에서는 결과 리포트에 참고 제한 안내가 함께 표시됩니다.
+              </p>
+            </div>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row-reverse">
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    window.sessionStorage.setItem(
+                      "bf_sing_env_advice_dismissed",
+                      "1",
+                    );
+                  } catch {
+                    // ignore
+                  }
+                  setShowEnvAdvice(false);
+                }}
+                className="h-12 w-full rounded-2xl bg-emerald-600 text-base font-black text-white shadow-[0_8px_22px_rgba(16,185,129,0.35)] transition-transform active:scale-95"
+              >
+                확인하고 진행
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
