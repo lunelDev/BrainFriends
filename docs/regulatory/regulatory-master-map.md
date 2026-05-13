@@ -7,7 +7,7 @@
 
 브레인프렌즈는 현재 `재활 보조 SaMD`로 잠그고, 2등급 가능성을 기준으로 `분류·등급 → 제24~26조 첨부서류 → GMP/QMS → 사이버보안 → AI 성능평가 → 마비말장애 임상지표` 증빙을 준비한다. DTx/치료효과 클레임은 확증임상 또는 식약처 인정 전까지 조건부 또는 금지로 유지한다.
 
-2026-05-12 KTL 1차 미팅 이후 사업 실행 전략은 `1등급 정보 제공/훈련 보조 우선 신고 + 2등급 SaMD 장기 준비` 투트랙을 우선 검토한다. 개발팀 액션은 `ktl-meeting-developer-action-plan-2026-05-12.md`를 기준으로 관리한다.
+2026-05-12 KTL 1차 미팅 이후 사업 실행 전략은 `1등급 정보 제공/훈련 보조 우선 신고 + 2등급 SaMD 장기 준비` 투트랙을 우선 검토한다. 개발팀 액션은 `ktl-meeting-developer-action-plan-2026-05-12.md`를 기준으로 관리하고, 실행 체크리스트는 `ktl-vmodel-worklist.md`에서 관리한다.
 
 제품 허가·인증·심사 관련 내부 기준은 `permit-readiness-internal-standard.md`에서 먼저 확인한다. 2등급 준비 상태와 개발 우선순위는 `class-2-samd-readiness-matrix.md`를 기준으로 관리하고, 제24조 제출자료 묶음은 `article-24-dossier-index.md`에서 관리한다.
 
@@ -59,16 +59,18 @@ flowchart LR
 
 1. `permit-readiness-internal-standard.md` — 허가 준비 내부 기준서. 개발/문서 갱신 때 계속 보는 단일 기준
 2. `ktl-meeting-developer-action-plan-2026-05-12.md` — KTL 미팅 후 개발자가 해야 할 작업
-3. `regulatory-master-map.md` — 전체 지도
-4. `class-2-samd-readiness-matrix.md` — 2등급 SaMD 기준으로 무엇이 됐고 무엇이 부족한지
-5. `article-24-dossier-index.md` — 제24조 첨부서류 8종별 내부 산출물/코드 증적/부족 항목
-6. `source-digital-medical-product-notice-2026-requirements.md` — 제24~26조 허가 제출자료와 2등급 갈음 전략
-7. `source-classification-grade-requirements.md` — 왜 SaMD/2등급 가능성인지
-8. `source-gmp-requirements.md` — 품질·릴리스·형상관리로 무엇을 남겨야 하는지
-9. `source-poststroke-dysarthria-dtx-requirements.md` — 마비말장애 DTx로 갈 때 어떤 임상지표가 필요한지
-10. `source-ai-clinical-stroke-requirements.md` — AI 성능평가용 후향적 데이터셋을 어떻게 잠글지
-11. `test-and-certification-development-guide.md` — 개발팀이 당장 고칠 항목
-12. `claim-lock.md` — 회사/외부에 말해도 되는 문구와 금지 문구
+3. `ktl-vmodel-worklist.md` — KTL 후속 5대 축 작업 체크리스트
+4. `regulatory-master-map.md` — 전체 지도
+5. `class-2-samd-readiness-matrix.md` — 2등급 SaMD 기준으로 무엇이 됐고 무엇이 부족한지
+6. `article-24-dossier-index.md` — 제24조 첨부서류 8종별 내부 산출물/코드 증적/부족 항목
+7. `source-digital-medical-product-notice-2026-requirements.md` — 제24~26조 허가 제출자료와 2등급 갈음 전략
+8. `source-classification-grade-requirements.md` — 왜 SaMD/2등급 가능성인지
+9. `source-gmp-requirements.md` — 품질·릴리스·형상관리로 무엇을 남겨야 하는지
+10. `source-poststroke-dysarthria-dtx-requirements.md` — 마비말장애 DTx로 갈 때 어떤 임상지표가 필요한지
+11. `source-ai-clinical-stroke-requirements.md` — AI 성능평가용 후향적 데이터셋을 어떻게 잠글지
+12. `test-and-certification-development-guide.md` — 개발팀이 당장 고칠 항목
+13. `product-introduction-integrated.md` — 회사/외부/기관 미팅에서 쓸 제품 소개 기준문
+14. `claim-lock.md` — 회사/외부에 말해도 되는 문구와 금지 문구
 
 ## 6. PM 결정
 

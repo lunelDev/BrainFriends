@@ -9,7 +9,7 @@
 - 2026-05-07: 반복훈련 step1/4/5 안정화 + 노래훈련 증적 ZIP 내보내기 + XR 프리뷰 라우트(/select-page/xr) + 인허가 소스 감사표/인덱스 정리
 - 2026-05-06: Report 리팩터링(/report→/mypage) + Step2 점수/복원 안정화 + WASM STT 로컬 자산화(실험 플래그) + IRT evidence export
 - 2026-05-11: 회원가입 연락처 입력 포맷(10/11자리) 보정 + 개발 기록 문서 정리
-- 2026-05-13: preview 7개
+- 2026-05-13: BrainFriends 5개 / preview 15개
 
 ---
 
